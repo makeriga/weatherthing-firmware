@@ -79,6 +79,14 @@ void settings_begin()
     g_settings.mqttTopic[0] = '\0';
     g_settings.mqttEnabled = false;
     
+    // Card Cycle defaults
+    for(int i=0; i<10; ++i) {
+        g_settings.cardEnabled[i] = true;
+        g_settings.cardOrder[i] = i;
+    }
+    g_settings.cycleDuration = 10;
+    g_settings.cycleEnabled = true;
+    
     // Load from flash
     if (g_prefs.begin("wtsettings", true))
     {
@@ -128,6 +136,12 @@ void settings_begin()
         g_settings.mqttTopic[sizeof(g_settings.mqttTopic) - 1] = '\0';
         
         g_settings.mqttEnabled = g_prefs.getBool("mqttOn", false);
+        
+        // Card Cycle settings
+        if (g_prefs.isKey("cardEn")) g_prefs.getBytes("cardEn", g_settings.cardEnabled, 10);
+        if (g_prefs.isKey("cardOrd")) g_prefs.getBytes("cardOrd", g_settings.cardOrder, 10);
+        g_settings.cycleDuration = g_prefs.getUShort("cycleDur", 10);
+        g_settings.cycleEnabled = g_prefs.getBool("cycleOn", true);
         
         g_prefs.end();
     }
@@ -194,6 +208,12 @@ void settings_save()
         g_prefs.putString("mqttPwd", g_settings.mqttPass);
         g_prefs.putString("mqttTop", g_settings.mqttTopic);
         g_prefs.putBool("mqttOn", g_settings.mqttEnabled);
+        
+        // Card Cycle settings
+        g_prefs.putBytes("cardEn", g_settings.cardEnabled, 10);
+        g_prefs.putBytes("cardOrd", g_settings.cardOrder, 10);
+        g_prefs.putUShort("cycleDur", g_settings.cycleDuration);
+        g_prefs.putBool("cycleOn", g_settings.cycleEnabled);
         
         g_prefs.end();
     }

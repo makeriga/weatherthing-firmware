@@ -816,10 +816,63 @@ static const char* g_gameNames[] = {"FLAP", "SNEK", "BRICK", "PONG"};
 // Game menu state - true = in menu, false = playing
 static bool g_inGameMenu = true;
 
-// Start showing title animation for current card
+// Title animation variables
+static uint32_t g_lastAutoCycle = 0;
+
+// Forward declaration
+static void startTitleAnimation(uint32_t now);
+
 static void startTitleAnimation(uint32_t now) {
     g_showingTitle = true;
     g_titleStartTime = now;
+    g_lastAutoCycle = now; // Reset auto cycle timer on manual switch
+}
+
+static uint8_t getNextEnabledCard(uint8_t current) {
+    Settings& cfg = settings_get();
+    // Find current position in order
+    int8_t pos = -1;
+    for(int i=0; i<10; ++i) {
+        if (cfg.cardOrder[i] == current) {
+            pos = i;
+            break;
+        }
+    }
+    // If current not found in order (e.g. config changed), start from 0
+    if (pos == -1) pos = -1; 
+
+    // Search for next enabled
+    for(int i=1; i<=10; ++i) {
+        int nextPos = (pos + i) % 10;
+        uint8_t nextCard = cfg.cardOrder[nextPos];
+        if (cfg.cardEnabled[nextCard]) {
+            return nextCard;
+        }
+    }
+    return current; // No other enabled cards
+}
+
+static uint8_t getPrevEnabledCard(uint8_t current) {
+    Settings& cfg = settings_get();
+    // Find current position in order
+    int8_t pos = -1;
+    for(int i=0; i<10; ++i) {
+        if (cfg.cardOrder[i] == current) {
+            pos = i;
+            break;
+        }
+    }
+    if (pos == -1) pos = 0;
+
+    // Search for prev enabled
+    for(int i=1; i<=10; ++i) {
+        int prevPos = (pos - i + 10) % 10;
+        uint8_t prevCard = cfg.cardOrder[prevPos];
+        if (cfg.cardEnabled[prevCard]) {
+            return prevCard;
+        }
+    }
+    return current;
 }
 
 static void cycleNext()
@@ -842,9 +895,13 @@ static void cycleNext()
         g_clockPreset = 0;
         g_vuPreset = 0;
         g_gameMode = 0;
-        g_currentCard = (g_currentCard + 1) % g_cardCount;
-        g_cards[g_currentCard].setup();
-        startTitleAnimation(now);
+        
+        uint8_t next = getNextEnabledCard(g_currentCard);
+        if (next != g_currentCard) {
+            g_currentCard = next;
+            g_cards[g_currentCard].setup();
+            startTitleAnimation(now);
+        }
     }
 }
 
@@ -863,26 +920,30 @@ static void cyclePrev()
         g_gameMode--;
         g_cards[g_currentCard].setup();
     } else {
-        // Move to previous card (and set preset to max)
-        g_currentCard = (g_currentCard + g_cardCount - 1) % g_cardCount;
+        // Move to previous card
+        uint8_t prev = getPrevEnabledCard(g_currentCard);
         
-        // Set presets to max for the new card
-        if (g_currentCard == CARD_WEATHER) {
-            g_weatherPreset = WEATHER_PRESET_COUNT - 1;
-        } else if (g_currentCard == CARD_CLOCK) {
-            g_clockPreset = CLOCK_PRESET_COUNT - 1;
-        } else if (g_currentCard == CARD_VU) {
-            g_vuPreset = VU_PRESET_COUNT - 1;
-        } else if (g_currentCard == CARD_GAMES) {
-            g_gameMode = GAME_MODE_COUNT - 1;
-        } else {
-            g_weatherPreset = 0;
-            g_clockPreset = 0;
-            g_vuPreset = 0;
-            g_gameMode = 0;
+        if (prev != g_currentCard) {
+            g_currentCard = prev;
+            
+            // Set presets to max for the new card
+            if (g_currentCard == CARD_WEATHER) {
+                g_weatherPreset = WEATHER_PRESET_COUNT - 1;
+            } else if (g_currentCard == CARD_CLOCK) {
+                g_clockPreset = CLOCK_PRESET_COUNT - 1;
+            } else if (g_currentCard == CARD_VU) {
+                g_vuPreset = VU_PRESET_COUNT - 1;
+            } else if (g_currentCard == CARD_GAMES) {
+                g_gameMode = GAME_MODE_COUNT - 1;
+            } else {
+                g_weatherPreset = 0;
+                g_clockPreset = 0;
+                g_vuPreset = 0;
+                g_gameMode = 0;
+            }
+            g_cards[g_currentCard].setup();
+            startTitleAnimation(now);
         }
-        g_cards[g_currentCard].setup();
-        startTitleAnimation(now);
     }
 }
 
@@ -895,6 +956,11 @@ static void handleButtons(uint32_t now)
     bool b1Edge = b1 && !g_lastBtn1;
     bool b2Edge = b2 && !g_lastBtn2;
     
+    // Reset auto cycle on interaction
+    if (b1Edge || b2Edge) {
+        g_lastAutoCycle = now;
+    }
+    
     // Games card: buttons control the game
     // Use BOTH buttons pressed together to exit game
     if (g_currentCard == CARD_GAMES) {
@@ -904,7 +970,10 @@ static void handleButtons(uint32_t now)
                 // Exit games after holding both for 1s
                 bothHeldStart = 0;
                 g_gameMode = 0;
-                g_currentCard = (g_currentCard + 1) % g_cardCount;
+                
+                uint8_t next = getNextEnabledCard(g_currentCard);
+                g_currentCard = next;
+                
                 g_cards[g_currentCard].setup();
                 startTitleAnimation(now);
             }
@@ -1407,6 +1476,25 @@ void cards_loop()
     if (g_cardCount == 0)
     {
         return;
+    }
+    
+    // Auto cycle
+    if (cfg.cycleEnabled && cfg.cycleDuration > 0 && g_currentCard != CARD_GAMES) {
+        if (now - g_lastAutoCycle > (uint32_t)cfg.cycleDuration * 1000) {
+            // Switch to next card
+            uint8_t next = getNextEnabledCard(g_currentCard);
+            if (next != g_currentCard) {
+                // Reset presets for consistency
+                g_weatherPreset = 0; 
+                g_clockPreset = 0;
+                g_vuPreset = 0;
+                
+                g_currentCard = next;
+                g_cards[g_currentCard].setup();
+                startTitleAnimation(now);
+            }
+            g_lastAutoCycle = now;
+        }
     }
 
     // Check if title animation is playing

@@ -65,6 +65,12 @@ struct Settings
     char mqttPass[32];       // MQTT password (optional)
     char mqttTopic[64];      // Custom subscribe topic (optional)
     bool mqttEnabled;        // MQTT enabled flag
+    
+    // Card Cycle Settings
+    bool cardEnabled[10];     // Enabled/Disabled state for each card
+    uint8_t cardOrder[10];    // Display order (indices 0-9)
+    uint16_t cycleDuration;   // Seconds per card (0 = manual only)
+    bool cycleEnabled;        // Enable auto cycling
 };
 
 // Initialize settings (load from flash)

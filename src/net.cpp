@@ -38,6 +38,7 @@ static void handleSimulatePost();
 static void handleSettingsPost();
 static void handleSettingsGet();
 static void handleCardSwitch();
+static void handleCardsConfigPost();
 static void handleEditor();
 static void handleApiSprites();
 static void handleApiSpriteGet();
@@ -46,6 +47,7 @@ static void handleApiSpriteReset();
 
 static void handleRoot()
 {
+    Settings& cfg = settings_get();
     String html;
     html.reserve(6000);
     
@@ -117,6 +119,98 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
     html += R"(</div></div>
 <div class="container">
 <div class="grid">)";
+
+    html += "<div class=\"card\">";
+    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F4CB;</span><span class=\"card-title\">Card Management</span></div>";
+    
+    // Auto-Cycle Settings
+    html += "<form method=\"POST\" action=\"/cards_config\">";
+    html += "<div class=\"form-group\"><label>Auto-Cycle Settings</label>";
+    html += "<div class=\"row\" style=\"align-items:center\">";
+    html += "<div style=\"flex:1\"><label style=\"font-weight:normal\"><input type=\"checkbox\" name=\"cycleOn\" value=\"1\"" + String(cfg.cycleEnabled ? " checked" : "") + "> Enable Auto-Cycle</label></div>";
+    html += "<div style=\"flex:1\"><input type=\"number\" name=\"cycleDur\" value=\"" + String(cfg.cycleDuration) + "\" min=\"3\" max=\"3600\"> <span style=\"font-size:0.8em\">seconds</span></div>";
+    html += "</div></div>";
+
+    // Card Reordering List
+    html += "<div class=\"form-group\"><label>Card Order &amp; Visibility (Drag to Reorder)</label>";
+    html += "<p style=\"font-size:0.8em;color:var(--muted)\">Uncheck to hide. Drag handle to move.</p>";
+    html += "<ul id=\"cardList\" style=\"list-style:none;padding:0;margin:0\">";
+    
+    // Render list based on current order
+    // We need the card names array which is in cards.cpp but not exposed directly.
+    // Let's hardcode them here or make them accessible. 
+    // Hardcoding for now to match cards.cpp: Weather, Clock, BTC, Stock, Network, MIC, Sparkle, Aurora, Games, MQTT
+    const char* cardNames[] = {"Weather", "Clock", "Bitcoin", "Stocks", "Network", "Audio Visualizer", "Sparkle", "Aurora", "Games", "MQTT"};
+    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;"};
+    
+    for(int i=0; i<10; ++i) {
+        uint8_t cardIdx = cfg.cardOrder[i];
+        if(cardIdx > 9) cardIdx = 0; // Safety
+        
+        html += "<li class=\"card-item\" draggable=\"true\" data-idx=\"" + String(cardIdx) + "\" style=\"background:#fff;border:2px solid #000;margin-bottom:8px;padding:10px;display:flex;align-items:center;gap:10px;cursor:grab\">";
+        html += "<span class=\"drag-handle\" style=\"font-size:1.2em;cursor:grab\">&#x2630;</span>";
+        html += "<input type=\"checkbox\" name=\"en_" + String(cardIdx) + "\" value=\"1\"" + String(cfg.cardEnabled[cardIdx] ? " checked" : "") + " style=\"width:auto\">";
+        html += "<span style=\"font-size:1.2em\">" + String(cardIcons[cardIdx]) + "</span>";
+        html += "<span style=\"flex-grow:1;font-weight:bold\">" + String(cardNames[cardIdx]) + "</span>";
+        // Switch button
+        html += "<button type=\"button\" onclick=\"location.href='/card?card=" + String(cardIdx) + "'\" class=\"btn btn-secondary\" style=\"padding:4px 8px;font-size:0.7em\">SHOW</button>";
+        html += "</li>";
+    }
+    html += "</ul>";
+    html += "<input type=\"hidden\" name=\"order\" id=\"orderInput\">";
+    html += "</div>";
+    
+    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\" onclick=\"saveOrder()\">&#x1F4BE; Save Card Config</button>";
+    html += "</form>";
+    
+    // JS for drag and drop
+    html += R"(<script>
+    const list = document.getElementById('cardList');
+    let draggedItem = null;
+    
+    list.addEventListener('dragstart', (e) => {
+        draggedItem = e.target;
+        e.target.style.opacity = '0.5';
+    });
+    
+    list.addEventListener('dragend', (e) => {
+        e.target.style.opacity = '1';
+    });
+    
+    list.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const afterElement = getDragAfterElement(list, e.clientY);
+        const currentElement = draggedItem;
+        if (afterElement == null) {
+            list.appendChild(draggedItem);
+        } else {
+            list.insertBefore(draggedItem, afterElement);
+        }
+    });
+    
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.card-item:not(.dragging)')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+    
+    function saveOrder() {
+        const items = list.querySelectorAll('.card-item');
+        let order = [];
+        items.forEach(item => {
+            order.push(item.getAttribute('data-idx'));
+        });
+        document.getElementById('orderInput').value = order.join(',');
+    }
+    </script>)";
+    html += "</div>";
 
     // WiFi Settings Card
     html += "<div class=\"card\">";
@@ -286,7 +380,6 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
     html += "</form></div>";
 
     // Unified Configuration Card
-    Settings& cfg = settings_get();
     html += "<div class=\"card\">";
     html += "<div class=\"card-header\"><span class=\"card-icon\">&#x2699;</span><span class=\"card-title\">System Configuration</span></div>";
     
@@ -514,7 +607,8 @@ static void startServer()
     server.on("/api/sprite", HTTP_GET, handleApiSpriteGet);
     server.on("/api/sprite", HTTP_POST, handleApiSpriteSave);
     server.on("/api/sprite/reset", HTTP_POST, handleApiSpriteReset);
-    server.on("/card", HTTP_POST, handleCardSwitch);
+    server.on("/card", handleCardSwitch);
+    server.on("/cards_config", HTTP_POST, handleCardsConfigPost);
     server.begin();
 }
 
@@ -934,6 +1028,58 @@ static void handleCardSwitch()
         uint8_t preset = (uint8_t)server.arg("preset").toInt();
         cards_set_preset(preset);
     }
+    server.sendHeader("Location", "/");
+    server.send(303);
+}
+
+static void handleCardsConfigPost()
+{
+    Settings& cfg = settings_get();
+    
+    // 1. Parse Order
+    if (server.hasArg("order")) {
+        String orderStr = server.arg("order");
+        // Expected format: "0,1,2,3,..."
+        int start = 0;
+        int idx = 0;
+        while (start < orderStr.length() && idx < 10) {
+            int comma = orderStr.indexOf(',', start);
+            if (comma == -1) comma = orderStr.length();
+            
+            String val = orderStr.substring(start, comma);
+            cfg.cardOrder[idx] = (uint8_t)val.toInt();
+            
+            start = comma + 1;
+            idx++;
+        }
+    }
+    
+    // 2. Update Enabled States
+    // First clear all, then set found ones
+    // HTML forms don't send unchecked checkboxes
+    // Actually, let's reset all to false first if we have any "en_" params, 
+    // OR just iterate 0-9 and check if "en_I" exists.
+    
+    // BUT: If the form is partial, we might wipe settings? No, form sends all checkboxes if checked.
+    // If none are checked, none are sent. So we should iterate 0-9 and check presence.
+    
+    for(int i=0; i<10; ++i) {
+        String key = "en_" + String(i);
+        cfg.cardEnabled[i] = server.hasArg(key);
+    }
+    
+    // 3. Auto Cycle Settings
+    cfg.cycleEnabled = server.hasArg("cycleOn");
+    
+    if (server.hasArg("cycleDur")) {
+        uint16_t dur = (uint16_t)server.arg("cycleDur").toInt();
+        if (dur < 3) dur = 3;
+        if (dur > 3600) dur = 3600;
+        cfg.cycleDuration = dur;
+    }
+    
+    settings_save();
+    
     server.sendHeader("Location", "/");
     server.send(303);
 }
