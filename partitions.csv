@@ -1,0 +1,5 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# No OTA - maximized app partition for 4MB flash
+nvs,      data, nvs,     0x9000,  0x5000,
+app0,     app,  factory, 0x10000, 0x2F0000,
+spiffs,   data, spiffs,  0x300000,0x100000,

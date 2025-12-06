@@ -1,0 +1,67 @@
+#ifndef WEATHER_H
+#define WEATHER_H
+
+#include <stdint.h>
+
+// Expanded weather condition types
+enum WeatherType : uint8_t
+{
+    WEATHER_SUNNY = 0,       // Clear sky
+    WEATHER_PARTLY_CLOUDY = 1, // Partly cloudy
+    WEATHER_CLOUDY = 2,      // Overcast
+    WEATHER_FOG = 3,         // Fog/mist
+    WEATHER_DRIZZLE = 4,     // Light drizzle
+    WEATHER_RAIN = 5,        // Rain
+    WEATHER_HEAVY_RAIN = 6,  // Heavy rain/showers
+    WEATHER_STORM = 7,       // Thunderstorm
+    WEATHER_SNOW = 8,        // Snow
+    WEATHER_SLEET = 9,       // Sleet/freezing rain
+    WEATHER_WIND = 10,       // Windy (used for high wind conditions)
+    WEATHER_CLEAR_NIGHT = 11,// Clear night sky
+    WEATHER_TYPE_COUNT = 12
+};
+
+struct WeatherData
+{
+    int8_t temp;        // Current temperature in C
+    WeatherType type;   // Current condition
+    bool valid;         // Whether data is valid
+};
+
+struct ForecastSlot
+{
+    int8_t temp;
+    WeatherType type;
+};
+
+// Initialize weather module
+void weather_begin();
+
+// Call periodically to fetch/update weather
+void weather_update();
+
+// Get current weather
+WeatherData weather_get_current();
+
+// Get forecast slot (0-11 for 12-hour forecast)
+ForecastSlot weather_get_forecast(uint8_t slot);
+
+// Set location (latitude, longitude)
+void weather_set_location(float lat, float lon);
+
+// Get current location
+void weather_get_location(float* lat, float* lon);
+
+// Set location by city name (uses geocoding API)
+bool weather_set_city(const char* city);
+
+// Simulate weather for testing (stays until location change or stop)
+void weather_simulate(uint8_t type, int8_t temp);
+
+// Stop simulation mode and resume fetching
+void weather_stop_simulation();
+
+// Get weather type name
+const char* weather_type_name(WeatherType type);
+
+#endif
