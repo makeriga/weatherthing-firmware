@@ -49,8 +49,9 @@ struct Settings
     uint8_t brightMin;       // Minimum brightness (dark room) 5-40, default 8
     uint8_t brightMax;       // Maximum brightness (light room) 20-80, default 50
     uint8_t brightMode;      // 0=auto, 1=manual fixed
-    uint8_t brightManual;    // Manual brightness level 5-80
+    uint8_t brightManual;    // Manual brightness level 1-80
     bool brightBlanking;     // Use blanking frame for light measurement
+    uint8_t brightBlankSecs; // Blanking interval in seconds (10-120)
     
     // Timeline settings
     uint8_t forecastHours;   // 12, 24, or 48 hours forecast
@@ -66,11 +67,20 @@ struct Settings
     char mqttTopic[64];      // Custom subscribe topic (optional)
     bool mqttEnabled;        // MQTT enabled flag
     
+    // RSS Settings
+    char rssUrl[128];        // RSS Feed URL
+    uint8_t rssPalette;      // Color palette for RSS
+    uint8_t rssSpeed;        // Scroll speed (1-10)
+    uint8_t rssUpdateMins;   // Update interval
+    
     // Card Cycle Settings
-    bool cardEnabled[10];     // Enabled/Disabled state for each card
-    uint8_t cardOrder[10];    // Display order (indices 0-9)
+    bool cardEnabled[12];     // Enabled/Disabled state for each card
+    uint8_t cardOrder[12];    // Display order (indices)
     uint16_t cycleDuration;   // Seconds per card (0 = manual only)
     bool cycleEnabled;        // Enable auto cycling
+    
+    // Per-preset rotation settings (bitmask per card type, bit=1 means included in rotation)
+    uint32_t presetEnabled[12]; // Up to 32 presets per card type
 };
 
 // Initialize settings (load from flash)

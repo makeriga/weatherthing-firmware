@@ -69,6 +69,16 @@ void wt_hw_begin()
     g_button2.lastStable = g_button2.stable;
 }
 
+bool wt_button1_is_down()
+{
+    return g_button1.stable; // stable is true when button is pressed
+}
+
+bool wt_button2_is_down()
+{
+    return g_button2.stable; // stable is true when button is pressed
+}
+
 void wt_display_clear()
 {
     matrixStrip.clear();
@@ -148,6 +158,9 @@ void wt_timeline_set_pixel(uint8_t index, uint32_t color)
 
 void wt_leds_show()
 {
+    // Note: LED corruption on ESP32-C3 is a known issue due to WiFi interrupts
+    // The NeoPixel library uses RMT which should handle timing, but data copy can still be interrupted
+    // Critical sections cause bootloops - need ESP-IDF led_strip driver for proper fix
     matrixStrip.show();
     timelineStrip.show();
 }
@@ -166,12 +179,18 @@ void wt_set_brightness(uint8_t brightness)
 
 bool wt_button1_pressed()
 {
-    return wt_read_button(g_button1);
+    wt_read_button(g_button1);
+    bool pressed = g_button1.stable && !g_button1.lastStable;
+    g_button1.lastStable = g_button1.stable;
+    return pressed;
 }
 
 bool wt_button2_pressed()
 {
-    return wt_read_button(g_button2);
+    wt_read_button(g_button2);
+    bool pressed = g_button2.stable && !g_button2.lastStable;
+    g_button2.lastStable = g_button2.stable;
+    return pressed;
 }
 
 bool wt_cap_touch_active()
@@ -227,7 +246,7 @@ static bool g_blankingValid = false;
 // Stable light level with heavy hysteresis
 static uint32_t g_stableLightLevel = 2048;
 
-void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t manual, bool useBlanking)
+void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t manual, bool useBlanking, uint8_t blankIntervalSecs)
 {
     static uint32_t lastUpdate = 0;
     static uint8_t lastBrightness = 30;
@@ -245,8 +264,11 @@ void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t
     }
     
     // Blanking mode - periodically blank display to measure ambient light
-    // Do this every 2 seconds, blank for 5ms to let capacitor settle
-    if (useBlanking && !g_blankingActive && (now - lastBlankingMs > 2000)) {
+    // Interval is configurable in seconds (10-120), blank for 10ms to read sensor
+    uint32_t blankIntervalMs = (uint32_t)blankIntervalSecs * 1000UL;
+    if (blankIntervalMs < 10000) blankIntervalMs = 10000; // Minimum 10 seconds
+    
+    if (useBlanking && !g_blankingActive && (now - lastBlankingMs > blankIntervalMs)) {
         // Start blanking - turn off all LEDs briefly
         g_blankingActive = true;
         g_blankingStart = now;
@@ -258,8 +280,8 @@ void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t
     }
     
     if (g_blankingActive) {
-        // Wait for capacitor to settle (100nF needs a few ms)
-        if (now - g_blankingStart >= 5) {
+        // Wait 10ms for capacitor to settle, then read
+        if (now - g_blankingStart >= 10) {
             // Take reading with LEDs off
             g_blankingReading = analogRead(WT_LIGHT_PIN);
             g_blankingValid = true;

@@ -38,6 +38,8 @@ static void handleSimulatePost();
 static void handleSettingsPost();
 static void handleSettingsGet();
 static void handleCardSwitch();
+static void handleApiCardSwitch();
+static void handleApiSimulate();
 static void handleCardsConfigPost();
 static void handleEditor();
 static void handleApiSprites();
@@ -45,11 +47,23 @@ static void handleApiSpriteGet();
 static void handleApiSpriteSave();
 static void handleApiSpriteReset();
 
+// Helper to send HTML chunk and clear buffer
+static String g_html;
+static void sendChunk() {
+    if (g_html.length() > 0) {
+        server.sendContent(g_html);
+        g_html = "";
+    }
+}
+
 static void handleRoot()
 {
     Settings& cfg = settings_get();
-    String html;
-    html.reserve(6000);
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(200, "text/html", "");
+    
+    String& html = g_html;
+    html.reserve(4000);
     
     html += R"(<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -57,7 +71,7 @@ static void handleRoot()
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#f0f0f0;--card:#ffffff;--border:#000000;--text:#000000;--accent:#ffcc00;--success:#4ade80;--danger:#ff6b6b}
-body{font-family:'Courier New', Courier, monospace;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5;padding-bottom:50px}
+body{font-family:'Courier New', Courier, monospace;background-color:var(--bg);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Cpath fill='%23d8eef5' opacity='0.6' d='M85,25c0-8-6-15-14-15c-2,0-3,0.2-5,0.5c-3-5-8-8-14-8c-5,0-9,2-12,5c-5-11-16-18-29-18c-13,0-24,8-29,19c-3-3-7-5-12-5c-9,0-16,7-16,16c0,1,0.1,2,0.3,3c-8,5-13,14-13,25c0,17,14,30,30,30h90c17,0,30-14,30-30c0-12-4-22-16-22z'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Cpath fill='%23c5e4ed' opacity='0.4' d='M85,25c0-8-6-15-14-15c-2,0-3,0.2-5,0.5c-3-5-8-8-14-8c-5,0-9,2-12,5c-5-11-16-18-29-18c-13,0-24,8-29,19c-3-3-7-5-12-5c-9,0-16,7-16,16c0,1,0.1,2,0.3,3c-8,5-13,14-13,25c0,17,14,30,30,30h90c17,0,30-14,30-30c0-12-4-22-16-22z'/%3E%3C/svg%3E");background-size:400px 200px,300px 150px;background-position:0 0,200px 80px;animation:drift 120s linear infinite,drift2 90s linear infinite reverse;color:var(--text);min-height:100vh;line-height:1.5;padding-bottom:50px}
 .header{background:#000;color:#fff;padding:20px;text-align:center;border-bottom:6px solid #000;margin-bottom:30px;box-shadow:0 8px 0 rgba(0,0,0,0.2)}
 .header h1{font-size:2.5em;font-weight:900;text-transform:uppercase;letter-spacing:-2px;margin-bottom:10px;text-shadow:4px 4px 0 #ff00ff}
 .header .subtitle{font-weight:bold;text-transform:uppercase;letter-spacing:2px;font-size:0.8em}
@@ -93,12 +107,13 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
 .row>*{flex:1}
 .row .btn{flex:0 0 auto}
 .info-box{background:#f0f0f0;border:3px solid #000;padding:15px;margin-bottom:15px;font-weight:bold}
-.weather-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:15px}
+.weather-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:15px}
 .weather-btn{padding:15px;border:3px solid #000;background:#fff;cursor:pointer;transition:all 0.2s;font-size:1.5em;box-shadow:3px 3px 0 #000}
 .weather-btn:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 #000;background:#ffffcc}
 .temp-input{display:flex;align-items:center;gap:10px}
 .temp-input input{width:100px;text-align:center;font-size:1.5em}
 .footer{text-align:center;margin-top:40px;font-weight:bold;text-transform:uppercase}
+@keyframes drift{0%{background-position:0 0,200px 80px}100%{background-position:400px 200px,600px 230px}}@keyframes drift2{0%{background-position:200px 80px}100%{background-position:-100px -70px}}
 @media(max-width:600px){.grid{grid-template-columns:1fr}.row{flex-direction:column}.row>*{width:100%}}
 </style></head><body>
 <div class="header">
@@ -120,97 +135,185 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
 <div class="container">
 <div class="grid">)";
 
-    html += "<div class=\"card\">";
-    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F4CB;</span><span class=\"card-title\">Card Management</span></div>";
+    // Card names and icons for 11 cards
+    const char* cardNames[] = {"Weather", "Clock", "BTC", "Stocks", "Network", "Audio", "Sparkle", "Aurora", "Games", "MQTT", "RSS"};
+    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;", "&#x1F4F0;"};
     
-    // Auto-Cycle Settings
-    html += "<form method=\"POST\" action=\"/cards_config\">";
-    html += "<div class=\"form-group\"><label>Auto-Cycle Settings</label>";
-    html += "<div class=\"row\" style=\"align-items:center\">";
-    html += "<div style=\"flex:1\"><label style=\"font-weight:normal\"><input type=\"checkbox\" name=\"cycleOn\" value=\"1\"" + String(cfg.cycleEnabled ? " checked" : "") + "> Enable Auto-Cycle</label></div>";
-    html += "<div style=\"flex:1\"><input type=\"number\" name=\"cycleDur\" value=\"" + String(cfg.cycleDuration) + "\" min=\"3\" max=\"3600\"> <span style=\"font-size:0.8em\">seconds</span></div>";
-    html += "</div></div>";
-
-    // Card Reordering List
-    html += "<div class=\"form-group\"><label>Card Order &amp; Visibility (Drag to Reorder)</label>";
-    html += "<p style=\"font-size:0.8em;color:var(--muted)\">Uncheck to hide. Drag handle to move.</p>";
-    html += "<ul id=\"cardList\" style=\"list-style:none;padding:0;margin:0\">";
+    // ========== CARD GALLERY - Full width section ==========
+    html += "</div>"; // Close grid temporarily
+    html += "<div class=\"card\" style=\"margin-bottom:30px\">";
+    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F3AC;</span><span class=\"card-title\">Card Gallery</span></div>";
     
-    // Render list based on current order
-    // We need the card names array which is in cards.cpp but not exposed directly.
-    // Let's hardcode them here or make them accessible. 
-    // Hardcoding for now to match cards.cpp: Weather, Clock, BTC, Stock, Network, MIC, Sparkle, Aurora, Games, MQTT
-    const char* cardNames[] = {"Weather", "Clock", "Bitcoin", "Stocks", "Network", "Audio Visualizer", "Sparkle", "Aurora", "Games", "MQTT"};
-    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;"};
-    
-    for(int i=0; i<10; ++i) {
-        uint8_t cardIdx = cfg.cardOrder[i];
-        if(cardIdx > 9) cardIdx = 0; // Safety
-        
-        html += "<li class=\"card-item\" draggable=\"true\" data-idx=\"" + String(cardIdx) + "\" style=\"background:#fff;border:2px solid #000;margin-bottom:8px;padding:10px;display:flex;align-items:center;gap:10px;cursor:grab\">";
-        html += "<span class=\"drag-handle\" style=\"font-size:1.2em;cursor:grab\">&#x2630;</span>";
-        html += "<input type=\"checkbox\" name=\"en_" + String(cardIdx) + "\" value=\"1\"" + String(cfg.cardEnabled[cardIdx] ? " checked" : "") + " style=\"width:auto\">";
-        html += "<span style=\"font-size:1.2em\">" + String(cardIcons[cardIdx]) + "</span>";
-        html += "<span style=\"flex-grow:1;font-weight:bold\">" + String(cardNames[cardIdx]) + "</span>";
-        // Switch button
-        html += "<button type=\"button\" onclick=\"location.href='/card?card=" + String(cardIdx) + "'\" class=\"btn btn-secondary\" style=\"padding:4px 8px;font-size:0.7em\">SHOW</button>";
-        html += "</li>";
-    }
-    html += "</ul>";
-    html += "<input type=\"hidden\" name=\"order\" id=\"orderInput\">";
+    // Auto-cycle controls
+    html += "<form method=\"POST\" action=\"/cards_config\" id=\"cardForm\">";
+    html += "<div style=\"display:flex;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:20px;padding:15px;background:#f8f8f8;border:3px solid #000\">";
+    html += "<label style=\"font-weight:bold;display:flex;align-items:center;gap:8px\"><input type=\"checkbox\" name=\"cycleOn\" value=\"1\"" + String(cfg.cycleEnabled ? " checked" : "") + " style=\"width:20px;height:20px\"> Auto-Cycle</label>";
+    html += "<div style=\"display:flex;align-items:center;gap:8px\"><span style=\"font-weight:bold\">Every</span><input type=\"number\" name=\"cycleDur\" value=\"" + String(cfg.cycleDuration) + "\" min=\"3\" max=\"3600\" style=\"width:80px\"><span style=\"font-weight:bold\">sec</span></div>";
+    html += "<button type=\"submit\" class=\"btn btn-primary\" onclick=\"saveOrder()\" style=\"margin-left:auto\">&#x1F4BE; Save Config</button>";
     html += "</div>";
     
-    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\" onclick=\"saveOrder()\">&#x1F4BE; Save Card Config</button>";
+    // Card gallery grid
+    html += "<p style=\"font-size:0.85em;margin-bottom:15px;color:#666\">&#x2630; Drag cards to reorder. Click preset to show on display. Toggle checkbox to include in auto-cycle.</p>";
+    html += "<div id=\"cardGallery\" style=\"display:flex;flex-direction:column;gap:15px\">";
+    
+    // Generate cards in order (skip Sparkle=6 and Aurora=7, now VU-only)
+    for(int i=0; i<11; ++i) {
+        uint8_t cardIdx = cfg.cardOrder[i];
+        if(cardIdx > 10) cardIdx = 0;
+        if(cardIdx == 6 || cardIdx == 7) continue; // Skip Sparkle/Aurora
+        bool enabled = cfg.cardEnabled[cardIdx];
+        
+        html += "<div class=\"gallery-card\" draggable=\"true\" data-idx=\"" + String(cardIdx) + "\" style=\"background:#fff;border:4px solid #000;padding:12px;cursor:grab;opacity:" + String(enabled ? "1" : "0.5") + "\">";
+        
+        // Header with icon, name, and auto-rotate checkbox
+        html += "<div style=\"display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid #000\">";
+        html += "<span style=\"font-size:1.5em;cursor:grab\" class=\"drag-handle\">&#x2630;</span>";
+        html += "<span style=\"font-size:1.4em\">" + String(cardIcons[cardIdx]) + "</span>";
+        html += "<span style=\"font-weight:900;font-size:1.1em;text-transform:uppercase;flex:1\">" + String(cardNames[cardIdx]) + "</span>";
+        // Prominent auto-rotate checkbox
+        html += "<label style=\"display:flex;align-items:center;gap:4px;background:" + String(enabled ? "#4ade80" : "#ff6b6b") + ";padding:3px 8px;border:2px solid #000;font-size:0.7em;font-weight:bold;cursor:pointer\">";
+        html += "<input type=\"checkbox\" name=\"en_" + String(cardIdx) + "\" value=\"1\"" + String(enabled ? " checked" : "") + " style=\"width:16px;height:16px\" onchange=\"this.closest('.gallery-card').style.opacity=this.checked?1:0.5;this.parentElement.style.background=this.checked?'#4ade80':'#ff6b6b'\">";
+        html += "&#x1F503;</label>";
+        html += "</div>";
+        
+        
+        // Preset buttons with checkboxes for rotation inclusion
+        html += "<div style=\"display:flex;flex-wrap:wrap;gap:8px;margin-top:8px\">";
+        
+        // Helper lambda to generate preset button with checkbox (same style as weather sim buttons)
+        auto presetBtn = [&](uint8_t card, uint8_t preset, const char* label) {
+            bool checked = (cfg.presetEnabled[card] & (1UL << preset)) != 0;
+            html += "<label style=\"display:flex;align-items:center;gap:10px;background:#fffacd;border:4px solid #000;padding:16px 24px;font-size:1.2em;font-weight:bold;cursor:pointer;box-shadow:4px 4px 0 #000;transition:all 0.2s\" onmouseover=\"this.style.transform='translate(-2px,-2px)';this.style.boxShadow='6px 6px 0 #000'\" onmouseout=\"this.style.transform='';this.style.boxShadow='4px 4px 0 #000'\">";
+            html += "<input type=\"checkbox\" name=\"p" + String(card) + "_" + String(preset) + "\"" + String(checked ? " checked" : "") + " style=\"width:24px;height:24px;margin:0;cursor:pointer\">";
+            html += "<span onclick=\"showCard(" + String(card) + "," + String(preset) + ");event.preventDefault()\" style=\"cursor:pointer\">" + String(label) + "</span>";
+            html += "</label>";
+        };
+        
+        switch(cardIdx) {
+            case 0: // Weather presets (17 total)
+                presetBtn(0, 0, "Classic"); presetBtn(0, 1, "Bar"); presetBtn(0, 2, "Corner");
+                presetBtn(0, 4, "Minimal"); presetBtn(0, 5, "Day/Nite"); presetBtn(0, 6, "Term");
+                presetBtn(0, 8, "Forecast"); presetBtn(0, 9, "Pixel"); presetBtn(0, 10, "LCD");
+                presetBtn(0, 11, "Mood"); presetBtn(0, 12, "Type"); presetBtn(0, 13, "Waves");
+                presetBtn(0, 14, "Split"); presetBtn(0, 15, "Count"); presetBtn(0, 16, "Stack");
+                break;
+            case 1: // Clock presets
+                presetBtn(1, 0, "Digital"); presetBtn(1, 1, "Binary"); presetBtn(1, 2, "Minimal");
+                presetBtn(1, 3, "Bars"); presetBtn(1, 4, "Nixie"); presetBtn(1, 5, "Glitch");
+                presetBtn(1, 6, "Pong"); presetBtn(1, 7, "Word"); presetBtn(1, 8, "Bounce");
+                presetBtn(1, 9, "Matrix"); presetBtn(1, 10, "Radar"); presetBtn(1, 11, "Flip");
+                presetBtn(1, 12, "Cyber"); presetBtn(1, 13, "Analog");
+                break;
+            case 5: // Audio VU presets
+                presetBtn(5, 0, "Spectrum"); presetBtn(5, 1, "Wave"); presetBtn(5, 2, "Fire");
+                presetBtn(5, 3, "Pulse"); presetBtn(5, 4, "Waterfall"); presetBtn(5, 5, "Strobe");
+                presetBtn(5, 6, "Plasma"); presetBtn(5, 7, "Balls"); presetBtn(5, 8, "Matrix");
+                presetBtn(5, 9, "Rainbow"); presetBtn(5, 10, "Mirror"); presetBtn(5, 11, "Laser");
+                presetBtn(5, 12, "Dancer"); presetBtn(5, 13, "Heart"); presetBtn(5, 14, "Traffic");
+                presetBtn(5, 15, "Pacman"); presetBtn(5, 16, "Vortex"); presetBtn(5, 17, "EQ");
+                presetBtn(5, 18, "Disco"); presetBtn(5, 19, "Firework"); presetBtn(5, 20, "Rain");
+                presetBtn(5, 21, "Nyan"); presetBtn(5, 22, "Ocean"); presetBtn(5, 23, "Tetris");
+                presetBtn(5, 24, "Stars"); presetBtn(5, 25, "Lava"); presetBtn(5, 26, "Geo");
+                break;
+            case 8: // Game presets
+                presetBtn(8, 0, "Flappy"); presetBtn(8, 1, "Snake"); presetBtn(8, 2, "Breakout"); presetBtn(8, 3, "Pong");
+                break;
+            default: // Single preset cards
+                presetBtn(cardIdx, 0, "SHOW");
+                break;
+        }
+        html += "</div>";
+        html += "</div>";
+    }
+    
+    html += "</div>"; // End gallery grid
+    html += "<input type=\"hidden\" name=\"order\" id=\"orderInput\">";
     html += "</form>";
     
-    // JS for drag and drop
+    // JavaScript for gallery
     html += R"(<script>
-    const list = document.getElementById('cardList');
-    let draggedItem = null;
-    
-    list.addEventListener('dragstart', (e) => {
-        draggedItem = e.target;
-        e.target.style.opacity = '0.5';
-    });
-    
-    list.addEventListener('dragend', (e) => {
-        e.target.style.opacity = '1';
-    });
-    
-    list.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        const afterElement = getDragAfterElement(list, e.clientY);
-        const currentElement = draggedItem;
-        if (afterElement == null) {
-            list.appendChild(draggedItem);
-        } else {
-            list.insertBefore(draggedItem, afterElement);
-        }
-    });
-    
-    function getDragAfterElement(container, y) {
-        const draggableElements = [...container.querySelectorAll('.card-item:not(.dragging)')];
-        return draggableElements.reduce((closest, child) => {
-            const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
-            if (offset < 0 && offset > closest.offset) {
-                return { offset: offset, element: child };
-            } else {
-                return closest;
-            }
-        }, { offset: Number.NEGATIVE_INFINITY }).element;
+const gallery = document.getElementById('cardGallery');
+let draggedCard = null;
+
+// Touch support
+let touchStartY = 0;
+let touchItem = null;
+
+gallery.addEventListener('dragstart', e => {
+    if(!e.target.classList.contains('gallery-card')) return;
+    draggedCard = e.target;
+    e.target.style.opacity = '0.4';
+    e.target.style.transform = 'scale(0.95)';
+});
+
+gallery.addEventListener('dragend', e => {
+    if(!e.target.classList.contains('gallery-card')) return;
+    e.target.style.opacity = e.target.querySelector('input[type=checkbox]').checked ? '1' : '0.5';
+    e.target.style.transform = '';
+});
+
+gallery.addEventListener('dragover', e => {
+    e.preventDefault();
+    const afterEl = getDragAfterEl(gallery, e.clientY);
+    if(afterEl == null) gallery.appendChild(draggedCard);
+    else gallery.insertBefore(draggedCard, afterEl);
+});
+
+// Touch events for mobile
+gallery.addEventListener('touchstart', e => {
+    const card = e.target.closest('.gallery-card');
+    if(!card || !e.target.classList.contains('drag-handle')) return;
+    touchItem = card;
+    touchStartY = e.touches[0].clientY;
+    card.style.opacity = '0.6';
+}, {passive:true});
+
+gallery.addEventListener('touchmove', e => {
+    if(!touchItem) return;
+    e.preventDefault();
+    const y = e.touches[0].clientY;
+    const afterEl = getDragAfterEl(gallery, y);
+    if(afterEl == null) gallery.appendChild(touchItem);
+    else gallery.insertBefore(touchItem, afterEl);
+}, {passive:false});
+
+gallery.addEventListener('touchend', e => {
+    if(touchItem) {
+        touchItem.style.opacity = touchItem.querySelector('input[type=checkbox]').checked ? '1' : '0.5';
+        touchItem = null;
     }
+});
+
+function getDragAfterEl(container, y) {
+    const els = [...container.querySelectorAll('.gallery-card:not([style*="opacity: 0.4"])')] ;
+    return els.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if(offset < 0 && offset > closest.offset) return {offset, element:child};
+        return closest;
+    }, {offset: Number.NEGATIVE_INFINITY}).element;
+}
+
+function saveOrder() {
+    const items = gallery.querySelectorAll('.gallery-card');
+    let order = [];
+    items.forEach(item => order.push(item.getAttribute('data-idx')));
+    document.getElementById('orderInput').value = order.join(',');
+}
+
+function showCard(card, preset) {
+    fetch('/api/card?card='+card+'&preset='+preset)
+    .then(r=>r.json())
+    .then(d=>{if(d.ok){const b=event.target;b.style.background='#4ade80';setTimeout(()=>b.style.background='',300)}})
+    .catch(e=>console.error(e));
+}
+
+</script>)";
     
-    function saveOrder() {
-        const items = list.querySelectorAll('.card-item');
-        let order = [];
-        items.forEach(item => {
-            order.push(item.getAttribute('data-idx'));
-        });
-        document.getElementById('orderInput').value = order.join(',');
-    }
-    </script>)";
-    html += "</div>";
+    html += "</div>"; // End Card Gallery
+    sendChunk(); // Flush buffer after card gallery
+    
+    html += "<div class=\"grid\">"; // Reopen grid
 
     // WiFi Settings Card
     html += "<div class=\"card\">";
@@ -228,101 +331,14 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
     html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save WiFi Settings</button>";
     html += "</form></div>";
 
-    // Display Control Card - Organized by section
+    // Quick Controls Reference (compact)
     html += "<div class=\"card\">";
-    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F4FA;</span><span class=\"card-title\">Display Control</span></div>";
-    
-    // WEATHER section
-    html += "<div style=\"margin-bottom:16px\">";
-    html += "<p style=\"color:var(--accent);font-weight:600;margin-bottom:8px\">&#x26C5; Weather</p>";
-    html += "<div style=\"display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px\">";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"0\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Classic</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"1\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Big Temp</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"2\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Corner</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"3\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Animated</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"4\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Minimal</button></form>";
-    html += "</div>";
-    // Playful weather styles
-    html += "<p style=\"color:var(--muted);font-size:0.75em;margin-bottom:4px\">&#x1F3A8; Playful &amp; Artistic</p>";
-    html += "<div style=\"display:flex;gap:6px;flex-wrap:wrap\">";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"5\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F305; Day/Night</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"6\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F4BB; Terminal</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"7\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F170; Big Type</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"0\"><input type=\"hidden\" name=\"preset\" value=\"8\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F4CA; Forecast</button></form>";
+    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F3AE;</span><span class=\"card-title\">Controls</span></div>";
+    html += "<div style=\"font-size:0.85em;line-height:1.8\">";
+    html += "<p><strong>BTN1</strong> &#8594; Next &nbsp;|&nbsp; <strong>BTN2</strong> &#8594; Prev</p>";
+    html += "<p><strong>Touch</strong> &#8594; Game action/jump</p>";
+    html += "<p><strong>Hold both BTNs 1s</strong> &#8594; Exit games</p>";
     html += "</div></div>";
-    
-    // CLOCK section
-    html += "<div style=\"margin-bottom:16px\">";
-    html += "<p style=\"color:var(--accent);font-weight:600;margin-bottom:8px\">&#x1F551; Clock</p>";
-    html += "<div style=\"display:flex;gap:6px;flex-wrap:wrap\">";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"1\"><input type=\"hidden\" name=\"preset\" value=\"0\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Digital</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"1\"><input type=\"hidden\" name=\"preset\" value=\"1\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Binary</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"1\"><input type=\"hidden\" name=\"preset\" value=\"2\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Minimal</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"1\"><input type=\"hidden\" name=\"preset\" value=\"3\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Bars</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"1\"><input type=\"hidden\" name=\"preset\" value=\"4\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F4A1; Nixie</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"1\"><input type=\"hidden\" name=\"preset\" value=\"5\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F47E; Glitch</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"1\"><input type=\"hidden\" name=\"preset\" value=\"6\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F3D3; Pong</button></form>";
-    html += "</div></div>";
-    
-    // FINANCIAL section
-    html += "<div style=\"margin-bottom:16px\">";
-    html += "<p style=\"color:var(--accent);font-weight:600;margin-bottom:8px\">&#x1F4B0; Financial</p>";
-    html += "<div style=\"display:flex;gap:6px\">";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"2\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x20BF; Bitcoin</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"3\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F4C8; Stock</button></form>";
-    html += "</div></div>";
-    
-    // AUDIO section  
-    html += "<div style=\"margin-bottom:16px\">";
-    html += "<p style=\"color:var(--accent);font-weight:600;margin-bottom:8px\">&#x1F3B5; Audio Reactive</p>";
-    html += "<div style=\"display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px\">";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"0\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Spectrum</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"2\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F525; Fire</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"6\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Plasma</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"8\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F4BB; Matrix</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"11\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F4A5; Laser</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"6\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x2728; Sparkle</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"7\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F308; Aurora</button></form>";
-    html += "</div>";
-    // Playful audio styles
-    html += "<p style=\"color:var(--muted);font-size:0.75em;margin-bottom:4px\">&#x1F3A8; Playful</p>";
-    html += "<div style=\"display:flex;gap:6px;flex-wrap:wrap\">";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"12\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F57A; Dancer</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"13\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F497; Heartbeat</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"14\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F697; Traffic</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"15\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F47B; Pacman</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"5\"><input type=\"hidden\" name=\"preset\" value=\"16\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F300; Vortex</button></form>";
-    html += "</div></div>";
-    
-    // OTHER section
-    html += "<div style=\"margin-bottom:16px\">";
-    html += "<p style=\"color:var(--accent);font-weight:600;margin-bottom:8px\">&#x2699; Other</p>";
-    html += "<div style=\"display:flex;gap:6px;flex-wrap:wrap\">";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"4\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F310; Network</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"9\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">&#x1F3E0; MQTT</button></form>";
-    html += "</div></div>";
-    
-    // GAMES section
-    html += "<div>";
-    html += "<p style=\"color:var(--accent);font-weight:600;margin-bottom:8px\">&#x1F3AE; Games</p>";
-    html += "<div style=\"display:flex;gap:6px;flex-wrap:wrap\">";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"8\"><input type=\"hidden\" name=\"preset\" value=\"0\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Flappy</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"8\"><input type=\"hidden\" name=\"preset\" value=\"1\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Snake</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"8\"><input type=\"hidden\" name=\"preset\" value=\"2\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Breakout</button></form>";
-    html += "<form method=\"POST\" action=\"/card\" style=\"margin:0\"><input type=\"hidden\" name=\"card\" value=\"8\"><input type=\"hidden\" name=\"preset\" value=\"3\"><button type=\"submit\" class=\"btn btn-secondary\" style=\"padding:6px 10px;font-size:0.8em\">Pong</button></form>";
-    html += "</div></div>";
-    
-    // Quick Controls Reference
-    html += "<div style=\"margin-top:16px;padding:12px;background:rgba(255,255,255,0.05);border-radius:8px\">";
-    html += "<h4 style=\"margin:0 0 8px;font-size:0.9em;color:var(--primary)\">&#x1F3AE; Button Controls</h4>";
-    html += "<div style=\"font-size:0.8em;color:var(--muted);line-height:1.6\">";
-    html += "<p style=\"margin:4px 0\"><strong>BTN1</strong> &#8594; Next card/style</p>";
-    html += "<p style=\"margin:4px 0\"><strong>BTN2</strong> &#8594; Previous card/style</p>";
-    html += "<p style=\"margin:4px 0\"><strong>Touch</strong> &#8594; Game action / Confirm</p>";
-    html += "<p style=\"margin:4px 0\"><strong>Games:</strong> BTN1/BTN2 move paddle, Touch to jump/restart. Hold both buttons to exit games.</p>";
-    html += "</div></div>";
-    
-    html += "</div>";
 
     // Location Card
     float lat, lon;
@@ -352,33 +368,31 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
     // Weather Simulation Card - Expanded types
     html += "<div class=\"card\">";
     html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F9EA;</span><span class=\"card-title\">Weather Simulation</span></div>";
-    html += "<form method=\"POST\" action=\"/simulate\" id=\"simForm\">";
     html += "<div class=\"form-group\"><label>Weather Type</label>";
-    html += "<div class=\"weather-grid\" style=\"grid-template-columns:repeat(6,1fr)\">";
-    // Row 1: Sunny, Partly Cloudy, Cloudy, Fog, Drizzle, Rain
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"0\" onclick=\"selectWeather(this)\" title=\"Sunny\">&#x2600;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"1\" onclick=\"selectWeather(this)\" title=\"Partly Cloudy\">&#x26C5;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"2\" onclick=\"selectWeather(this)\" title=\"Cloudy\">&#x2601;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"3\" onclick=\"selectWeather(this)\" title=\"Fog\">&#x1F32B;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"4\" onclick=\"selectWeather(this)\" title=\"Drizzle\">&#x1F326;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"5\" onclick=\"selectWeather(this)\" title=\"Rain\">&#x1F327;</button>";
-    // Row 2: Heavy Rain, Storm, Snow, Sleet, Wind, Clear Night
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"6\" onclick=\"selectWeather(this)\" title=\"Heavy Rain\">&#x1F4A7;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"7\" onclick=\"selectWeather(this)\" title=\"Storm\">&#x26C8;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"8\" onclick=\"selectWeather(this)\" title=\"Snow\">&#x2744;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"9\" onclick=\"selectWeather(this)\" title=\"Sleet\">&#x1F328;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"10\" onclick=\"selectWeather(this)\" title=\"Wind\">&#x1F4A8;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"11\" onclick=\"selectWeather(this)\" title=\"Clear Night\">&#x1F319;</button>";
+    html += "<div class=\"weather-grid\">";
+    // Row 1: Sunny, Partly Cloudy, Cloudy, Fog
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"0\" onclick=\"simWeather(this)\" title=\"Sunny\">&#x2600;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"1\" onclick=\"simWeather(this)\" title=\"Partly Cloudy\">&#x26C5;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"2\" onclick=\"simWeather(this)\" title=\"Cloudy\">&#x2601;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"3\" onclick=\"simWeather(this)\" title=\"Fog\">&#x1F32B;</button>";
+    // Row 2: Drizzle, Rain, Heavy Rain, Storm
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"4\" onclick=\"simWeather(this)\" title=\"Drizzle\">&#x1F326;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"5\" onclick=\"simWeather(this)\" title=\"Rain\">&#x1F327;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"6\" onclick=\"simWeather(this)\" title=\"Heavy Rain\">&#x1F4A7;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"7\" onclick=\"simWeather(this)\" title=\"Storm\">&#x26C8;</button>";
+    // Row 3: Snow, Sleet, Wind, Clear Night
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"8\" onclick=\"simWeather(this)\" title=\"Snow\">&#x2744;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"9\" onclick=\"simWeather(this)\" title=\"Sleet\">&#x1F328;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"10\" onclick=\"simWeather(this)\" title=\"Wind\">&#x1F4A8;</button>";
+    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"11\" onclick=\"simWeather(this)\" title=\"Clear Night\">&#x1F319;</button>";
     html += "</div></div>";
-    html += "<input type=\"hidden\" name=\"type\" id=\"weatherType\" value=\"0\">";
     html += "<div class=\"form-group\"><label>Temperature</label>";
     html += "<div class=\"temp-input\">";
-    html += "<input name=\"temp\" type=\"number\" value=\"22\" min=\"-50\" max=\"50\">";
+    html += "<input id=\"simTemp\" type=\"number\" value=\"22\" min=\"-50\" max=\"50\">";
     html += "<span>&deg;C</span>";
-    html += "</div></div>";
-    html += "<button type=\"submit\" class=\"btn btn-accent btn-full\">&#x25B6; Simulate Weather</button>";
-    html += "</form></div>";
-
+    html += "</div></div></div>";
+    sendChunk(); // Flush before System Config
+    
     // Unified Configuration Card
     html += "<div class=\"card\">";
     html += "<div class=\"card-header\"><span class=\"card-icon\">&#x2699;</span><span class=\"card-title\">System Configuration</span></div>";
@@ -451,11 +465,10 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
         html += ">" + String(gates[i]) + "</option>";
     }
     html += "</select></div>";
-    html += "<div class=\"form-group\"><label><input type=\"checkbox\" name=\"vuInv\" value=\"1\"";
-    if (cfg.vuInvert) html += " checked";
-    html += "> Invert Response (fix reversed mic)</label></div>";
+    // Mic inversion always on - removed checkbox as it caused confusion
     html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save Audio Settings</button>";
     html += "</form></details>";
+    sendChunk(); // Flush after Audio section
 
     // Clock Section
     html += "<details><summary>Clock & Time</summary>";
@@ -516,15 +529,52 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
     html += ">Manual (fixed)</option>";
     html += "</select></div>";
     html += "<div class=\"form-group\"><label>Manual Brightness (" + String(cfg.brightManual) + ")</label>";
-    html += "<input type=\"range\" name=\"brightManual\" min=\"5\" max=\"80\" value=\"" + String(cfg.brightManual) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightManual\" min=\"1\" max=\"80\" value=\"" + String(cfg.brightManual) + "\"></div>";
     html += "<div class=\"form-group\"><label>Auto Min (dark room): " + String(cfg.brightMin) + "</label>";
-    html += "<input type=\"range\" name=\"brightMin\" min=\"5\" max=\"40\" value=\"" + String(cfg.brightMin) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightMin\" min=\"1\" max=\"40\" value=\"" + String(cfg.brightMin) + "\"></div>";
     html += "<div class=\"form-group\"><label>Auto Max (bright room): " + String(cfg.brightMax) + "</label>";
-    html += "<input type=\"range\" name=\"brightMax\" min=\"20\" max=\"80\" value=\"" + String(cfg.brightMax) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightMax\" min=\"10\" max=\"80\" value=\"" + String(cfg.brightMax) + "\"></div>";
     html += "<div class=\"form-group\"><label><input type=\"checkbox\" name=\"brightBlank\" value=\"1\"";
     if (cfg.brightBlanking) html += " checked";
     html += "> Use blanking for cleaner readings</label></div>";
+    html += "<div class=\"form-group\"><label>Blanking Interval: " + String(cfg.brightBlankSecs) + " sec</label>";
+    html += "<input type=\"range\" name=\"blankSec\" min=\"10\" max=\"120\" step=\"10\" value=\"" + String(cfg.brightBlankSecs) + "\"></div>";
     html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save Brightness</button>";
+    html += "</form></details>";
+    sendChunk(); // Flush after Brightness section
+
+    // RSS Section
+    html += "<details><summary>RSS Feed</summary>";
+    html += "<form method=\"POST\" action=\"/settings\">";
+    html += "<div class=\"form-group\"><label>RSS Feed URL</label>";
+    html += "<input name=\"rssUrl\" placeholder=\"https://rss.nytimes.com/services/xml/rss/nyt/World.xml\" value=\"";
+    html += cfg.rssUrl;
+    html += "\"></div>";
+    
+    html += "<div class=\"row\">";
+    html += "<div class=\"form-group\"><label>Update Interval (min)</label>";
+    html += "<input name=\"rssMins\" type=\"number\" min=\"1\" max=\"240\" value=\"" + String(cfg.rssUpdateMins) + "\"></div>";
+    
+    html += "<div class=\"form-group\"><label>Scroll Speed</label>";
+    html += "<select name=\"rssSpd\">";
+    for(int i=1; i<=10; ++i) {
+        html += "<option value=\"" + String(i) + "\"";
+        if (cfg.rssSpeed == i) html += " selected";
+        html += ">" + String(i) + "</option>";
+    }
+    html += "</select></div>";
+    html += "</div>";
+    
+    html += "<div class=\"form-group\"><label>Color Palette</label>";
+    html += "<select name=\"rssPal\" style=\"width:100%\">";
+    for (uint8_t i = 0; i < PALETTE_COUNT; ++i) {
+        html += "<option value=\"" + String(i) + "\"";
+        if (cfg.rssPalette == i) html += " selected";
+        html += ">" + String(settings_palette_name(i)) + "</option>";
+    }
+    html += "</select></div>";
+    
+    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save RSS Settings</button>";
     html += "</form></details>";
 
     // MQTT Section
@@ -569,7 +619,7 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
     html += "<div class=\"card\">";
     html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F6E0;</span><span class=\"card-title\">Tools &amp; Customization</span></div>";
     html += "<p style=\"color:var(--muted);margin-bottom:16px;font-size:0.9em\">Customize the display and edit pixel sprites</p>";
-    html += "<a href=\"/editor\" class=\"btn btn-accent btn-full\" style=\"margin-bottom:10px\">&#x1F3A8; Open Sprite Editor</a>";
+    html += "<a href=\"/editor\" class=\"btn btn-secondary btn-full\" style=\"margin-bottom:10px\">&#x1F3A8; Open Sprite Editor</a>";
     html += "<div class=\"quick-actions\">";
     html += "<a href=\"/\" class=\"btn btn-secondary\">&#x1F504; Refresh</a>";
     html += "<button class=\"btn btn-secondary\" onclick=\"alert('ESP32-C3 | 20x7 Matrix | 12 LED Timeline')\">&#x2139; Info</button>";
@@ -581,16 +631,20 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
 <p>by <a href="https://github.com/makeriga">Makeriga</a> • <a href="https://github.com/makeriga/weatherthing-firmware">GitHub</a> • <a href="/editor">Sprite Editor</a></p>
 </div>
 <script>
-function selectWeather(btn){
+function simWeather(btn){
+const type=btn.dataset.val;
+const temp=document.getElementById('simTemp').value;
 document.querySelectorAll('.weather-btn').forEach(b=>b.classList.remove('selected'));
 btn.classList.add('selected');
-document.getElementById('weatherType').value=btn.dataset.val;
+fetch('/api/simulate?type='+type+'&temp='+temp)
+.then(r=>r.json())
+.then(d=>{if(d.ok){btn.style.background='#4ade80';setTimeout(()=>btn.style.background='',400)}})
+.catch(e=>console.error(e));
 }
-document.querySelector('.weather-btn').classList.add('selected');
 </script>
 </body></html>)";
 
-    server.send(200, "text/html", html);
+    sendChunk(); // Final chunk
 }
 
 static void startServer()
@@ -608,6 +662,8 @@ static void startServer()
     server.on("/api/sprite", HTTP_POST, handleApiSpriteSave);
     server.on("/api/sprite/reset", HTTP_POST, handleApiSpriteReset);
     server.on("/card", handleCardSwitch);
+    server.on("/api/card", HTTP_GET, handleApiCardSwitch);
+    server.on("/api/simulate", HTTP_GET, handleApiSimulate);
     server.on("/cards_config", HTTP_POST, handleCardsConfigPost);
     server.begin();
 }
@@ -752,16 +808,29 @@ static void handleWifiPost()
     saveCreds(ssid, pass);
 
     String html;
-    html.reserve(512);
-    html += "<!DOCTYPE html><html><head><meta charset='utf-8'><title>WeatherThing WiFi</title></head><body>";
-    html += "<h1>WiFi settings saved</h1>";
-    html += "<p>SSID: ";
+    html.reserve(1024);
+    html += "<!DOCTYPE html><html><head><meta charset='utf-8'><title>WeatherThing WiFi</title>";
+    html += "<style>body{font-family:sans-serif;background:#000;color:#fff;text-align:center;padding:40px}";
+    html += ".box{background:#222;border:4px solid #fff;padding:30px;max-width:400px;margin:0 auto}";
+    html += "h1{color:#4ade80;margin-bottom:20px}";
+    html += ".spinner{width:40px;height:40px;border:4px solid #333;border-top:4px solid #4ade80;border-radius:50%;animation:spin 1s linear infinite;margin:20px auto}";
+    html += "@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}</style>";
+    html += "</head><body><div class='box'>";
+    html += "<h1>&#x2705; WiFi Saved!</h1>";
+    html += "<p>Network: <strong>";
     html += ssid;
-    html += "</p>";
-    html += "<p>Device will use these credentials on the next restart.</p>";
-    html += "<p><a href='/'>Back to setup</a></p>";
-    html += "</body></html>";
+    html += "</strong></p>";
+    html += "<div class='spinner'></div>";
+    html += "<p>Rebooting to connect...</p>";
+    html += "<p style='color:#888;font-size:0.9em'>Device will restart in 3 seconds</p>";
+    html += "</div></body></html>";
     server.send(200, "text/html", html);
+    
+    // Give time for the response to be sent, then reboot
+    delay(500);
+    server.handleClient();
+    delay(2500);
+    ESP.restart();
 }
 
 static void handleLocationPost()
@@ -879,8 +948,8 @@ static void handleSettingsPost()
         cfg.vuNoiseGate = (uint8_t)server.arg("noiseGate").toInt();
     }
     
-    // Checkbox: if not present, it means unchecked
-    cfg.vuInvert = server.hasArg("vuInv");
+    // Mic inversion always enabled for proper operation
+    cfg.vuInvert = true;
 
     if (server.hasArg("tempPalette")) {
         cfg.tempPalette = (uint8_t)server.arg("tempPalette").toInt();
@@ -931,21 +1000,26 @@ static void handleSettingsPost()
     }
     if (server.hasArg("brightManual")) {
         cfg.brightManual = (uint8_t)server.arg("brightManual").toInt();
-        if (cfg.brightManual < 5) cfg.brightManual = 5;
+        if (cfg.brightManual < 1) cfg.brightManual = 1;
         if (cfg.brightManual > 80) cfg.brightManual = 80;
     }
     if (server.hasArg("brightMin")) {
         cfg.brightMin = (uint8_t)server.arg("brightMin").toInt();
-        if (cfg.brightMin < 5) cfg.brightMin = 5;
+        if (cfg.brightMin < 1) cfg.brightMin = 1;
         if (cfg.brightMin > 40) cfg.brightMin = 40;
     }
     if (server.hasArg("brightMax")) {
         cfg.brightMax = (uint8_t)server.arg("brightMax").toInt();
-        if (cfg.brightMax < 20) cfg.brightMax = 20;
+        if (cfg.brightMax < 10) cfg.brightMax = 10;
         if (cfg.brightMax > 80) cfg.brightMax = 80;
     }
     // Checkbox: if not present, it means unchecked
     cfg.brightBlanking = server.hasArg("brightBlank");
+    if (server.hasArg("blankSec")) {
+        cfg.brightBlankSecs = (uint8_t)server.arg("blankSec").toInt();
+        if (cfg.brightBlankSecs < 10) cfg.brightBlankSecs = 10;
+        if (cfg.brightBlankSecs > 120) cfg.brightBlankSecs = 120;
+    }
     
     // MQTT settings
     bool mqttChanged = false;
@@ -991,6 +1065,27 @@ static void handleSettingsPost()
     // Enable MQTT if server is configured
     cfg.mqttEnabled = (cfg.mqttServer[0] != '\0');
     
+    // RSS settings
+    if (server.hasArg("rssUrl")) {
+        String url = server.arg("rssUrl");
+        url.trim();
+        strncpy(cfg.rssUrl, url.c_str(), sizeof(cfg.rssUrl) - 1);
+        cfg.rssUrl[sizeof(cfg.rssUrl) - 1] = '\0';
+    }
+    if (server.hasArg("rssMins")) {
+        uint8_t mins = (uint8_t)server.arg("rssMins").toInt();
+        if (mins >= 1 && mins <= 240) cfg.rssUpdateMins = mins;
+    }
+    if (server.hasArg("rssSpd")) {
+        cfg.rssSpeed = (uint8_t)server.arg("rssSpd").toInt();
+        if (cfg.rssSpeed < 1) cfg.rssSpeed = 1;
+        if (cfg.rssSpeed > 10) cfg.rssSpeed = 10;
+    }
+    if (server.hasArg("rssPal")) {
+        cfg.rssPalette = (uint8_t)server.arg("rssPal").toInt();
+        if (cfg.rssPalette >= PALETTE_COUNT) cfg.rssPalette = 0;
+    }
+    
     settings_save();
     
     // Reinitialize MQTT if settings changed
@@ -1032,6 +1127,31 @@ static void handleCardSwitch()
     server.send(303);
 }
 
+// AJAX-friendly card switching
+static void handleApiCardSwitch()
+{
+    if (server.hasArg("card")) {
+        uint8_t card = (uint8_t)server.arg("card").toInt();
+        cards_switch_to(card);
+    }
+    if (server.hasArg("preset")) {
+        uint8_t preset = (uint8_t)server.arg("preset").toInt();
+        cards_set_preset(preset);
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// AJAX-friendly weather simulation
+static void handleApiSimulate()
+{
+    if (server.hasArg("type") && server.hasArg("temp")) {
+        uint8_t wtype = (uint8_t)server.arg("type").toInt();
+        int8_t temp = (int8_t)server.arg("temp").toInt();
+        weather_simulate(wtype, temp);
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleCardsConfigPost()
 {
     Settings& cfg = settings_get();
@@ -1042,7 +1162,7 @@ static void handleCardsConfigPost()
         // Expected format: "0,1,2,3,..."
         int start = 0;
         int idx = 0;
-        while (start < orderStr.length() && idx < 10) {
+        while (start < (int)orderStr.length() && idx < 11) {
             int comma = orderStr.indexOf(',', start);
             if (comma == -1) comma = orderStr.length();
             
@@ -1054,18 +1174,28 @@ static void handleCardsConfigPost()
         }
     }
     
-    // 2. Update Enabled States
-    // First clear all, then set found ones
-    // HTML forms don't send unchecked checkboxes
-    // Actually, let's reset all to false first if we have any "en_" params, 
-    // OR just iterate 0-9 and check if "en_I" exists.
-    
-    // BUT: If the form is partial, we might wipe settings? No, form sends all checkboxes if checked.
-    // If none are checked, none are sent. So we should iterate 0-9 and check presence.
-    
-    for(int i=0; i<10; ++i) {
+    // 2. Update Enabled States (11 cards: 0-10)
+    for(int i=0; i<11; ++i) {
         String key = "en_" + String(i);
         cfg.cardEnabled[i] = server.hasArg(key);
+    }
+    
+    // 2b. Update Per-Preset Enabled States
+    // Reset all presets to disabled first, then enable checked ones
+    for(int card=0; card<12; ++card) {
+        cfg.presetEnabled[card] = 0;
+    }
+    // Process preset checkboxes (format: p{card}_{preset})
+    for(int i=0; i<server.args(); ++i) {
+        String name = server.argName(i);
+        if (name.startsWith("p") && name.indexOf('_') > 0) {
+            int underscore = name.indexOf('_');
+            int card = name.substring(1, underscore).toInt();
+            int preset = name.substring(underscore + 1).toInt();
+            if (card >= 0 && card < 12 && preset >= 0 && preset < 32) {
+                cfg.presetEnabled[card] |= (1UL << preset);
+            }
+        }
     }
     
     // 3. Auto Cycle Settings
@@ -1104,7 +1234,7 @@ static void handleEditor()
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--success:#238636;--danger:#da3633}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
 .header{background:linear-gradient(135deg,#1a1f26 0%,#0d1117 100%);border-bottom:1px solid var(--border);padding:20px;text-align:center}
 .header h1{font-size:1.6em;color:var(--accent);margin-bottom:4px}
 .back-link{color:var(--accent);text-decoration:none;font-size:0.9em}

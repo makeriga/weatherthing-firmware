@@ -55,7 +55,7 @@ void settings_begin()
     g_settings.vuSensitivity = 5;
     g_settings.vuNoiseGate = 50;
     g_settings.micGain = 5;  // Normal gain
-    g_settings.vuInvert = false; // Normal response
+    g_settings.vuInvert = true; // Inverted by default
     g_settings.weatherPreset = 0;
     g_settings.tempPalette = 0;  // Default temperature colors
     g_settings.stockSymbol[0] = '\0';
@@ -68,6 +68,7 @@ void settings_begin()
     g_settings.brightMode = 0;       // Auto by default
     g_settings.brightManual = 10;    // Manual brightness level (Lowered)
     g_settings.brightBlanking = true; // Use blanking for cleaner readings
+    g_settings.brightBlankSecs = 30;  // 30 second blanking interval
     g_settings.forecastHours = 12;   // 12 hour forecast default
     g_settings.simTimeoutSecs = 30;  // 30 second simulation timeout
     
@@ -79,13 +80,20 @@ void settings_begin()
     g_settings.mqttTopic[0] = '\0';
     g_settings.mqttEnabled = false;
     
+    // RSS defaults
+    g_settings.rssUrl[0] = '\0';
+    g_settings.rssPalette = 0;
+    g_settings.rssSpeed = 5;
+    g_settings.rssUpdateMins = 15;
+
     // Card Cycle defaults
-    for(int i=0; i<10; ++i) {
-        g_settings.cardEnabled[i] = true;
-        g_settings.cardOrder[i] = i;
+    for(int i=0; i<12; ++i) {
+        g_settings.cardEnabled[i] = (i < 11); // Only enable cards 0-10
+        g_settings.cardOrder[i] = i < 11 ? i : 0; // Valid order for 11 cards
+        g_settings.presetEnabled[i] = 0xFFFFFFFF; // All presets enabled by default
     }
     g_settings.cycleDuration = 10;
-    g_settings.cycleEnabled = true;
+    g_settings.cycleEnabled = false; // Disabled by default
     
     // Load from flash
     if (g_prefs.begin("wtsettings", true))
@@ -95,7 +103,7 @@ void settings_begin()
         g_settings.vuSensitivity = g_prefs.getUChar("vuSens", 5);
         g_settings.vuNoiseGate = g_prefs.getUChar("vuNoise", 50);
         g_settings.micGain = g_prefs.getUChar("micGain", 5);
-        g_settings.vuInvert = g_prefs.getBool("vuInv", false);
+        g_settings.vuInvert = g_prefs.getBool("vuInv", true);
         g_settings.weatherPreset = g_prefs.getUChar("wxPreset", 0);
         g_settings.tempPalette = g_prefs.getUChar("tempPal", 0);
         g_settings.stockEnabled = g_prefs.getBool("stockOn", false);
@@ -113,6 +121,7 @@ void settings_begin()
         g_settings.brightMode = g_prefs.getUChar("brightMode", 0);
         g_settings.brightManual = g_prefs.getUChar("brightMan", 30);
         g_settings.brightBlanking = g_prefs.getBool("brightBlk", true);
+        g_settings.brightBlankSecs = g_prefs.getUChar("blankSec", 30);
         g_settings.forecastHours = g_prefs.getUChar("fcstHours", 12);
         g_settings.simTimeoutSecs = g_prefs.getUShort("simTimeout", 30);
         
@@ -137,11 +146,21 @@ void settings_begin()
         
         g_settings.mqttEnabled = g_prefs.getBool("mqttOn", false);
         
+        // RSS settings
+        String rssU = g_prefs.getString("rssUrl", "");
+        strncpy(g_settings.rssUrl, rssU.c_str(), sizeof(g_settings.rssUrl) - 1);
+        g_settings.rssUrl[sizeof(g_settings.rssUrl) - 1] = '\0';
+        
+        g_settings.rssPalette = g_prefs.getUChar("rssPal", 0);
+        g_settings.rssSpeed = g_prefs.getUChar("rssSpd", 5);
+        g_settings.rssUpdateMins = g_prefs.getUChar("rssMins", 15);
+        
         // Card Cycle settings
-        if (g_prefs.isKey("cardEn")) g_prefs.getBytes("cardEn", g_settings.cardEnabled, 10);
-        if (g_prefs.isKey("cardOrd")) g_prefs.getBytes("cardOrd", g_settings.cardOrder, 10);
+        if (g_prefs.isKey("cardEn")) g_prefs.getBytes("cardEn", g_settings.cardEnabled, 12);
+        if (g_prefs.isKey("cardOrd")) g_prefs.getBytes("cardOrd", g_settings.cardOrder, 12);
+        if (g_prefs.isKey("presetEn")) g_prefs.getBytes("presetEn", g_settings.presetEnabled, 48); // 12 * 4 bytes
         g_settings.cycleDuration = g_prefs.getUShort("cycleDur", 10);
-        g_settings.cycleEnabled = g_prefs.getBool("cycleOn", true);
+        g_settings.cycleEnabled = g_prefs.getBool("cycleOn", false);
         
         g_prefs.end();
     }
@@ -149,6 +168,8 @@ void settings_begin()
     // Clamp values
     if (g_settings.animSpeed < 1) g_settings.animSpeed = 1;
     if (g_settings.animSpeed > 10) g_settings.animSpeed = 10;
+    if (g_settings.rssSpeed < 1) g_settings.rssSpeed = 1;
+    if (g_settings.rssSpeed > 10) g_settings.rssSpeed = 10;
     if (g_settings.vuPalette >= PALETTE_COUNT) g_settings.vuPalette = 0;
     if (g_settings.vuSensitivity < 1) g_settings.vuSensitivity = 1;
     if (g_settings.vuSensitivity > 10) g_settings.vuSensitivity = 10;
@@ -198,6 +219,7 @@ void settings_save()
         g_prefs.putUChar("brightMode", g_settings.brightMode);
         g_prefs.putUChar("brightMan", g_settings.brightManual);
         g_prefs.putBool("brightBlk", g_settings.brightBlanking);
+        g_prefs.putUChar("blankSec", g_settings.brightBlankSecs);
         g_prefs.putUChar("fcstHours", g_settings.forecastHours);
         g_prefs.putUShort("simTimeout", g_settings.simTimeoutSecs);
         
@@ -209,9 +231,16 @@ void settings_save()
         g_prefs.putString("mqttTop", g_settings.mqttTopic);
         g_prefs.putBool("mqttOn", g_settings.mqttEnabled);
         
+        // RSS settings
+        g_prefs.putString("rssUrl", g_settings.rssUrl);
+        g_prefs.putUChar("rssPal", g_settings.rssPalette);
+        g_prefs.putUChar("rssSpd", g_settings.rssSpeed);
+        g_prefs.putUChar("rssMins", g_settings.rssUpdateMins);
+
         // Card Cycle settings
-        g_prefs.putBytes("cardEn", g_settings.cardEnabled, 10);
-        g_prefs.putBytes("cardOrd", g_settings.cardOrder, 10);
+        g_prefs.putBytes("cardEn", g_settings.cardEnabled, 12);
+        g_prefs.putBytes("cardOrd", g_settings.cardOrder, 12);
+        g_prefs.putBytes("presetEn", g_settings.presetEnabled, 48); // 12 * 4 bytes
         g_prefs.putUShort("cycleDur", g_settings.cycleDuration);
         g_prefs.putBool("cycleOn", g_settings.cycleEnabled);
         
