@@ -72,6 +72,27 @@ static void rss_setup();
 static void rss_update(uint32_t now, uint32_t dt);
 static void rss_render();
 
+// Social media cards
+static void youtube_setup();
+static void youtube_update(uint32_t now, uint32_t dt);
+static void youtube_render();
+
+static void twitch_setup();
+static void twitch_update(uint32_t now, uint32_t dt);
+static void twitch_render();
+
+static void twitter_setup();
+static void twitter_update(uint32_t now, uint32_t dt);
+static void twitter_render();
+
+static void insta_setup();
+static void insta_update(uint32_t now, uint32_t dt);
+static void insta_render();
+
+static void tiktok_setup();
+static void tiktok_update(uint32_t now, uint32_t dt);
+static void tiktok_render();
+
 static void drawDigit(uint8_t x, uint8_t y, uint8_t d, uint32_t color);
 static uint32_t weatherColor(uint8_t type);
 
@@ -95,7 +116,7 @@ static uint8_t g_weatherPreset = 0;  // 0=classic, 1=fullscreen
 static uint8_t g_vuPreset = 0;       // 0=mirror, 1=bars, 2=dots
 static uint8_t g_clockPreset = 0;    // 0=digital, 1=binary, 2=minimal, 3=bars
 
-// Card order: Weather, Clock, BTC, Stock, Network, Audio, Sparkle, Aurora, Games, MQTT
+// Card order: Weather, Clock, BTC, Stock, Network, Audio, Sparkle, Aurora, Games, MQTT, RSS, Social
 static Card g_cards[] = {
     {weather_setup, weather_update, weather_render},   // 0
     {clock_setup, clock_update, clock_render},         // 1
@@ -107,7 +128,12 @@ static Card g_cards[] = {
     {aurora_setup, aurora_update, aurora_render},      // 7
     {games_setup, games_update, games_render},         // 8 (Games)
     {mqttcard_setup, mqttcard_update, mqttcard_render}, // 9 (MQTT/Home Assistant)
-    {rss_setup, rss_update, rss_render}                // 10 (RSS)
+    {rss_setup, rss_update, rss_render},               // 10 (RSS)
+    {youtube_setup, youtube_update, youtube_render},   // 11 (YouTube)
+    {twitch_setup, twitch_update, twitch_render},      // 12 (Twitch)
+    {twitter_setup, twitter_update, twitter_render},   // 13 (Twitter/X)
+    {insta_setup, insta_update, insta_render},         // 14 (Instagram)
+    {tiktok_setup, tiktok_update, tiktok_render}       // 15 (TikTok)
 };
 
 // Card indices for reference
@@ -122,6 +148,11 @@ static const uint8_t CARD_AURORA = 7;
 static const uint8_t CARD_GAMES = 8;
 static const uint8_t CARD_MQTT = 9;
 static const uint8_t CARD_RSS = 10;
+static const uint8_t CARD_YOUTUBE = 11;
+static const uint8_t CARD_TWITCH = 12;
+static const uint8_t CARD_TWITTER = 13;
+static const uint8_t CARD_INSTA = 14;
+static const uint8_t CARD_TIKTOK = 15;
 
 static const uint8_t g_cardCount = sizeof(g_cards) / sizeof(g_cards[0]);
 static uint8_t g_currentCard = 0;
@@ -141,12 +172,18 @@ static const char* g_cardNames[] = {
     "Aurora",    // 7
     "Games",     // 8
     "MQTT",      // 9
-    "RSS"        // 10
+    "RSS",       // 10
+    "YouTube",   // 11
+    "Twitch",    // 12
+    "Twitter",   // 13
+    "Insta",     // 14
+    "TikTok"     // 15
 };
 
 // Which cards are "musical" (show note icon) - VU (5), Sparkle (6), Aurora (7)
 static const bool g_cardMusical[] = {
-    false, false, false, false, false, true, true, true, false, false, false
+    false, false, false, false, false, true, true, true, false, false, false,
+    false, false, false, false, false  // Social cards not musical
 };
 
 // Title animation state
@@ -1784,10 +1821,16 @@ void cards_loop()
         }
     }
 
-    // Background tasks (fetch tickers)
+    // Background tasks (fetch tickers and social media)
     if (now % 1000 == 0) { // Check every second
         ticker_update(now, 0);
         stock_update(now, 0);
+        // Social media updates (they manage their own timing)
+        youtube_update(now, 0);
+        twitch_update(now, 0);
+        twitter_update(now, 0);
+        insta_update(now, 0);
+        tiktok_update(now, 0);
     }
 
     Card &card = g_cards[g_currentCard];
@@ -6683,4 +6726,438 @@ static void rss_render() {
     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
         wt_timeline_set_pixel(i, settings_palette_color(cfg.rssPalette, i * 20));
     }
+}
+
+// ============== SOCIAL MEDIA CARDS ==============
+
+// Shared social card state
+static uint32_t g_ytLastFetch = 0;
+static uint32_t g_ytSubs = 0;
+static bool g_ytValid = false;
+
+static uint32_t g_twitchLastFetch = 0;
+static uint32_t g_twitchFollowers = 0;
+static bool g_twitchValid = false;
+
+static uint32_t g_twitterLastFetch = 0;
+static uint32_t g_twitterFollowers = 0;
+static bool g_twitterValid = false;
+
+static uint32_t g_instaLastFetch = 0;
+static uint32_t g_instaFollowers = 0;
+static bool g_instaValid = false;
+
+static uint32_t g_tiktokLastFetch = 0;
+static uint32_t g_tiktokFollowers = 0;
+static bool g_tiktokValid = false;
+
+// Helper: Format large numbers (K/M notation)
+// Returns formatted string in provided buffer
+static void formatCount(uint32_t count, char* buf, size_t bufSize) {
+    if (count >= 1000000) {
+        // Millions: show X.XM
+        uint32_t millions = count / 1000000;
+        uint32_t remainder = (count % 1000000) / 100000;
+        if (millions >= 100) {
+            snprintf(buf, bufSize, "%luM", (unsigned long)millions);
+        } else if (millions >= 10) {
+            snprintf(buf, bufSize, "%luM", (unsigned long)millions);
+        } else {
+            snprintf(buf, bufSize, "%lu.%luM", (unsigned long)millions, (unsigned long)remainder);
+        }
+    } else if (count >= 10000) {
+        // Tens of thousands: show XXK
+        snprintf(buf, bufSize, "%luK", (unsigned long)(count / 1000));
+    } else if (count >= 1000) {
+        // Thousands: show X.XK
+        uint32_t thousands = count / 1000;
+        uint32_t remainder = (count % 1000) / 100;
+        snprintf(buf, bufSize, "%lu.%luK", (unsigned long)thousands, (unsigned long)remainder);
+    } else {
+        // Under 1000: show exact number
+        snprintf(buf, bufSize, "%lu", (unsigned long)count);
+    }
+}
+
+// Draw YouTube play button icon (7x7) - Red with white triangle
+static void drawYouTubeIcon(uint8_t x, uint8_t y) {
+    uint32_t red = wt_color(255, 0, 0);
+    uint32_t white = wt_color(255, 255, 255);
+    
+    // Red rounded rectangle
+    wt_display_set_pixel_xy(x+1, y, red);
+    wt_display_set_pixel_xy(x+2, y, red);
+    wt_display_set_pixel_xy(x+3, y, red);
+    wt_display_set_pixel_xy(x+4, y, red);
+    wt_display_set_pixel_xy(x+5, y, red);
+    for(int r=1; r<=5; r++) {
+        for(int c=0; c<7; c++) {
+            wt_display_set_pixel_xy(x+c, y+r, red);
+        }
+    }
+    wt_display_set_pixel_xy(x+1, y+6, red);
+    wt_display_set_pixel_xy(x+2, y+6, red);
+    wt_display_set_pixel_xy(x+3, y+6, red);
+    wt_display_set_pixel_xy(x+4, y+6, red);
+    wt_display_set_pixel_xy(x+5, y+6, red);
+    
+    // White play triangle
+    wt_display_set_pixel_xy(x+2, y+2, white);
+    wt_display_set_pixel_xy(x+2, y+3, white);
+    wt_display_set_pixel_xy(x+2, y+4, white);
+    wt_display_set_pixel_xy(x+3, y+3, white);
+    wt_display_set_pixel_xy(x+4, y+3, white);
+}
+
+// Draw Twitch icon (7x7) - Purple with speech bubble
+static void drawTwitchIcon(uint8_t x, uint8_t y) {
+    uint32_t purple = wt_color(145, 70, 255);
+    
+    // Speech bubble shape
+    wt_display_set_pixel_xy(x+1, y, purple);
+    wt_display_set_pixel_xy(x+2, y, purple);
+    wt_display_set_pixel_xy(x+3, y, purple);
+    wt_display_set_pixel_xy(x+4, y, purple);
+    wt_display_set_pixel_xy(x+5, y, purple);
+    for(int r=1; r<=4; r++) {
+        wt_display_set_pixel_xy(x, y+r, purple);
+        wt_display_set_pixel_xy(x+6, y+r, purple);
+        wt_display_set_pixel_xy(x+1, y+r, purple);
+        wt_display_set_pixel_xy(x+5, y+r, purple);
+    }
+    wt_display_set_pixel_xy(x, y+5, purple);
+    wt_display_set_pixel_xy(x+1, y+5, purple);
+    wt_display_set_pixel_xy(x+2, y+5, purple);
+    wt_display_set_pixel_xy(x+3, y+5, purple);
+    wt_display_set_pixel_xy(x+1, y+6, purple);
+    wt_display_set_pixel_xy(x+2, y+6, purple);
+}
+
+// Draw Twitter/X icon (7x7) - Black X
+static void drawTwitterIcon(uint8_t x, uint8_t y) {
+    uint32_t black = wt_color(255, 255, 255); // White on dark display
+    
+    // X shape
+    wt_display_set_pixel_xy(x, y, black);
+    wt_display_set_pixel_xy(x+6, y, black);
+    wt_display_set_pixel_xy(x+1, y+1, black);
+    wt_display_set_pixel_xy(x+5, y+1, black);
+    wt_display_set_pixel_xy(x+2, y+2, black);
+    wt_display_set_pixel_xy(x+4, y+2, black);
+    wt_display_set_pixel_xy(x+3, y+3, black);
+    wt_display_set_pixel_xy(x+2, y+4, black);
+    wt_display_set_pixel_xy(x+4, y+4, black);
+    wt_display_set_pixel_xy(x+1, y+5, black);
+    wt_display_set_pixel_xy(x+5, y+5, black);
+    wt_display_set_pixel_xy(x, y+6, black);
+    wt_display_set_pixel_xy(x+6, y+6, black);
+}
+
+// Draw Instagram icon (7x7) - Gradient camera
+static void drawInstaIcon(uint8_t x, uint8_t y) {
+    uint32_t pink = wt_color(255, 0, 100);
+    uint32_t orange = wt_color(255, 150, 0);
+    uint32_t purple = wt_color(180, 50, 200);
+    
+    // Outer square with gradient effect
+    wt_display_set_pixel_xy(x+1, y, orange);
+    wt_display_set_pixel_xy(x+2, y, orange);
+    wt_display_set_pixel_xy(x+3, y, pink);
+    wt_display_set_pixel_xy(x+4, y, pink);
+    wt_display_set_pixel_xy(x+5, y, purple);
+    for(int r=1; r<=5; r++) {
+        wt_display_set_pixel_xy(x, y+r, (r<3) ? orange : pink);
+        wt_display_set_pixel_xy(x+6, y+r, (r<3) ? pink : purple);
+    }
+    wt_display_set_pixel_xy(x+1, y+6, pink);
+    wt_display_set_pixel_xy(x+2, y+6, pink);
+    wt_display_set_pixel_xy(x+3, y+6, purple);
+    wt_display_set_pixel_xy(x+4, y+6, purple);
+    wt_display_set_pixel_xy(x+5, y+6, purple);
+    
+    // Camera lens circle
+    wt_display_set_pixel_xy(x+2, y+2, pink);
+    wt_display_set_pixel_xy(x+3, y+2, pink);
+    wt_display_set_pixel_xy(x+4, y+2, pink);
+    wt_display_set_pixel_xy(x+2, y+3, pink);
+    wt_display_set_pixel_xy(x+4, y+3, pink);
+    wt_display_set_pixel_xy(x+2, y+4, pink);
+    wt_display_set_pixel_xy(x+3, y+4, pink);
+    wt_display_set_pixel_xy(x+4, y+4, pink);
+    
+    // Flash dot
+    wt_display_set_pixel_xy(x+5, y+1, wt_color(255, 255, 255));
+}
+
+// Draw TikTok icon (7x7) - Musical note with cyan/red offset
+static void drawTikTokIcon(uint8_t x, uint8_t y) {
+    uint32_t white = wt_color(255, 255, 255);
+    uint32_t cyan = wt_color(0, 255, 255);
+    uint32_t red = wt_color(255, 0, 80);
+    
+    // Note stem
+    wt_display_set_pixel_xy(x+4, y, white);
+    wt_display_set_pixel_xy(x+4, y+1, white);
+    wt_display_set_pixel_xy(x+4, y+2, white);
+    wt_display_set_pixel_xy(x+4, y+3, white);
+    wt_display_set_pixel_xy(x+4, y+4, white);
+    
+    // Note head
+    wt_display_set_pixel_xy(x+2, y+5, white);
+    wt_display_set_pixel_xy(x+3, y+5, white);
+    wt_display_set_pixel_xy(x+2, y+6, white);
+    wt_display_set_pixel_xy(x+3, y+6, white);
+    
+    // Cyan offset (left)
+    wt_display_set_pixel_xy(x+3, y, cyan);
+    wt_display_set_pixel_xy(x+3, y+1, cyan);
+    wt_display_set_pixel_xy(x+1, y+5, cyan);
+    wt_display_set_pixel_xy(x+1, y+6, cyan);
+    
+    // Red offset (right)
+    wt_display_set_pixel_xy(x+5, y+1, red);
+    wt_display_set_pixel_xy(x+5, y+2, red);
+    
+    // Flag
+    wt_display_set_pixel_xy(x+5, y, white);
+    wt_display_set_pixel_xy(x+6, y+1, white);
+}
+
+// Helper to render social count with icon
+static void renderSocialCard(void (*drawIcon)(uint8_t, uint8_t), uint32_t count, bool valid, uint32_t brandColor) {
+    wt_display_clear();
+    wt_timeline_clear();
+    
+    // Draw icon at left
+    drawIcon(0, 0);
+    
+    if (!valid) {
+        // Pulsing dot while loading
+        uint8_t b = 50 + (millis() / 10) % 100;
+        wt_display_set_pixel_xy(10, 3, wt_color(b, b, b));
+        return;
+    }
+    
+    // Format count
+    char countStr[12];
+    formatCount(count, countStr, sizeof(countStr));
+    
+    // Calculate text width
+    int len = strlen(countStr);
+    int textWidth = len * 4 + (len - 1); // 4px per char + 1px spacing
+    
+    // Start after icon (icon is 7px wide)
+    int startX = 8 + (WT_MATRIX_WIDTH - 8 - textWidth) / 2;
+    if (startX < 8) startX = 8;
+    
+    // Draw count
+    for(int i = 0; i < len; i++) {
+        int16_t x = startX + i * 5;
+        if (x >= 0 && x < WT_MATRIX_WIDTH - 3) {
+            drawDigit(x, 0, countStr[i] - '0', brandColor);
+            // Handle letters (K, M, .)
+            if (countStr[i] == 'K' || countStr[i] == 'M' || countStr[i] == '.') {
+                const uint8_t* bitmap = getCharBitmap((uint8_t)countStr[i]);
+                for(int r=0; r<7; ++r) {
+                    for(int cx=0; cx<4; ++cx) {
+                        if (bitmap[r] & (1<<(3-cx))) {
+                            wt_display_set_pixel_xy(x + cx, 6 - r, brandColor);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Timeline in brand color
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        uint8_t r = (brandColor >> 16) & 0xFF;
+        uint8_t g = (brandColor >> 8) & 0xFF;
+        uint8_t b = brandColor & 0xFF;
+        uint8_t pulse = 60 + ((millis() / 50 + i * 3) % 60);
+        wt_timeline_set_pixel(i, wt_color(r * pulse / 120, g * pulse / 120, b * pulse / 120));
+    }
+}
+
+// ============== YOUTUBE CARD ==============
+
+static void youtube_setup() {
+    g_ytLastFetch = 0;
+    g_ytSubs = 0;
+    g_ytValid = false;
+}
+
+static void youtube_update(uint32_t now, uint32_t dt) {
+    Settings& cfg = settings_get();
+    
+    // Skip if not configured
+    if (cfg.ytChannelId[0] == '\0' || cfg.ytApiKey[0] == '\0') {
+        g_ytValid = false;
+        return;
+    }
+    
+    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
+    if (WiFi.status() == WL_CONNECTED && (now - g_ytLastFetch > updateMs || g_ytLastFetch == 0)) {
+        g_ytLastFetch = now;
+        
+        String url = "https://www.googleapis.com/youtube/v3/channels?part=statistics&id=";
+        url += cfg.ytChannelId;
+        url += "&key=";
+        url += cfg.ytApiKey;
+        
+        HTTPClient http;
+        http.begin(url);
+        http.setTimeout(15000);
+        int code = http.GET();
+        
+        Serial.printf("[YouTube] API response: %d\n", code);
+        
+        if (code == 200) {
+            String payload = http.getString();
+            int subIdx = payload.indexOf("\"subscriberCount\"");
+            if (subIdx >= 0) {
+                int start = payload.indexOf("\"", subIdx + 17) + 1;
+                int end = payload.indexOf("\"", start);
+                if (start > 0 && end > start) {
+                    g_ytSubs = payload.substring(start, end).toInt();
+                    g_ytValid = true;
+                    Serial.printf("[YouTube] Subscribers: %lu\n", (unsigned long)g_ytSubs);
+                }
+            }
+        }
+        http.end();
+    }
+}
+
+static void youtube_render() {
+    renderSocialCard(drawYouTubeIcon, g_ytSubs, g_ytValid, wt_color(255, 0, 0));
+}
+
+// ============== TWITCH CARD ==============
+
+static void twitch_setup() {
+    g_twitchLastFetch = 0;
+    g_twitchFollowers = 0;
+    g_twitchValid = false;
+}
+
+static void twitch_update(uint32_t now, uint32_t dt) {
+    Settings& cfg = settings_get();
+    
+    // Skip if not configured
+    if (cfg.twitchUser[0] == '\0' || cfg.twitchClientId[0] == '\0') {
+        g_twitchValid = false;
+        return;
+    }
+    
+    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
+    if (WiFi.status() == WL_CONNECTED && (now - g_twitchLastFetch > updateMs || g_twitchLastFetch == 0)) {
+        g_twitchLastFetch = now;
+        
+        // Note: Twitch API requires OAuth token, showing placeholder
+        // For real implementation, would need OAuth flow
+        Serial.println("[Twitch] API requires OAuth - showing placeholder");
+        g_twitchFollowers = 0;
+        g_twitchValid = false;
+    }
+}
+
+static void twitch_render() {
+    renderSocialCard(drawTwitchIcon, g_twitchFollowers, g_twitchValid, wt_color(145, 70, 255));
+}
+
+// ============== TWITTER/X CARD ==============
+
+static void twitter_setup() {
+    g_twitterLastFetch = 0;
+    g_twitterFollowers = 0;
+    g_twitterValid = false;
+}
+
+static void twitter_update(uint32_t now, uint32_t dt) {
+    Settings& cfg = settings_get();
+    
+    // Skip if not configured
+    if (cfg.twitterUser[0] == '\0') {
+        g_twitterValid = false;
+        return;
+    }
+    
+    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
+    if (WiFi.status() == WL_CONNECTED && (now - g_twitterLastFetch > updateMs || g_twitterLastFetch == 0)) {
+        g_twitterLastFetch = now;
+        
+        // Note: Twitter API v2 requires Bearer token
+        Serial.println("[Twitter] API requires Bearer token - showing placeholder");
+        g_twitterFollowers = 0;
+        g_twitterValid = false;
+    }
+}
+
+static void twitter_render() {
+    renderSocialCard(drawTwitterIcon, g_twitterFollowers, g_twitterValid, wt_color(255, 255, 255));
+}
+
+// ============== INSTAGRAM CARD ==============
+
+static void insta_setup() {
+    g_instaLastFetch = 0;
+    g_instaFollowers = 0;
+    g_instaValid = false;
+}
+
+static void insta_update(uint32_t now, uint32_t dt) {
+    Settings& cfg = settings_get();
+    
+    // Skip if not configured
+    if (cfg.instaUser[0] == '\0') {
+        g_instaValid = false;
+        return;
+    }
+    
+    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
+    if (WiFi.status() == WL_CONNECTED && (now - g_instaLastFetch > updateMs || g_instaLastFetch == 0)) {
+        g_instaLastFetch = now;
+        
+        // Note: Instagram API requires Facebook business integration
+        Serial.println("[Instagram] API requires FB integration - showing placeholder");
+        g_instaFollowers = 0;
+        g_instaValid = false;
+    }
+}
+
+static void insta_render() {
+    renderSocialCard(drawInstaIcon, g_instaFollowers, g_instaValid, wt_color(255, 0, 100));
+}
+
+// ============== TIKTOK CARD ==============
+
+static void tiktok_setup() {
+    g_tiktokLastFetch = 0;
+    g_tiktokFollowers = 0;
+    g_tiktokValid = false;
+}
+
+static void tiktok_update(uint32_t now, uint32_t dt) {
+    Settings& cfg = settings_get();
+    
+    // Skip if not configured
+    if (cfg.tiktokUser[0] == '\0') {
+        g_tiktokValid = false;
+        return;
+    }
+    
+    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
+    if (WiFi.status() == WL_CONNECTED && (now - g_tiktokLastFetch > updateMs || g_tiktokLastFetch == 0)) {
+        g_tiktokLastFetch = now;
+        
+        // Note: TikTok API requires OAuth
+        Serial.println("[TikTok] API requires OAuth - showing placeholder");
+        g_tiktokFollowers = 0;
+        g_tiktokValid = false;
+    }
+}
+
+static void tiktok_render() {
+    renderSocialCard(drawTikTokIcon, g_tiktokFollowers, g_tiktokValid, wt_color(255, 255, 255));
 }

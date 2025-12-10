@@ -74,13 +74,23 @@ struct Settings
     uint8_t rssUpdateMins;   // Update interval
     
     // Card Cycle Settings
-    bool cardEnabled[12];     // Enabled/Disabled state for each card
-    uint8_t cardOrder[12];    // Display order (indices)
+    bool cardEnabled[16];     // Enabled/Disabled state for each card (expanded for social)
+    uint8_t cardOrder[16];    // Display order (indices)
     uint16_t cycleDuration;   // Seconds per card (0 = manual only)
     bool cycleEnabled;        // Enable auto cycling
     
     // Per-preset rotation settings (bitmask per card type, bit=1 means included in rotation)
-    uint32_t presetEnabled[12]; // Up to 32 presets per card type
+    uint32_t presetEnabled[16]; // Up to 32 presets per card type (expanded for social cards)
+    
+    // Social Media Settings
+    char ytChannelId[32];        // YouTube Channel ID
+    char ytApiKey[48];           // YouTube API Key
+    char twitchUser[32];         // Twitch username
+    char twitchClientId[48];     // Twitch Client ID
+    char twitterUser[32];        // Twitter/X username  
+    char instaUser[32];          // Instagram username
+    char tiktokUser[32];         // TikTok username
+    uint8_t socialUpdateMins;    // Update interval for social cards (1-60 min)
 };
 
 // Initialize settings (load from flash)

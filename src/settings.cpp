@@ -55,7 +55,7 @@ void settings_begin()
     g_settings.vuSensitivity = 5;
     g_settings.vuNoiseGate = 50;
     g_settings.micGain = 5;  // Normal gain
-    g_settings.vuInvert = true; // Inverted by default
+    g_settings.vuInvert = false; // Normal direction by default
     g_settings.weatherPreset = 0;
     g_settings.tempPalette = 0;  // Default temperature colors
     g_settings.stockSymbol[0] = '\0';
@@ -87,11 +87,22 @@ void settings_begin()
     g_settings.rssUpdateMins = 15;
 
     // Card Cycle defaults
-    for(int i=0; i<12; ++i) {
-        g_settings.cardEnabled[i] = (i < 11); // Only enable cards 0-10
-        g_settings.cardOrder[i] = i < 11 ? i : 0; // Valid order for 11 cards
+    for(int i=0; i<16; ++i) {
+        // Enable cards 0-10 (original), but NOT 11-15 (social) by default
+        g_settings.cardEnabled[i] = (i < 11);
+        g_settings.cardOrder[i] = i;
         g_settings.presetEnabled[i] = 0xFFFFFFFF; // All presets enabled by default
     }
+    
+    // Social media defaults (disabled by default)
+    g_settings.ytChannelId[0] = '\0';
+    g_settings.ytApiKey[0] = '\0';
+    g_settings.twitchUser[0] = '\0';
+    g_settings.twitchClientId[0] = '\0';
+    g_settings.twitterUser[0] = '\0';
+    g_settings.instaUser[0] = '\0';
+    g_settings.tiktokUser[0] = '\0';
+    g_settings.socialUpdateMins = 15; // 15 minute default
     g_settings.cycleDuration = 10;
     g_settings.cycleEnabled = false; // Disabled by default
     
@@ -103,7 +114,7 @@ void settings_begin()
         g_settings.vuSensitivity = g_prefs.getUChar("vuSens", 5);
         g_settings.vuNoiseGate = g_prefs.getUChar("vuNoise", 50);
         g_settings.micGain = g_prefs.getUChar("micGain", 5);
-        g_settings.vuInvert = g_prefs.getBool("vuInv", true);
+        g_settings.vuInvert = g_prefs.getBool("vuInv", false);
         g_settings.weatherPreset = g_prefs.getUChar("wxPreset", 0);
         g_settings.tempPalette = g_prefs.getUChar("tempPal", 0);
         g_settings.stockEnabled = g_prefs.getBool("stockOn", false);
@@ -156,9 +167,43 @@ void settings_begin()
         g_settings.rssUpdateMins = g_prefs.getUChar("rssMins", 15);
         
         // Card Cycle settings
-        if (g_prefs.isKey("cardEn")) g_prefs.getBytes("cardEn", g_settings.cardEnabled, 12);
-        if (g_prefs.isKey("cardOrd")) g_prefs.getBytes("cardOrd", g_settings.cardOrder, 12);
-        if (g_prefs.isKey("presetEn")) g_prefs.getBytes("presetEn", g_settings.presetEnabled, 48); // 12 * 4 bytes
+        if (g_prefs.isKey("cardEn16")) g_prefs.getBytes("cardEn16", g_settings.cardEnabled, 16);
+        else if (g_prefs.isKey("cardEn")) g_prefs.getBytes("cardEn", g_settings.cardEnabled, 12);
+        if (g_prefs.isKey("cardOrd16")) g_prefs.getBytes("cardOrd16", g_settings.cardOrder, 16);
+        else if (g_prefs.isKey("cardOrd")) g_prefs.getBytes("cardOrd", g_settings.cardOrder, 12);
+        if (g_prefs.isKey("presetEn16")) g_prefs.getBytes("presetEn16", g_settings.presetEnabled, 64); // 16 * 4 bytes
+        else if (g_prefs.isKey("presetEn")) g_prefs.getBytes("presetEn", g_settings.presetEnabled, 48);
+        
+        // Social media settings
+        String ytCh = g_prefs.getString("ytChan", "");
+        strncpy(g_settings.ytChannelId, ytCh.c_str(), sizeof(g_settings.ytChannelId) - 1);
+        g_settings.ytChannelId[sizeof(g_settings.ytChannelId) - 1] = '\0';
+        
+        String ytKey = g_prefs.getString("ytKey", "");
+        strncpy(g_settings.ytApiKey, ytKey.c_str(), sizeof(g_settings.ytApiKey) - 1);
+        g_settings.ytApiKey[sizeof(g_settings.ytApiKey) - 1] = '\0';
+        
+        String twUsr = g_prefs.getString("twUser", "");
+        strncpy(g_settings.twitchUser, twUsr.c_str(), sizeof(g_settings.twitchUser) - 1);
+        g_settings.twitchUser[sizeof(g_settings.twitchUser) - 1] = '\0';
+        
+        String twCid = g_prefs.getString("twCid", "");
+        strncpy(g_settings.twitchClientId, twCid.c_str(), sizeof(g_settings.twitchClientId) - 1);
+        g_settings.twitchClientId[sizeof(g_settings.twitchClientId) - 1] = '\0';
+        
+        String xUsr = g_prefs.getString("xUser", "");
+        strncpy(g_settings.twitterUser, xUsr.c_str(), sizeof(g_settings.twitterUser) - 1);
+        g_settings.twitterUser[sizeof(g_settings.twitterUser) - 1] = '\0';
+        
+        String igUsr = g_prefs.getString("igUser", "");
+        strncpy(g_settings.instaUser, igUsr.c_str(), sizeof(g_settings.instaUser) - 1);
+        g_settings.instaUser[sizeof(g_settings.instaUser) - 1] = '\0';
+        
+        String ttUsr = g_prefs.getString("ttUser", "");
+        strncpy(g_settings.tiktokUser, ttUsr.c_str(), sizeof(g_settings.tiktokUser) - 1);
+        g_settings.tiktokUser[sizeof(g_settings.tiktokUser) - 1] = '\0';
+        
+        g_settings.socialUpdateMins = g_prefs.getUChar("socMins", 15);
         g_settings.cycleDuration = g_prefs.getUShort("cycleDur", 10);
         g_settings.cycleEnabled = g_prefs.getBool("cycleOn", false);
         
@@ -238,9 +283,19 @@ void settings_save()
         g_prefs.putUChar("rssMins", g_settings.rssUpdateMins);
 
         // Card Cycle settings
-        g_prefs.putBytes("cardEn", g_settings.cardEnabled, 12);
-        g_prefs.putBytes("cardOrd", g_settings.cardOrder, 12);
-        g_prefs.putBytes("presetEn", g_settings.presetEnabled, 48); // 12 * 4 bytes
+        g_prefs.putBytes("cardEn16", g_settings.cardEnabled, 16);
+        g_prefs.putBytes("cardOrd16", g_settings.cardOrder, 16);
+        g_prefs.putBytes("presetEn16", g_settings.presetEnabled, 64); // 16 * 4 bytes
+        
+        // Social media settings
+        g_prefs.putString("ytChan", g_settings.ytChannelId);
+        g_prefs.putString("ytKey", g_settings.ytApiKey);
+        g_prefs.putString("twUser", g_settings.twitchUser);
+        g_prefs.putString("twCid", g_settings.twitchClientId);
+        g_prefs.putString("xUser", g_settings.twitterUser);
+        g_prefs.putString("igUser", g_settings.instaUser);
+        g_prefs.putString("ttUser", g_settings.tiktokUser);
+        g_prefs.putUChar("socMins", g_settings.socialUpdateMins);
         g_prefs.putUShort("cycleDur", g_settings.cycleDuration);
         g_prefs.putBool("cycleOn", g_settings.cycleEnabled);
         

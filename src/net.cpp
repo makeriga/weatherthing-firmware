@@ -135,9 +135,9 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
 <div class="container">
 <div class="grid">)";
 
-    // Card names and icons for 11 cards
-    const char* cardNames[] = {"Weather", "Clock", "BTC", "Stocks", "Network", "Audio", "Sparkle", "Aurora", "Games", "MQTT", "RSS"};
-    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;", "&#x1F4F0;"};
+    // Card names and icons for 16 cards (11 original + 5 social)
+    const char* cardNames[] = {"Weather", "Clock", "BTC", "Stocks", "Network", "Audio", "Sparkle", "Aurora", "Games", "MQTT", "RSS", "YouTube", "Twitch", "Twitter", "Insta", "TikTok"};
+    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;", "&#x1F4F0;", "&#x25B6;", "&#x1F4AC;", "&#x2716;", "&#x1F4F7;", "&#x1F3B5;"};
     
     // ========== CARD GALLERY - Full width section ==========
     html += "</div>"; // Close grid temporarily
@@ -156,11 +156,15 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
     html += "<p style=\"font-size:0.85em;margin-bottom:15px;color:#666\">&#x2630; Drag cards to reorder. Click preset to show on display. Toggle checkbox to include in auto-cycle.</p>";
     html += "<div id=\"cardGallery\" style=\"display:flex;flex-direction:column;gap:15px\">";
     
-    // Generate cards in order (skip Sparkle=6 and Aurora=7, now VU-only)
-    for(int i=0; i<11; ++i) {
+    // Generate cards in order (skip Sparkle=6, Aurora=7, and non-functional social cards 12-15)
+    uint16_t seenCards = 0; // Bitmask to track which cards we've already shown
+    for(int i=0; i<16; ++i) {
         uint8_t cardIdx = cfg.cardOrder[i];
-        if(cardIdx > 10) cardIdx = 0;
-        if(cardIdx == 6 || cardIdx == 7) continue; // Skip Sparkle/Aurora
+        if(cardIdx > 15) continue; // Skip invalid entries
+        if(cardIdx == 6 || cardIdx == 7) continue; // Skip Sparkle/Aurora (VU-only)
+        if(cardIdx >= 12 && cardIdx <= 15) continue; // Skip non-functional social cards (Twitch/Twitter/Insta/TikTok)
+        if(seenCards & (1 << cardIdx)) continue; // Skip duplicates
+        seenCards |= (1 << cardIdx); // Mark as seen
         bool enabled = cfg.cardEnabled[cardIdx];
         
         html += "<div class=\"gallery-card\" draggable=\"true\" data-idx=\"" + String(cardIdx) + "\" style=\"background:#fff;border:4px solid #000;padding:12px;cursor:grab;opacity:" + String(enabled ? "1" : "0.5") + "\">";
@@ -180,29 +184,115 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
         // Preset buttons with checkboxes for rotation inclusion
         html += "<div style=\"display:flex;flex-wrap:wrap;gap:8px;margin-top:8px\">";
         
-        // Helper lambda to generate preset button with checkbox (same style as weather sim buttons)
+        // Helper lambda to generate preset button with checkbox
         auto presetBtn = [&](uint8_t card, uint8_t preset, const char* label) {
             bool checked = (cfg.presetEnabled[card] & (1UL << preset)) != 0;
-            html += "<label style=\"display:flex;align-items:center;gap:10px;background:#fffacd;border:4px solid #000;padding:16px 24px;font-size:1.2em;font-weight:bold;cursor:pointer;box-shadow:4px 4px 0 #000;transition:all 0.2s\" onmouseover=\"this.style.transform='translate(-2px,-2px)';this.style.boxShadow='6px 6px 0 #000'\" onmouseout=\"this.style.transform='';this.style.boxShadow='4px 4px 0 #000'\">";
+            html += "<div class=\"preset-btn\" style=\"display:flex;align-items:center;gap:10px;background:#fffacd;border:4px solid #000;padding:16px 24px;font-size:1.2em;font-weight:bold;box-shadow:4px 4px 0 #000;transition:all 0.2s;cursor:pointer\" data-card=\"" + String(card) + "\" data-preset=\"" + String(preset) + "\">";
             html += "<input type=\"checkbox\" name=\"p" + String(card) + "_" + String(preset) + "\"" + String(checked ? " checked" : "") + " style=\"width:24px;height:24px;margin:0;cursor:pointer\">";
-            html += "<span onclick=\"showCard(" + String(card) + "," + String(preset) + ");event.preventDefault()\" style=\"cursor:pointer\">" + String(label) + "</span>";
-            html += "</label>";
+            html += "<span>" + String(label) + "</span>";
+            html += "</div>";
         };
         
         switch(cardIdx) {
-            case 0: // Weather presets (17 total)
+            case 0: { // Weather presets + location + display + simulator
                 presetBtn(0, 0, "Classic"); presetBtn(0, 1, "Bar"); presetBtn(0, 2, "Corner");
                 presetBtn(0, 4, "Minimal"); presetBtn(0, 5, "Day/Nite"); presetBtn(0, 6, "Term");
                 presetBtn(0, 8, "Forecast"); presetBtn(0, 9, "Pixel"); presetBtn(0, 10, "LCD");
                 presetBtn(0, 11, "Mood"); presetBtn(0, 12, "Type"); presetBtn(0, 13, "Waves");
                 presetBtn(0, 14, "Split"); presetBtn(0, 15, "Count"); presetBtn(0, 16, "Stack");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">"; // Close preset buttons, open settings
+                
+                // Location settings
+                float lat, lon;
+                weather_get_location(&lat, &lon);
+                html += "<details><summary style=\"cursor:pointer;font-weight:bold\">&#x1F4CD; Location</summary>";
+                html += "<div style=\"padding:10px 0\">";
+                html += "<p style=\"font-size:0.8em;color:#666;margin-bottom:8px\">Current: <b>" + String(lat, 4) + ", " + String(lon, 4) + "</b></p>";
+                html += "<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px\">";
+                html += "<input name=\"city\" placeholder=\"City name\" style=\"flex:1;padding:6px\">";
+                html += "</div>";
+                html += "<div style=\"display:flex;gap:8px;flex-wrap:wrap\">";
+                html += "<input name=\"lat\" type=\"number\" step=\"0.01\" placeholder=\"Lat\" value=\"" + String(lat, 2) + "\" style=\"width:80px;padding:6px\">";
+                html += "<input name=\"lon\" type=\"number\" step=\"0.01\" placeholder=\"Lon\" value=\"" + String(lon, 2) + "\" style=\"width:80px;padding:6px\">";
+                html += "</div></div></details>";
+                
+                // Display settings
+                html += "<details style=\"margin-top:8px\"><summary style=\"cursor:pointer;font-weight:bold\">&#x1F3A8; Display</summary>";
+                html += "<div style=\"padding:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center\">";
+                html += "<label>Palette:</label><select name=\"tempPalette\" style=\"padding:6px\">";
+                html += "<option value=\"0\""; if (cfg.tempPalette == 0) html += " selected"; html += ">Default</option>";
+                html += "<option value=\"1\""; if (cfg.tempPalette == 1) html += " selected"; html += ">Cool</option>";
+                html += "<option value=\"2\""; if (cfg.tempPalette == 2) html += " selected"; html += ">Warm</option>";
+                html += "</select>";
+                html += "<label>Forecast:</label><select name=\"forecastHours\" style=\"padding:6px\">";
+                html += "<option value=\"12\""; if (cfg.forecastHours == 12) html += " selected"; html += ">12h</option>";
+                html += "<option value=\"24\""; if (cfg.forecastHours == 24) html += " selected"; html += ">24h</option>";
+                html += "<option value=\"48\""; if (cfg.forecastHours == 48) html += " selected"; html += ">48h</option>";
+                html += "</select></div></details>";
+                
+                // Simulator
+                html += "<details style=\"margin-top:8px\"><summary style=\"cursor:pointer;font-weight:bold\">&#x1F9EA; Simulator</summary>";
+                html += "<div style=\"padding:10px 0\">";
+                html += "<div class=\"weather-grid\" style=\"display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:8px\">";
+                html += "<button type=\"button\" class=\"weather-btn\" data-val=\"0\" onclick=\"simWeather(this)\" title=\"Sunny\" style=\"padding:8px\">&#x2600;</button>";
+                html += "<button type=\"button\" class=\"weather-btn\" data-val=\"1\" onclick=\"simWeather(this)\" title=\"Partly Cloudy\" style=\"padding:8px\">&#x26C5;</button>";
+                html += "<button type=\"button\" class=\"weather-btn\" data-val=\"2\" onclick=\"simWeather(this)\" title=\"Cloudy\" style=\"padding:8px\">&#x2601;</button>";
+                html += "<button type=\"button\" class=\"weather-btn\" data-val=\"5\" onclick=\"simWeather(this)\" title=\"Rain\" style=\"padding:8px\">&#x1F327;</button>";
+                html += "<button type=\"button\" class=\"weather-btn\" data-val=\"7\" onclick=\"simWeather(this)\" title=\"Storm\" style=\"padding:8px\">&#x26C8;</button>";
+                html += "<button type=\"button\" class=\"weather-btn\" data-val=\"8\" onclick=\"simWeather(this)\" title=\"Snow\" style=\"padding:8px\">&#x2744;</button>";
+                html += "</div>";
+                html += "<div style=\"display:flex;align-items:center;gap:8px\">";
+                html += "<label>Temp:</label><input id=\"simTemp\" type=\"number\" value=\"22\" min=\"-50\" max=\"50\" style=\"width:60px;padding:6px\"><span>&deg;C</span>";
+                html += "</div></div></details>";
                 break;
-            case 1: // Clock presets
+            }
+            case 1: // Clock presets + timezone
                 presetBtn(1, 0, "Digital"); presetBtn(1, 1, "Binary"); presetBtn(1, 2, "Minimal");
                 presetBtn(1, 3, "Bars"); presetBtn(1, 4, "Nixie"); presetBtn(1, 5, "Glitch");
                 presetBtn(1, 6, "Pong"); presetBtn(1, 7, "Word"); presetBtn(1, 8, "Bounce");
                 presetBtn(1, 9, "Matrix"); presetBtn(1, 10, "Radar"); presetBtn(1, 11, "Flip");
                 presetBtn(1, 12, "Cyber"); presetBtn(1, 13, "Analog");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap\">";
+                html += "<label style=\"font-weight:bold\">Timezone:</label>";
+                html += "<select name=\"tz\" style=\"padding:6px\">";
+                for (int8_t tz = -12; tz <= 14; ++tz) {
+                    html += "<option value=\"" + String(tz) + "\"";
+                    if (cfg.tzOffset == tz) html += " selected";
+                    html += ">UTC" + String(tz >= 0 ? "+" : "") + String(tz) + "</option>";
+                }
+                html += "</select></div>";
+                break;
+            case 2: // BTC
+                presetBtn(2, 0, "SHOW");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.8em;color:#666;margin-bottom:8px\">&#x1F4A1; Uses free CoinGecko API - no key needed!</p>";
+                html += "<div style=\"display:flex;align-items:center;gap:10px\">";
+                html += "<label style=\"font-weight:bold\">Update every:</label>";
+                html += "<select name=\"btcMins\" style=\"padding:6px\">";
+                { const uint8_t intervals[] = {1, 2, 5, 10, 15, 30, 60};
+                for (uint8_t i = 0; i < 7; ++i) {
+                    html += "<option value=\"" + String(intervals[i]) + "\"";
+                    if (cfg.btcUpdateMins == intervals[i]) html += " selected";
+                    html += ">" + String(intervals[i]) + " min</option>";
+                }}
+                html += "</select></div>";
+                break;
+            case 3: // Stocks
+                presetBtn(3, 0, "SHOW");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.8em;color:#666;margin-bottom:8px\">&#x1F4A1; Uses free Yahoo Finance - no key needed! Enter any stock ticker symbol.</p>";
+                html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap\">";
+                html += "<input name=\"stock\" type=\"text\" maxlength=\"10\" placeholder=\"AAPL\" value=\"" + String(cfg.stockSymbol) + "\" style=\"width:80px;text-transform:uppercase;padding:6px\">";
+                html += "<label style=\"font-weight:bold\">Update:</label>";
+                html += "<select name=\"stockMins\" style=\"padding:6px\">";
+                { const uint8_t intervals[] = {1, 2, 5, 10, 15, 30, 60};
+                for (uint8_t i = 0; i < 7; ++i) {
+                    html += "<option value=\"" + String(intervals[i]) + "\"";
+                    if (cfg.stockUpdateMins == intervals[i]) html += " selected";
+                    html += ">" + String(intervals[i]) + " min</option>";
+                }}
+                html += "</select></div>";
                 break;
             case 5: // Audio VU presets
                 presetBtn(5, 0, "Spectrum"); presetBtn(5, 1, "Wave"); presetBtn(5, 2, "Fire");
@@ -214,11 +304,110 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                 presetBtn(5, 18, "Disco"); presetBtn(5, 19, "Firework"); presetBtn(5, 20, "Rain");
                 presetBtn(5, 21, "Nyan"); presetBtn(5, 22, "Ocean"); presetBtn(5, 23, "Tetris");
                 presetBtn(5, 24, "Stars"); presetBtn(5, 25, "Lava"); presetBtn(5, 26, "Geo");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<div style=\"display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px\">";
+                html += "<label style=\"font-weight:bold\">Palette:</label>";
+                html += "<select name=\"palette\" style=\"padding:6px\">";
+                for (uint8_t i = 0; i < PALETTE_COUNT; ++i) {
+                    html += "<option value=\"" + String(i) + "\"";
+                    if (cfg.vuPalette == i) html += " selected";
+                    html += ">" + String(settings_palette_name(i)) + "</option>";
+                }
+                html += "</select>";
+                html += "<label style=\"font-weight:bold\">Speed:</label>";
+                html += "<select name=\"speed\" style=\"padding:6px\">";
+                for (uint8_t i = 1; i <= 10; ++i) {
+                    html += "<option value=\"" + String(i) + "\"";
+                    if (cfg.animSpeed == i) html += " selected";
+                    html += ">" + String(i) + "</option>";
+                }
+                html += "</select></div>";
+                html += "<div style=\"display:flex;align-items:center;gap:8px;flex-wrap:wrap\">";
+                html += "<label style=\"font-weight:bold\">Gain:</label>";
+                html += "<select name=\"micGain\" style=\"padding:6px\">";
+                for (uint8_t i = 1; i <= 10; ++i) {
+                    html += "<option value=\"" + String(i) + "\"";
+                    if (cfg.micGain == i) html += " selected";
+                    html += ">" + String(i) + "</option>";
+                }
+                html += "</select>";
+                html += "<label style=\"font-weight:bold\">Gate:</label>";
+                html += "<select name=\"noiseGate\" style=\"padding:6px\">";
+                { const char* gates[] = {"Off", "Low", "Med", "High"};
+                  const uint8_t gateVals[] = {0, 50, 100, 150};
+                  for (uint8_t i = 0; i < 4; ++i) {
+                    html += "<option value=\"" + String(gateVals[i]) + "\"";
+                    if (cfg.vuNoiseGate >= gateVals[i] && (i == 3 || cfg.vuNoiseGate < gateVals[i+1])) html += " selected";
+                    html += ">" + String(gates[i]) + "</option>";
+                }}
+                html += "</select>";
+                html += "<label style=\"display:flex;align-items:center;gap:6px;font-weight:bold;cursor:pointer\"><input type=\"checkbox\" name=\"micInvert\" value=\"1\"";
+                if (cfg.vuInvert) html += " checked";
+                html += " style=\"width:18px;height:18px\">Invert</label>";
+                html += "</div>";
                 break;
-            case 8: // Game presets
+            case 8: // Game presets + controls
                 presetBtn(8, 0, "Flappy"); presetBtn(8, 1, "Snake"); presetBtn(8, 2, "Breakout"); presetBtn(8, 3, "Pong");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.85em;line-height:1.6;color:#333\">";
+                html += "<b>&#x1F3AE; Controls:</b><br>";
+                html += "&#x2022; <b>BTN1</b> &rarr; Next / Right<br>";
+                html += "&#x2022; <b>BTN2</b> &rarr; Prev / Left<br>";
+                html += "&#x2022; <b>Touch</b> &rarr; Jump / Action<br>";
+                html += "&#x2022; <b>Hold both 1s</b> &rarr; Exit game</p>";
                 break;
-            default: // Single preset cards
+            case 9: // MQTT
+                presetBtn(9, 0, "SHOW");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.8em;color:#666;margin-bottom:8px\">&#x1F4A1; <b>Setup:</b> Enter your MQTT broker address (e.g. Home Assistant IP). Device auto-registers via MQTT discovery.</p>";
+                html += "<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px\">";
+                html += "<input name=\"mqttServer\" placeholder=\"192.168.1.x\" value=\"" + String(cfg.mqttServer) + "\" style=\"flex:1;min-width:120px;padding:6px\">";
+                html += "<input name=\"mqttPort\" type=\"number\" value=\"" + String(cfg.mqttPort) + "\" style=\"width:70px;padding:6px\">";
+                html += "</div>";
+                html += "<div style=\"display:flex;gap:8px;flex-wrap:wrap\">";
+                html += "<input name=\"mqttUser\" placeholder=\"user (optional)\" value=\"" + String(cfg.mqttUser) + "\" style=\"flex:1;padding:6px\">";
+                html += "<input name=\"mqttPass\" type=\"password\" placeholder=\"pass\" value=\"" + String(cfg.mqttPass) + "\" style=\"flex:1;padding:6px\">";
+                html += "</div>";
+                break;
+            case 10: // RSS
+                presetBtn(10, 0, "SHOW");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.8em;color:#666;margin-bottom:8px\">&#x1F4A1; <b>Find RSS feeds:</b> Most news sites have RSS. Try adding <code>/rss</code> or <code>/feed</code> to any site URL, or search \"[site name] RSS feed\".</p>";
+                html += "<input name=\"rssUrl\" placeholder=\"https://feeds.bbci.co.uk/news/rss.xml\" value=\"" + String(cfg.rssUrl) + "\" style=\"width:100%;padding:6px;margin-bottom:8px\">";
+                html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap\">";
+                html += "<label>Update:</label><select name=\"rssMins\" style=\"padding:6px\">";
+                { const uint8_t intervals[] = {5, 10, 15, 30, 60};
+                for (uint8_t i = 0; i < 5; ++i) {
+                    html += "<option value=\"" + String(intervals[i]) + "\"";
+                    if (cfg.rssUpdateMins == intervals[i]) html += " selected";
+                    html += ">" + String(intervals[i]) + "m</option>";
+                }}
+                html += "</select>";
+                html += "<label>Speed:</label><select name=\"rssSpd\" style=\"padding:6px\">";
+                for(int i=1; i<=10; ++i) {
+                    html += "<option value=\"" + String(i) + "\"";
+                    if (cfg.rssSpeed == i) html += " selected";
+                    html += ">" + String(i) + "</option>";
+                }
+                html += "</select></div>";
+                break;
+            case 11: // YouTube
+                presetBtn(11, 0, "SHOW");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.8em;color:#666;margin-bottom:8px\">&#x1F4A1; <b>Setup:</b> 1) Go to <a href=\"https://console.cloud.google.com\" target=\"_blank\">console.cloud.google.com</a> 2) Create project 3) Enable \"YouTube Data API v3\" 4) Create API Key under Credentials</p>";
+                html += "<input name=\"ytChan\" placeholder=\"Channel ID (UCxxxxx from URL)\" value=\"" + String(cfg.ytChannelId) + "\" style=\"width:100%;padding:6px;margin-bottom:8px\">";
+                html += "<div style=\"display:flex;gap:8px;flex-wrap:wrap\">";
+                html += "<input name=\"ytKey\" type=\"password\" placeholder=\"API Key (AIza...)\" value=\"" + String(cfg.ytApiKey) + "\" style=\"flex:1;padding:6px\">";
+                html += "<select name=\"socMins\" style=\"padding:6px\">";
+                { const uint8_t intervals[] = {5, 10, 15, 30, 60};
+                for (uint8_t i = 0; i < 5; ++i) {
+                    html += "<option value=\"" + String(intervals[i]) + "\"";
+                    if (cfg.socialUpdateMins == intervals[i]) html += " selected";
+                    html += ">" + String(intervals[i]) + "m</option>";
+                }}
+                html += "</select></div>";
+                break;
+            default: // Single preset cards (Network, etc)
                 presetBtn(cardIdx, 0, "SHOW");
                 break;
         }
@@ -301,12 +490,34 @@ function saveOrder() {
     document.getElementById('orderInput').value = order.join(',');
 }
 
-function showCard(card, preset) {
+function showCard(el, card, preset) {
+    console.log('showCard called:', card, preset);
+    el.style.background='#ffa500';
     fetch('/api/card?card='+card+'&preset='+preset)
-    .then(r=>r.json())
-    .then(d=>{if(d.ok){const b=event.target;b.style.background='#4ade80';setTimeout(()=>b.style.background='',300)}})
-    .catch(e=>console.error(e));
+    .then(r=>{console.log('Response:', r.status); return r.json();})
+    .then(d=>{console.log('Result:', d); el.style.background='#4ade80';setTimeout(()=>el.style.background='',300)})
+    .catch(e=>{console.error('Error:', e); el.style.background='#ff0000';});
 }
+
+// Event delegation for preset buttons
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.preset-btn');
+    if (!btn) return;
+    if (e.target.type === 'checkbox') return; // Let checkbox handle itself
+    const card = parseInt(btn.dataset.card);
+    const preset = parseInt(btn.dataset.preset);
+    showCard(btn, card, preset);
+});
+
+// Hover effects for preset buttons
+document.addEventListener('mouseover', function(e) {
+    const btn = e.target.closest('.preset-btn');
+    if (btn) { btn.style.transform='translate(-2px,-2px)'; btn.style.boxShadow='6px 6px 0 #000'; }
+});
+document.addEventListener('mouseout', function(e) {
+    const btn = e.target.closest('.preset-btn');
+    if (btn) { btn.style.transform=''; btn.style.boxShadow='4px 4px 0 #000'; }
+});
 
 </script>)";
     
@@ -330,191 +541,11 @@ function showCard(card, preset) {
     html += "<div class=\"form-group\"><label>Password</label><input name=\"pass\" type=\"password\" placeholder=\"Enter WiFi password\"></div>";
     html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save WiFi Settings</button>";
     html += "</form></div>";
-
-    // Quick Controls Reference (compact)
-    html += "<div class=\"card\">";
-    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F3AE;</span><span class=\"card-title\">Controls</span></div>";
-    html += "<div style=\"font-size:0.85em;line-height:1.8\">";
-    html += "<p><strong>BTN1</strong> &#8594; Next &nbsp;|&nbsp; <strong>BTN2</strong> &#8594; Prev</p>";
-    html += "<p><strong>Touch</strong> &#8594; Game action/jump</p>";
-    html += "<p><strong>Hold both BTNs 1s</strong> &#8594; Exit games</p>";
-    html += "</div></div>";
-
-    // Location Card
-    float lat, lon;
-    weather_get_location(&lat, &lon);
+    sendChunk();
     
-    html += "<div class=\"card\">";
-    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F4CD;</span><span class=\"card-title\">Location</span></div>";
-    html += "<div class=\"info-box\">Current: <strong>";
-    html += String(lat, 4) + ", " + String(lon, 4);
-    html += "</strong></div>";
-    html += "<form method=\"POST\" action=\"/city\">";
-    html += "<div class=\"form-group\"><label>Search by City</label>";
-    html += "<div class=\"row\"><input name=\"city\" placeholder=\"e.g. London, Tokyo, New York\">";
-    html += "<button type=\"submit\" class=\"btn btn-secondary\">&#x1F50D;</button></div></div>";
-    html += "</form>";
-    html += "<form method=\"POST\" action=\"/location\">";
-    html += "<div class=\"row\">";
-    html += "<div class=\"form-group\"><label>Latitude</label><input name=\"lat\" type=\"number\" step=\"0.0001\" value=\"";
-    html += String(lat, 4);
-    html += "\"></div>";
-    html += "<div class=\"form-group\"><label>Longitude</label><input name=\"lon\" type=\"number\" step=\"0.0001\" value=\"";
-    html += String(lon, 4);
-    html += "\"></div>";
-    html += "<button type=\"submit\" class=\"btn btn-primary\">&#x1F4CC;</button>";
-    html += "</div></form></div>";
-
-    // Weather Simulation Card - Expanded types
-    html += "<div class=\"card\">";
-    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F9EA;</span><span class=\"card-title\">Weather Simulation</span></div>";
-    html += "<div class=\"form-group\"><label>Weather Type</label>";
-    html += "<div class=\"weather-grid\">";
-    // Row 1: Sunny, Partly Cloudy, Cloudy, Fog
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"0\" onclick=\"simWeather(this)\" title=\"Sunny\">&#x2600;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"1\" onclick=\"simWeather(this)\" title=\"Partly Cloudy\">&#x26C5;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"2\" onclick=\"simWeather(this)\" title=\"Cloudy\">&#x2601;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"3\" onclick=\"simWeather(this)\" title=\"Fog\">&#x1F32B;</button>";
-    // Row 2: Drizzle, Rain, Heavy Rain, Storm
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"4\" onclick=\"simWeather(this)\" title=\"Drizzle\">&#x1F326;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"5\" onclick=\"simWeather(this)\" title=\"Rain\">&#x1F327;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"6\" onclick=\"simWeather(this)\" title=\"Heavy Rain\">&#x1F4A7;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"7\" onclick=\"simWeather(this)\" title=\"Storm\">&#x26C8;</button>";
-    // Row 3: Snow, Sleet, Wind, Clear Night
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"8\" onclick=\"simWeather(this)\" title=\"Snow\">&#x2744;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"9\" onclick=\"simWeather(this)\" title=\"Sleet\">&#x1F328;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"10\" onclick=\"simWeather(this)\" title=\"Wind\">&#x1F4A8;</button>";
-    html += "<button type=\"button\" class=\"weather-btn\" data-val=\"11\" onclick=\"simWeather(this)\" title=\"Clear Night\">&#x1F319;</button>";
-    html += "</div></div>";
-    html += "<div class=\"form-group\"><label>Temperature</label>";
-    html += "<div class=\"temp-input\">";
-    html += "<input id=\"simTemp\" type=\"number\" value=\"22\" min=\"-50\" max=\"50\">";
-    html += "<span>&deg;C</span>";
-    html += "</div></div></div>";
-    sendChunk(); // Flush before System Config
-    
-    // Unified Configuration Card
+    // System Configuration Card (Brightness only now)
     html += "<div class=\"card\">";
     html += "<div class=\"card-header\"><span class=\"card-icon\">&#x2699;</span><span class=\"card-title\">System Configuration</span></div>";
-    
-    // Weather Display Section
-    html += "<details><summary>Weather Display</summary>";
-    html += "<form method=\"POST\" action=\"/settings\">";
-    html += "<div class=\"form-group\"><label>Temperature Color Palette</label>";
-    html += "<select name=\"tempPalette\" style=\"width:100%\">";
-    const char* tempPals[] = {"Default (Blue to Red)", "Cool Tones (Purple-Blue)", "Warm Tones (Yellow-Red)"};
-    for (uint8_t i = 0; i < 3; ++i) {
-        html += "<option value=\"" + String(i) + "\"";
-        if (cfg.tempPalette == i) html += " selected";
-        html += ">" + String(tempPals[i]) + "</option>";
-    }
-    html += "</select></div>";
-    html += "<div class=\"form-group\"><label>Timeline Forecast Range</label>";
-    html += "<select name=\"forecastHours\">";
-    html += "<option value=\"12\""; if (cfg.forecastHours == 12) html += " selected"; html += ">12 hours (1h per LED)</option>";
-    html += "<option value=\"24\""; if (cfg.forecastHours == 24) html += " selected"; html += ">24 hours (2h per LED)</option>";
-    html += "<option value=\"48\""; if (cfg.forecastHours == 48) html += " selected"; html += ">48 hours (4h per LED)</option>";
-    html += "</select></div>";
-    html += "<div class=\"form-group\"><label>Simulation Timeout (seconds)</label>";
-    html += "<select name=\"simTimeout\">";
-    html += "<option value=\"0\""; if (cfg.simTimeoutSecs == 0) html += " selected"; html += ">Never (manual stop)</option>";
-    html += "<option value=\"30\""; if (cfg.simTimeoutSecs == 30) html += " selected"; html += ">30 sec</option>";
-    html += "<option value=\"60\""; if (cfg.simTimeoutSecs == 60) html += " selected"; html += ">1 min</option>";
-    html += "<option value=\"120\""; if (cfg.simTimeoutSecs == 120) html += " selected"; html += ">2 min</option>";
-    html += "<option value=\"300\""; if (cfg.simTimeoutSecs == 300) html += " selected"; html += ">5 min</option>";
-    html += "</select></div>";
-    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save Weather Settings</button>";
-    html += "</form></details>";
-    
-    // Audio Visualizer Section
-    html += "<details><summary>Audio Visualizer</summary>";
-    html += "<form method=\"POST\" action=\"/settings\">";
-    html += "<div class=\"form-group\"><label>Color Palette</label>";
-    html += "<select name=\"palette\" style=\"width:100%\">";
-    for (uint8_t i = 0; i < PALETTE_COUNT; ++i) {
-        html += "<option value=\"" + String(i) + "\"";
-        if (cfg.vuPalette == i) html += " selected";
-        html += ">" + String(settings_palette_name(i)) + "</option>";
-    }
-    html += "</select></div>";
-    html += "<div class=\"form-group\"><label>Animation Speed</label>";
-    html += "<select name=\"speed\" style=\"width:100%\">";
-    const char* speeds[] = {"Very Slow", "Slow", "Medium-Slow", "Medium", "Normal", "Medium-Fast", "Fast", "Very Fast", "Ultra", "Maximum"};
-    for (uint8_t i = 1; i <= 10; ++i) {
-        html += "<option value=\"" + String(i) + "\"";
-        if (cfg.animSpeed == i) html += " selected";
-        html += ">" + String(speeds[i-1]) + "</option>";
-    }
-    html += "</select></div>";
-    html += "<div class=\"form-group\"><label>Mic Gain</label>";
-    html += "<select name=\"micGain\" style=\"width:100%\">";
-    const char* gains[] = {"Very Low", "Low", "Low-Med", "Medium-Low", "Normal", "Medium-High", "High", "Very High", "Ultra", "Maximum"};
-    for (uint8_t i = 1; i <= 10; ++i) {
-        html += "<option value=\"" + String(i) + "\"";
-        if (cfg.micGain == i) html += " selected";
-        html += ">" + String(gains[i-1]) + "</option>";
-    }
-    html += "</select></div>";
-    html += "<div class=\"form-group\"><label>Noise Gate</label>";
-    html += "<select name=\"noiseGate\" style=\"width:100%\">";
-    const char* gates[] = {"Off", "Very Low", "Low", "Medium-Low", "Medium", "Medium-High", "High", "Very High", "Ultra", "Maximum"};
-    for (uint8_t i = 0; i <= 9; ++i) {
-        uint8_t val = i * 25;
-        html += "<option value=\"" + String(val) + "\"";
-        if (cfg.vuNoiseGate >= val && cfg.vuNoiseGate < val + 25) html += " selected";
-        html += ">" + String(gates[i]) + "</option>";
-    }
-    html += "</select></div>";
-    // Mic inversion always on - removed checkbox as it caused confusion
-    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save Audio Settings</button>";
-    html += "</form></details>";
-    sendChunk(); // Flush after Audio section
-
-    // Clock Section
-    html += "<details><summary>Clock & Time</summary>";
-    html += "<form method=\"POST\" action=\"/settings\">";
-    html += "<div class=\"form-group\"><label>Timezone Offset (UTC)</label>";
-    html += "<select name=\"tz\">";
-    for (int8_t tz = -12; tz <= 14; ++tz) {
-        html += "<option value=\"" + String(tz) + "\"";
-        if (cfg.tzOffset == tz) html += " selected";
-        html += ">UTC";
-        if (tz >= 0) html += "+";
-        html += String(tz) + "</option>";
-    }
-    html += "</select></div>";
-    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save Timezone</button>";
-    html += "</form></details>";
-
-    // Stocks Section
-    html += "<details><summary>Stocks & Crypto</summary>";
-    html += "<form method=\"POST\" action=\"/settings\">";
-    html += "<div class=\"form-group\"><label>Stock Symbol</label>";
-    html += "<input name=\"stock\" type=\"text\" maxlength=\"10\" placeholder=\"AAPL, TSLA, MSFT...\" value=\"";
-    html += cfg.stockSymbol;
-    html += "\" style=\"text-transform:uppercase\">";
-    html += "</div>";
-    html += "<div class=\"row\">";
-    html += "<div class=\"form-group\"><label>BTC Update (min)</label>";
-    html += "<select name=\"btcMins\">";
-    const uint8_t intervals[] = {1, 2, 5, 10, 15, 30, 60};
-    for (uint8_t i = 0; i < 7; ++i) {
-        html += "<option value=\"" + String(intervals[i]) + "\"";
-        if (cfg.btcUpdateMins == intervals[i]) html += " selected";
-        html += ">" + String(intervals[i]) + "</option>";
-    }
-    html += "</select></div>";
-    html += "<div class=\"form-group\"><label>Stock Update (min)</label>";
-    html += "<select name=\"stockMins\">";
-    for (uint8_t i = 0; i < 7; ++i) {
-        html += "<option value=\"" + String(intervals[i]) + "\"";
-        if (cfg.stockUpdateMins == intervals[i]) html += " selected";
-        html += ">" + String(intervals[i]) + "</option>";
-    }
-    html += "</select></div>";
-    html += "</div>"; // row
-    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save Financial Settings</button>";
-    html += "</form></details>";
     
     // Brightness Section
     html += "<details><summary>Brightness & Power</summary>";
@@ -540,77 +571,6 @@ function showCard(card, preset) {
     html += "<div class=\"form-group\"><label>Blanking Interval: " + String(cfg.brightBlankSecs) + " sec</label>";
     html += "<input type=\"range\" name=\"blankSec\" min=\"10\" max=\"120\" step=\"10\" value=\"" + String(cfg.brightBlankSecs) + "\"></div>";
     html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save Brightness</button>";
-    html += "</form></details>";
-    sendChunk(); // Flush after Brightness section
-
-    // RSS Section
-    html += "<details><summary>RSS Feed</summary>";
-    html += "<form method=\"POST\" action=\"/settings\">";
-    html += "<div class=\"form-group\"><label>RSS Feed URL</label>";
-    html += "<input name=\"rssUrl\" placeholder=\"https://rss.nytimes.com/services/xml/rss/nyt/World.xml\" value=\"";
-    html += cfg.rssUrl;
-    html += "\"></div>";
-    
-    html += "<div class=\"row\">";
-    html += "<div class=\"form-group\"><label>Update Interval (min)</label>";
-    html += "<input name=\"rssMins\" type=\"number\" min=\"1\" max=\"240\" value=\"" + String(cfg.rssUpdateMins) + "\"></div>";
-    
-    html += "<div class=\"form-group\"><label>Scroll Speed</label>";
-    html += "<select name=\"rssSpd\">";
-    for(int i=1; i<=10; ++i) {
-        html += "<option value=\"" + String(i) + "\"";
-        if (cfg.rssSpeed == i) html += " selected";
-        html += ">" + String(i) + "</option>";
-    }
-    html += "</select></div>";
-    html += "</div>";
-    
-    html += "<div class=\"form-group\"><label>Color Palette</label>";
-    html += "<select name=\"rssPal\" style=\"width:100%\">";
-    for (uint8_t i = 0; i < PALETTE_COUNT; ++i) {
-        html += "<option value=\"" + String(i) + "\"";
-        if (cfg.rssPalette == i) html += " selected";
-        html += ">" + String(settings_palette_name(i)) + "</option>";
-    }
-    html += "</select></div>";
-    
-    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save RSS Settings</button>";
-    html += "</form></details>";
-
-    // MQTT Section
-    html += "<details><summary>MQTT & Smart Home</summary>";
-    // Connection status indicator
-    if (mqtt_is_connected()) {
-        html += "<div class='info-box' style='background:rgba(35,134,54,0.2);border-color:rgba(35,134,54,0.4)'>";
-        html += "<strong style='color:#3fb950'>&#x2713; Connected to MQTT</strong></div>";
-    } else if (cfg.mqttServer[0] != '\0') {
-        html += "<div class='info-box' style='background:rgba(218,54,51,0.2);border-color:rgba(218,54,51,0.4)'>";
-        html += "<strong style='color:#da3633'>&#x2717; MQTT Disconnected</strong></div>";
-    }
-    
-    html += "<form method=\"POST\" action=\"/settings\">";
-    html += "<div class=\"form-group\"><label>MQTT Broker</label>";
-    html += "<input name=\"mqttServer\" placeholder=\"192.168.1.100 or mqtt.local\" value=\"";
-    html += cfg.mqttServer;
-    html += "\"></div>";
-    html += "<div class=\"row\">";
-    html += "<div class=\"form-group\"><label>Port</label><input name=\"mqttPort\" type=\"number\" value=\"";
-    html += String(cfg.mqttPort);
-    html += "\"></div>";
-    html += "<div class=\"form-group\"><label>Username</label><input name=\"mqttUser\" placeholder=\"(optional)\" value=\"";
-    html += cfg.mqttUser;
-    html += "\"></div>";
-    html += "</div>";
-    html += "<div class=\"form-group\"><label>Password</label><input name=\"mqttPass\" type=\"password\" placeholder=\"(optional)\" value=\"";
-    html += cfg.mqttPass;
-    html += "\"></div>";
-    html += "<div class=\"form-group\"><label>Custom Topic (subscribe)</label><input name=\"mqttTopic\" placeholder=\"home/notifications\" value=\"";
-    html += cfg.mqttTopic;
-    html += "\"></div>";
-    html += "<p style=\"color:var(--muted);font-size:0.8em;margin-bottom:12px\">";
-    html += "Device auto-registers with Home Assistant via MQTT discovery.<br>";
-    html += "Send notifications to: <code>weatherthing/wt_XXXX/notify</code></p>";
-    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save MQTT Settings</button>";
     html += "</form></details>";
     
     html += "</div>"; // End card
@@ -948,8 +908,8 @@ static void handleSettingsPost()
         cfg.vuNoiseGate = (uint8_t)server.arg("noiseGate").toInt();
     }
     
-    // Mic inversion always enabled for proper operation
-    cfg.vuInvert = true;
+    // Mic inversion setting (checkbox - true if present)
+    cfg.vuInvert = server.hasArg("micInvert");
 
     if (server.hasArg("tempPalette")) {
         cfg.tempPalette = (uint8_t)server.arg("tempPalette").toInt();
@@ -1086,6 +1046,25 @@ static void handleSettingsPost()
         if (cfg.rssPalette >= PALETTE_COUNT) cfg.rssPalette = 0;
     }
     
+    // YouTube settings (only functional social media card)
+    if (server.hasArg("ytChan")) {
+        String ch = server.arg("ytChan");
+        ch.trim();
+        strncpy(cfg.ytChannelId, ch.c_str(), sizeof(cfg.ytChannelId) - 1);
+        cfg.ytChannelId[sizeof(cfg.ytChannelId) - 1] = '\0';
+    }
+    if (server.hasArg("ytKey")) {
+        String key = server.arg("ytKey");
+        if (key.length() > 0) {
+            strncpy(cfg.ytApiKey, key.c_str(), sizeof(cfg.ytApiKey) - 1);
+            cfg.ytApiKey[sizeof(cfg.ytApiKey) - 1] = '\0';
+        }
+    }
+    if (server.hasArg("socMins")) {
+        uint8_t mins = (uint8_t)server.arg("socMins").toInt();
+        if (mins >= 1 && mins <= 60) cfg.socialUpdateMins = mins;
+    }
+    
     settings_save();
     
     // Reinitialize MQTT if settings changed
@@ -1162,7 +1141,7 @@ static void handleCardsConfigPost()
         // Expected format: "0,1,2,3,..."
         int start = 0;
         int idx = 0;
-        while (start < (int)orderStr.length() && idx < 11) {
+        while (start < (int)orderStr.length() && idx < 16) {
             int comma = orderStr.indexOf(',', start);
             if (comma == -1) comma = orderStr.length();
             
@@ -1174,15 +1153,15 @@ static void handleCardsConfigPost()
         }
     }
     
-    // 2. Update Enabled States (11 cards: 0-10)
-    for(int i=0; i<11; ++i) {
+    // 2. Update Enabled States (16 cards: 0-15)
+    for(int i=0; i<16; ++i) {
         String key = "en_" + String(i);
         cfg.cardEnabled[i] = server.hasArg(key);
     }
     
     // 2b. Update Per-Preset Enabled States
     // Reset all presets to disabled first, then enable checked ones
-    for(int card=0; card<12; ++card) {
+    for(int card=0; card<16; ++card) {
         cfg.presetEnabled[card] = 0;
     }
     // Process preset checkboxes (format: p{card}_{preset})
@@ -1192,7 +1171,7 @@ static void handleCardsConfigPost()
             int underscore = name.indexOf('_');
             int card = name.substring(1, underscore).toInt();
             int preset = name.substring(underscore + 1).toInt();
-            if (card >= 0 && card < 12 && preset >= 0 && preset < 32) {
+            if (card >= 0 && card < 16 && preset >= 0 && preset < 32) {
                 cfg.presetEnabled[card] |= (1UL << preset);
             }
         }
@@ -1206,6 +1185,34 @@ static void handleCardsConfigPost()
         if (dur < 3) dur = 3;
         if (dur > 3600) dur = 3600;
         cfg.cycleDuration = dur;
+    }
+    
+    // 4. Audio settings (from Audio card in gallery)
+    if (server.hasArg("palette")) {
+        cfg.vuPalette = (uint8_t)server.arg("palette").toInt();
+    }
+    if (server.hasArg("speed")) {
+        cfg.animSpeed = (uint8_t)server.arg("speed").toInt();
+        if (cfg.animSpeed < 1) cfg.animSpeed = 1;
+        if (cfg.animSpeed > 10) cfg.animSpeed = 10;
+    }
+    if (server.hasArg("micGain")) {
+        cfg.micGain = (uint8_t)server.arg("micGain").toInt();
+        if (cfg.micGain < 1) cfg.micGain = 1;
+        if (cfg.micGain > 10) cfg.micGain = 10;
+    }
+    if (server.hasArg("noiseGate")) {
+        cfg.vuNoiseGate = (uint8_t)server.arg("noiseGate").toInt();
+    }
+    cfg.vuInvert = server.hasArg("micInvert");
+    
+    // 5. Weather settings (from Weather card in gallery)
+    if (server.hasArg("tempPalette")) {
+        cfg.tempPalette = (uint8_t)server.arg("tempPalette").toInt();
+        if (cfg.tempPalette > 2) cfg.tempPalette = 0;
+    }
+    if (server.hasArg("forecastHours")) {
+        cfg.forecastHours = (uint8_t)server.arg("forecastHours").toInt();
     }
     
     settings_save();
