@@ -1,12 +1,28 @@
 #include <Adafruit_NeoPixel.h>
 #include "weatherthing_hw.h"
+#include "driver/gpio.h"
+#include "esp_rom_gpio.h"
+#include "soc/gpio_sig_map.h"
+#include <string.h>
+
+// ESP32-C3 GPIO matrix fix - after RMT transmission, force GPIO low
+static void fixGpioMatrix(uint8_t pin) {
+    // ESP-IDF 5.x uses esp_rom_gpio_connect_out_signal instead of gpio_matrix_out
+    esp_rom_gpio_connect_out_signal((gpio_num_t)pin, SIG_GPIO_OUT_IDX, false, false);
+    gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)pin, 0);
+}
 
 static Adafruit_NeoPixel matrixStrip(WT_MATRIX_PIXELS, WT_MATRIX_PIN, NEO_GRB + NEO_KHZ800);
 static Adafruit_NeoPixel timelineStrip(WT_TIMELINE_PIXELS, WT_TIMELINE_PIN, NEO_GRB + NEO_KHZ800);
 
+// Software buffer for pixel data (RGB format)
+static uint8_t matrixBuffer[WT_MATRIX_PIXELS * 3];
+static uint8_t timelineBuffer[WT_TIMELINE_PIXELS * 3];
+
 uint32_t wt_color(uint8_t r, uint8_t g, uint8_t b)
 {
-    return matrixStrip.Color(r, g, b);
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
 }
 
 static const uint32_t WT_BUTTON_DEBOUNCE_MS = 30;
@@ -51,8 +67,7 @@ void wt_hw_begin()
 {
     matrixStrip.begin();
     timelineStrip.begin();
-
-    matrixStrip.setBrightness(g_brightness);   // ~12% global brightness for safety
+    matrixStrip.setBrightness(g_brightness);
     timelineStrip.setBrightness(g_brightness);
 
     wt_display_clear();
@@ -86,10 +101,7 @@ void wt_display_clear()
 
 void wt_display_fill(uint32_t color)
 {
-    for (uint16_t i = 0; i < WT_MATRIX_PIXELS; ++i)
-    {
-        matrixStrip.setPixelColor(i, color);
-    }
+    matrixStrip.fill(color);
 }
 
 void wt_display_set_pixel_raw(uint16_t index, uint32_t color)
@@ -141,10 +153,7 @@ void wt_timeline_clear()
 
 void wt_timeline_fill(uint32_t color)
 {
-    for (uint16_t i = 0; i < WT_TIMELINE_PIXELS; ++i)
-    {
-        timelineStrip.setPixelColor(i, color);
-    }
+    timelineStrip.fill(color);
 }
 
 void wt_timeline_set_pixel(uint8_t index, uint32_t color)
@@ -158,11 +167,11 @@ void wt_timeline_set_pixel(uint8_t index, uint32_t color)
 
 void wt_leds_show()
 {
-    // Note: LED corruption on ESP32-C3 is a known issue due to WiFi interrupts
-    // The NeoPixel library uses RMT which should handle timing, but data copy can still be interrupted
-    // Critical sections cause bootloops - need ESP-IDF led_strip driver for proper fix
     matrixStrip.show();
+    fixGpioMatrix(WT_MATRIX_PIN);
+    delayMicroseconds(100);
     timelineStrip.show();
+    fixGpioMatrix(WT_TIMELINE_PIN);
 }
 
 void wt_set_brightness(uint8_t brightness)
@@ -171,7 +180,6 @@ void wt_set_brightness(uint8_t brightness)
     {
         brightness = 80;
     }
-
     g_brightness = brightness;
     matrixStrip.setBrightness(g_brightness);
     timelineStrip.setBrightness(g_brightness);
@@ -272,10 +280,12 @@ void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t
         // Start blanking - turn off all LEDs briefly
         g_blankingActive = true;
         g_blankingStart = now;
-        matrixStrip.setBrightness(0);
-        timelineStrip.setBrightness(0);
+        matrixStrip.clear();
+        timelineStrip.clear();
         matrixStrip.show();
+        fixGpioMatrix(WT_MATRIX_PIN);
         timelineStrip.show();
+        fixGpioMatrix(WT_TIMELINE_PIN);
         return;
     }
     
@@ -288,9 +298,8 @@ void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t
             g_blankingActive = false;
             lastBlankingMs = now;
             
-            // Restore brightness
-            matrixStrip.setBrightness(lastBrightness);
-            timelineStrip.setBrightness(lastBrightness);
+            // Restore display by calling show (will apply current brightness)
+            wt_leds_show();
         }
         return;
     }
