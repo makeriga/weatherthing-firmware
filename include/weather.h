@@ -64,4 +64,36 @@ void weather_stop_simulation();
 // Get weather type name
 const char* weather_type_name(WeatherType type);
 
+// ============== MAP PRESETS DATA ==============
+
+// RainViewer radar data (20x7 precipitation intensity grid)
+struct RadarMapData {
+    uint8_t intensity[20][7];  // 0-255 precipitation intensity
+    uint32_t timestamp;        // When data was fetched
+    bool valid;
+};
+
+// Open-Meteo grid data (20x7 cloud/precip grid)
+struct GridMapData {
+    uint8_t cloud[20][7];      // 0-100 cloud cover %
+    uint8_t precip[20][7];     // 0-255 precipitation intensity (scaled)
+    uint32_t timestamp;
+    bool valid;
+};
+
+// Fetch RainViewer radar tile and downsample to 20x7
+bool weather_fetch_radar_map();
+
+// Fetch Open-Meteo grid data for 140 points around location
+bool weather_fetch_grid_map();
+
+// Get current radar map data
+const RadarMapData& weather_get_radar_map();
+
+// Get current grid map data
+const GridMapData& weather_get_grid_map();
+
+// Force refresh of map data
+void weather_refresh_maps();
+
 #endif

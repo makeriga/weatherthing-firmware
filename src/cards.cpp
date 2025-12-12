@@ -611,9 +611,12 @@ static void netcard_render()
 
 // Beautiful animated weather icons with polished effects
 // NOTE: Y=0 is BOTTOM of display, Y increases upward
-static void drawWeatherIcon(int8_t x, int8_t y, uint8_t type, uint8_t frame)
+static void drawWeatherIcon(int8_t x, int8_t y, uint8_t type, uint32_t frame)
 {
-    uint32_t now = millis();
+    uint8_t speed = settings_get().animSpeed;
+    uint32_t frameTime = 100 - speed * 8;  // 92ms to 20ms
+    if (frameTime < 15) frameTime = 15;
+    uint32_t now = frame * frameTime;
     
     // Helper: draw animated cloud with morphing bumps - classic fluffy cloud shape
     auto drawAnimCloud = [&](uint8_t baseY, uint32_t col, uint32_t darkCol) {
@@ -1351,9 +1354,9 @@ static void renderTitle(uint32_t now) {
 
 // Preset counts - IMPORTANT: Update these when adding new presets!
 // Also update the presetBtn() calls in net.cpp for the UI buttons
-static const uint8_t WEATHER_PRESET_COUNT = 28;  // Weather presets 0-27 (update in weather_render switch + net.cpp UI)
+static const uint8_t WEATHER_PRESET_COUNT = 30;  // Weather presets 0-29 (update in weather_render switch + net.cpp UI)
 static const uint8_t CLOCK_PRESET_COUNT = 14;    // Clock presets 0-13 (update in clock_render switch + net.cpp UI)
-static const uint8_t VU_PRESET_COUNT = 27;       // VU presets 0-26 (update in vu_render switch + net.cpp UI)
+static const uint8_t VU_PRESET_COUNT = 29;       // VU presets 0-28 (update in vu_render switch + net.cpp UI)
 
 // Demo mode state
 static bool g_demoActive = false;
@@ -3300,7 +3303,7 @@ static void weather_render_classic()
     drawDigit(cursor, 0, ones, tCol); cursor += DIGIT_W + 1;
     
     // Degree symbol near top
-    if (cursor < WT_MATRIX_WIDTH) {
+    if (cursor + 1 < WT_MATRIX_WIDTH) {
         wt_display_set_pixel_xy(cursor, 5, tCol);
         wt_display_set_pixel_xy(cursor + 1, 5, tCol);
         wt_display_set_pixel_xy(cursor, 4, tCol);
@@ -3428,18 +3431,6 @@ static void weather_render_fs_animated()
             wt_display_set_pixel_xy(x, y, 0);
         }
     }
-    
-    // Add a semi-transparent box behind the text for legibility
-    for (uint8_t x = 13; x < WT_MATRIX_WIDTH; ++x) {
-         for (uint8_t y = 1; y < 6; ++y) {
-             // Only draw if the background is bright, but we just cleared it to black above?
-             // Ah, "Background mostly white, temp white".
-             // The loop above clears x >= 12 to black.
-             // So the temp should be visible.
-             // Maybe the user meant the animation bleeds over?
-             // Let's ensure the text color is high contrast.
-         }
-    }
 
     // Temperature color from palette - Ensure it's not white if background is white
     uint32_t tCol = tempToColor(current.temp);
@@ -3529,12 +3520,33 @@ static void weather_render_bigtype() {
     // Center aligned approx
     uint8_t w = (tens > 0 ? 7 : 3); 
     uint8_t x = (WT_MATRIX_WIDTH - w) / 2;
-    
-    if (tens > 0) { drawDigit(x, 0, tens, col); x += 4; }
-    drawDigit(x, 0, ones, col);
-    
-    // Condition color bar at bottom
-    for(int i=0; i<WT_MATRIX_WIDTH; ++i) wt_display_set_pixel_xy(i, 0, col);
+
+    uint8_t tensX = x;
+    uint8_t onesX = x;
+    if (tens > 0) {
+        drawDigit(tensX, 0, tens, col);
+        onesX = tensX + 4;
+    }
+    drawDigit(onesX, 0, ones, col);
+
+    // Condition color bar at bottom without overwriting digit pixels
+    uint8_t tensBottom = (tens > 0) ? sprites_get_digit_row(tens, DIGIT_H - 1) : 0;
+    uint8_t onesBottom = sprites_get_digit_row(ones, DIGIT_H - 1);
+
+    for (uint8_t i = 0; i < WT_MATRIX_WIDTH; ++i) {
+        bool underDigit = false;
+
+        if (tens > 0 && i >= tensX && i < tensX + DIGIT_W) {
+            uint8_t colIdx = i - tensX;
+            if (tensBottom & (1 << (DIGIT_W - 1 - colIdx))) underDigit = true;
+        }
+        if (i >= onesX && i < onesX + DIGIT_W) {
+            uint8_t colIdx = i - onesX;
+            if (onesBottom & (1 << (DIGIT_W - 1 - colIdx))) underDigit = true;
+        }
+
+        if (!underDigit) wt_display_set_pixel_xy(i, 0, col);
+    }
 }
 
 // Weather Preset 8: Forecast Strip
@@ -3829,8 +3841,8 @@ static void weather_render_mood() {
     // Shadow
     uint32_t shadow = wt_color(0, 0, 0);
     if (neg) { wt_display_set_pixel_xy(startX+1, 4, shadow); }
-    if (temp >= 10) drawDigit(startX + (neg ? 4 : 1), 1, temp / 10, shadow);
-    drawDigit(startX + (neg ? 8 : (temp >= 10 ? 5 : 1)), 1, temp % 10, shadow);
+    if (temp >= 10) drawDigit(startX + (neg ? 4 : 1), 0, temp / 10, shadow);
+    drawDigit(startX + (neg ? 8 : (temp >= 10 ? 5 : 1)), 0, temp % 10, shadow);
     
     // White text
     uint32_t white = wt_color(255, 255, 255);
@@ -4225,8 +4237,8 @@ static void weather_render_split() {
     
     // Shadow offset
     if (neg) { wt_display_set_pixel_xy(x+1, 4, shadow); }
-    if (t >= 10) drawDigit(x + (neg ? 4 : 1), 1, t/10, shadow);
-    drawDigit(x + (neg ? 8 : (t >= 10 ? 5 : 1)), 1, t%10, shadow);
+    if (t >= 10) drawDigit(x + (neg ? 4 : 1), 0, t/10, shadow);
+    drawDigit(x + (neg ? 8 : (t >= 10 ? 5 : 1)), 0, t%10, shadow);
     
     // Main digits
     if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
@@ -4345,22 +4357,47 @@ static void weather_render_stack() {
     wt_display_set_pixel_xy(5, 0, wt_color(80, 80, 90));   // ~0°
     wt_display_set_pixel_xy(11, 0, wt_color(80, 80, 90));  // ~20°
     
-    // Temperature digits (top area, centered)
+    // Temperature digits (top 3 rows only: y=4..6)
     uint32_t textCol = wt_color(255, 255, 255);
+
+    auto drawTinyDigit = [&](uint8_t dx, uint8_t dy, uint8_t d, uint32_t c) {
+        static const uint8_t DIG3[10][3] = {
+            {0b111, 0b101, 0b111}, // 0
+            {0b010, 0b110, 0b010}, // 1
+            {0b111, 0b011, 0b110}, // 2
+            {0b111, 0b011, 0b111}, // 3
+            {0b101, 0b111, 0b001}, // 4
+            {0b110, 0b011, 0b111}, // 5
+            {0b110, 0b111, 0b111}, // 6
+            {0b111, 0b001, 0b001}, // 7
+            {0b111, 0b111, 0b111}, // 8
+            {0b111, 0b111, 0b001}, // 9
+        };
+        if (d > 9) return;
+        for (uint8_t row = 0; row < 3; ++row) {
+            uint8_t bits = DIG3[d][row];
+            for (uint8_t col = 0; col < 3; ++col) {
+                if (bits & (1 << (2 - col))) {
+                    wt_display_set_pixel_xy(dx + col, dy + (2 - row), c);
+                }
+            }
+        }
+    };
+
     uint8_t numDigits = (absT >= 10) ? 2 : 1;
     uint8_t width = numDigits * 4 + (neg ? 3 : 0);
     uint8_t x = (WT_MATRIX_WIDTH - width) / 2;
-    
+
     if (neg) {
         wt_display_set_pixel_xy(x, 5, textCol);
-        wt_display_set_pixel_xy(x+1, 5, textCol);
+        wt_display_set_pixel_xy(x + 1, 5, textCol);
         x += 3;
     }
     if (absT >= 10) {
-        drawDigit(x, 4, absT / 10, textCol);
+        drawTinyDigit(x, 4, absT / 10, textCol);
         x += 4;
     }
-    drawDigit(x, 4, absT % 10, textCol);
+    drawTinyDigit(x, 4, absT % 10, textCol);
 }
 
 // Weather Preset 17: Weather Icon Large - animated weather symbol with temp
@@ -5306,6 +5343,227 @@ static void weather_render_frost() {
     drawDigit(x, 0, t%10, tCol);
 }
 
+// Weather Preset 28: Radar Sweep Map (uses grid data with radar aesthetic)
+static void weather_render_map_radar() {
+    wt_display_clear();
+    uint32_t now = millis();
+    
+    // Use grid data (more reliable than PNG parsing)
+    weather_fetch_grid_map();
+    const GridMapData& grid = weather_get_grid_map();
+    
+    // Dark green radar background
+    for (int x = 0; x < 20; x++) {
+        for (int y = 0; y < 7; y++) {
+            wt_display_set_pixel_xy(x, y, wt_color(0, 15, 5));
+        }
+    }
+    
+    // Draw range rings (subtle)
+    uint32_t ringCol = wt_color(0, 35, 15);
+    for (int r = 2; r <= 6; r += 2) {
+        for (float a = 0; a < 6.28f; a += 0.3f) {
+            int rx = 10 + (int)(cosf(a) * r);
+            int ry = 3 + (int)(sinf(a) * r * 0.5f);
+            if (rx >= 0 && rx < 20 && ry >= 0 && ry < 7) {
+                wt_display_set_pixel_xy(rx, ry, ringCol);
+            }
+        }
+    }
+    
+    if (grid.valid) {
+        // Radar sweep angle
+        float sweepAngle = fmodf(now * 0.0015f, 6.28f);
+        
+        // Draw weather data with radar phosphor effect
+        for (int x = 0; x < 20; x++) {
+            for (int y = 0; y < 7; y++) {
+                uint8_t cloud = grid.cloud[x][y];
+                uint8_t precip = grid.precip[x][y];
+                
+                // Calculate angle from center to this pixel
+                float dx = x - 10;
+                float dy = (y - 3) * 2.0f; // Stretch Y for aspect ratio
+                float pixelAngle = atan2f(dy, dx);
+                if (pixelAngle < 0) pixelAngle += 6.28f;
+                
+                // How recently was this pixel "swept"?
+                float angleDiff = sweepAngle - pixelAngle;
+                if (angleDiff < 0) angleDiff += 6.28f;
+                
+                // Fade based on time since sweep (phosphor decay)
+                float fade = 1.0f - (angleDiff / 6.28f);
+                fade = fade * fade; // Quadratic decay
+                
+                // Only show data if there's something to show
+                if (precip > 0 || cloud > 50) {
+                    uint8_t r, g, b;
+                    
+                    if (precip > 0) {
+                        // Precipitation: classic radar green-yellow-red
+                        float pNorm = precip / 255.0f;
+                        if (pNorm < 0.3f) {
+                            r = 0; g = 200; b = 50;  // Green
+                        } else if (pNorm < 0.6f) {
+                            r = 200; g = 200; b = 0;  // Yellow
+                        } else {
+                            r = 255; g = 50; b = 0;   // Red
+                        }
+                    } else {
+                        // Clouds only: dim cyan blips
+                        float cNorm = (cloud - 50) / 50.0f;
+                        r = 0; g = (uint8_t)(60 + 40 * cNorm); b = (uint8_t)(40 + 30 * cNorm);
+                    }
+                    
+                    // Apply phosphor fade
+                    r = (uint8_t)(r * fade);
+                    g = (uint8_t)(g * fade);
+                    b = (uint8_t)(b * fade);
+                    
+                    if (r > 5 || g > 15 || b > 5) {
+                        wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
+                    }
+                }
+            }
+        }
+        
+        // Draw sweep line (bright)
+        for (int r = 1; r <= 9; r++) {
+            int sx = 10 + (int)(cosf(sweepAngle) * r);
+            int sy = 3 + (int)(sinf(sweepAngle) * r * 0.4f);
+            if (sx >= 0 && sx < 20 && sy >= 0 && sy < 7) {
+                uint8_t br = (uint8_t)(180 - r * 15);
+                wt_display_set_pixel_xy(sx, sy, wt_color(br/3, br, br/2));
+            }
+        }
+    } else {
+        // Loading: rotating sweep only
+        float sweepAngle = fmodf(now * 0.003f, 6.28f);
+        for (int r = 1; r <= 9; r++) {
+            int sx = 10 + (int)(cosf(sweepAngle) * r);
+            int sy = 3 + (int)(sinf(sweepAngle) * r * 0.4f);
+            if (sx >= 0 && sx < 20 && sy >= 0 && sy < 7) {
+                wt_display_set_pixel_xy(sx, sy, wt_color(30, 120, 50));
+            }
+        }
+    }
+    
+    // Center dot (radar origin)
+    wt_display_set_pixel_xy(10, 3, wt_color(0, 255, 100));
+}
+
+// Weather Preset 29: Open-Meteo Grid Map (cloud/precipitation)
+static void weather_render_map_grid() {
+    wt_display_clear();
+    uint32_t now = millis();
+    Settings& cfg = settings_get();
+    uint8_t style = cfg.mapStyle;
+    
+    // Fetch grid data if needed
+    weather_fetch_grid_map();
+    const GridMapData& grid = weather_get_grid_map();
+    
+    if (!grid.valid) {
+        // Show loading animation - scanning line
+        uint8_t scanX = (now / 80) % 20;
+        for (int y = 0; y < 7; y++) {
+            wt_display_set_pixel_xy(scanX, y, wt_color(50, 80, 120));
+            if (scanX > 0) wt_display_set_pixel_xy(scanX-1, y, wt_color(20, 40, 60));
+        }
+        // "MAP" text hint
+        wt_display_set_pixel_xy(8, 3, wt_color(100, 100, 100));
+        wt_display_set_pixel_xy(10, 3, wt_color(100, 100, 100));
+        wt_display_set_pixel_xy(12, 3, wt_color(100, 100, 100));
+        return;
+    }
+    
+    // Render based on style setting
+    for (int x = 0; x < 20; x++) {
+        for (int y = 0; y < 7; y++) {
+            uint8_t cloud = grid.cloud[x][y];
+            uint8_t precip = grid.precip[x][y];
+            uint8_t r, g, b;
+            
+            if (style == 1) {
+                // Cloud Focus style - emphasize cloud patterns
+                float cloudNorm = cloud / 100.0f;
+                // Sky blue to white gradient based on clouds
+                r = (uint8_t)(40 + 180 * cloudNorm);
+                g = (uint8_t)(80 + 140 * cloudNorm);
+                b = (uint8_t)(180 + 60 * cloudNorm);
+                // Add purple tint for precipitation
+                if (precip > 0) {
+                    float pNorm = precip / 255.0f;
+                    r = (uint8_t)(r * (1.0f - pNorm * 0.3f) + 100 * pNorm);
+                    g = (uint8_t)(g * (1.0f - pNorm * 0.5f));
+                    b = (uint8_t)(b * 0.8f + 50 * pNorm);
+                }
+            } else if (style == 2) {
+                // Radar sweep style - green phosphor look
+                float cloudNorm = cloud / 100.0f;
+                float precipNorm = precip / 255.0f;
+                float intensity = cloudNorm * 0.3f + precipNorm * 0.7f;
+                // Green radar screen aesthetic
+                r = (uint8_t)(10 + 30 * intensity);
+                g = (uint8_t)(30 + 180 * intensity);
+                b = (uint8_t)(20 + 50 * intensity);
+                // Add scan line effect
+                float scan = sinf(now * 0.003f + x * 0.3f);
+                if (scan > 0.7f) {
+                    g = (uint8_t)(g * 1.3f > 255 ? 255 : g * 1.3f);
+                }
+            } else {
+                // Default: High contrast cloud/precip visualization
+                float cloudNorm = cloud / 100.0f;
+                
+                // Clear sky = deep blue, cloudy = bright white/gray
+                // Much higher contrast range for visibility
+                if (precip > 0) {
+                    // Precipitation: green -> yellow -> red scale (radar colors)
+                    float pNorm = precip / 255.0f;
+                    if (pNorm < 0.2f) {
+                        // Light drizzle: green
+                        r = 30; g = 200; b = 80;
+                    } else if (pNorm < 0.4f) {
+                        // Light rain: yellow-green
+                        r = 150; g = 220; b = 50;
+                    } else if (pNorm < 0.6f) {
+                        // Moderate: yellow
+                        r = 255; g = 220; b = 0;
+                    } else if (pNorm < 0.8f) {
+                        // Heavy: orange
+                        r = 255; g = 120; b = 0;
+                    } else {
+                        // Extreme: red
+                        r = 255; g = 30; b = 50;
+                    }
+                } else if (cloudNorm > 0.7f) {
+                    // Heavy clouds: bright white/gray
+                    r = 180; g = 180; b = 200;
+                } else if (cloudNorm > 0.4f) {
+                    // Medium clouds: light gray-blue
+                    r = 100; g = 120; b = 160;
+                } else if (cloudNorm > 0.15f) {
+                    // Light clouds: cyan tint
+                    r = 40; g = 80; b = 140;
+                } else {
+                    // Clear sky: deep navy blue
+                    r = 10; g = 30; b = 80;
+                }
+            }
+            
+            wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
+        }
+    }
+    
+    // Center marker - pulsing white/yellow dot
+    float pulse = 0.6f + 0.4f * sinf(now * 0.005f);
+    uint8_t markerR = (uint8_t)(255 * pulse);
+    uint8_t markerG = (uint8_t)(220 * pulse);
+    uint8_t markerB = (uint8_t)(100 * pulse);
+    wt_display_set_pixel_xy(10, 3, wt_color(markerR, markerG, markerB));
+}
+
 static void weather_render()
 {
     WeatherData current = weather_get_current();
@@ -5350,6 +5608,8 @@ static void weather_render()
         case 25: weather_render_glitch(); break;       // Glitch
         case 26: weather_render_horizon(); break;      // Horizon
         case 27: weather_render_frost(); break;        // Frost
+        case 28: weather_render_map_radar(); break;    // RainViewer Radar Map
+        case 29: weather_render_map_grid(); break;     // Open-Meteo Grid Map
         default: weather_render_classic(); break;
     }
 

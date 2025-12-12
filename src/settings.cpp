@@ -60,7 +60,10 @@ void settings_begin()
     g_settings.agcEnabled = true; // AGC enabled by default
     g_settings.vuSilenceMs = 500; // 500ms silence detection threshold
     g_settings.weatherPreset = 0;
+    g_settings.weatherProvider = 0;
     g_settings.tempPalette = 0;  // Default temperature colors
+    g_settings.mapZoom = 4;      // Medium zoom level
+    g_settings.mapStyle = 0;     // Precipitation colors
     g_settings.stockSymbol[0] = '\0';
     g_settings.stockEnabled = false;
     g_settings.cryptoSymbol[0] = '\0'; // Empty = BTC default
@@ -133,7 +136,10 @@ void settings_begin()
         g_settings.agcEnabled = g_prefs.getBool("agcOn", true);
         g_settings.vuSilenceMs = g_prefs.getUShort("vuSilMs", 500);
         g_settings.weatherPreset = g_prefs.getUChar("wxPreset", 0);
+        g_settings.weatherProvider = g_prefs.getUChar("wxProv", 0);
         g_settings.tempPalette = g_prefs.getUChar("tempPal", 0);
+        g_settings.mapZoom = g_prefs.getUChar("mapZoom", 4);
+        g_settings.mapStyle = g_prefs.getUChar("mapStyle", 0);
         g_settings.stockEnabled = g_prefs.getBool("stockOn", false);
         g_settings.tzOffset = g_prefs.getChar("tzOffset", 0);
         g_settings.btcUpdateMins = g_prefs.getUChar("btcMins", 5);
@@ -263,6 +269,7 @@ void settings_begin()
     if (g_settings.brightMax > 255) g_settings.brightMax = 255;
     if (g_settings.brightManual < 5) g_settings.brightManual = 5;
     if (g_settings.brightManual > 255) g_settings.brightManual = 255;
+    if (g_settings.weatherProvider > 2) g_settings.weatherProvider = 0;
     if (g_settings.forecastHours != 12 && g_settings.forecastHours != 24 && g_settings.forecastHours != 48) {
         g_settings.forecastHours = 12;
     }
@@ -287,7 +294,10 @@ void settings_save()
         g_prefs.putBool("agcOn", g_settings.agcEnabled);
         g_prefs.putUShort("vuSilMs", g_settings.vuSilenceMs);
         g_prefs.putUChar("wxPreset", g_settings.weatherPreset);
+        g_prefs.putUChar("wxProv", g_settings.weatherProvider);
         g_prefs.putUChar("tempPal", g_settings.tempPalette);
+        g_prefs.putUChar("mapZoom", g_settings.mapZoom);
+        g_prefs.putUChar("mapStyle", g_settings.mapStyle);
         g_prefs.putBool("stockOn", g_settings.stockEnabled);
         g_prefs.putString("stockSym", g_settings.stockSymbol);
         g_prefs.putString("cryptoSym", g_settings.cryptoSymbol);

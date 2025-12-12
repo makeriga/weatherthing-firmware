@@ -228,17 +228,60 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
             html += "</div>";
         };
         
+        // Weather preset button with subtitle
+        auto wxPreset = [&](uint8_t preset, const char* label, const char* sub) {
+            bool checked = (cfg.presetEnabled[0] & (1UL << preset)) != 0;
+            html += "<div class=\"preset-btn\" onclick=\"showCard(0," + String(preset) + ",this)\" style=\"display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:#fffacd;border:3px solid #000;padding:10px 14px;box-shadow:3px 3px 0 #000;transition:all 0.2s;cursor:pointer;min-width:90px\">";
+            html += "<div style=\"display:flex;align-items:center;gap:6px;width:100%\">";
+            html += "<input type=\"checkbox\" name=\"p0_" + String(preset) + "\"" + String(checked ? " checked" : "") + " style=\"width:18px;height:18px;margin:0;cursor:pointer\" onclick=\"event.stopPropagation()\">";
+            html += "<span style=\"font-weight:bold;font-size:1em\">" + String(label) + "</span></div>";
+            html += "<span style=\"font-size:0.7em;color:#666;margin-left:24px\">" + String(sub) + "</span>";
+            html += "</div>";
+        };
+        
         switch(cardIdx) {
             case 0: { // Weather presets + location + display + simulator
-                presetBtn(0, 0, "Classic"); presetBtn(0, 1, "Bar"); presetBtn(0, 2, "Corner");
-                presetBtn(0, 4, "Minimal"); presetBtn(0, 5, "Day/Nite"); presetBtn(0, 6, "Term");
-                presetBtn(0, 8, "Forecast"); presetBtn(0, 9, "Pixel"); presetBtn(0, 10, "LCD");
-                presetBtn(0, 11, "Mood"); presetBtn(0, 12, "Type"); presetBtn(0, 13, "Waves");
-                presetBtn(0, 14, "Split"); presetBtn(0, 15, "Count"); presetBtn(0, 16, "Thermo");
-                presetBtn(0, 17, "Icon"); presetBtn(0, 18, "Rain"); presetBtn(0, 19, "Cyber");
-                presetBtn(0, 20, "Particle"); presetBtn(0, 21, "Wave"); presetBtn(0, 22, "TempBar");
-                presetBtn(0, 23, "Aurora"); presetBtn(0, 24, "Radar"); presetBtn(0, 25, "Glitch");
-                presetBtn(0, 26, "Horizon"); presetBtn(0, 27, "Frost");
+                // Close the flex container, add section header, reopen flex
+                html += "</div><div style=\"width:100%;margin:8px 0 6px;padding:4px 8px;background:#e8e8e8;border-left:3px solid #666;font-weight:bold;font-size:0.85em;color:#444\">&#x1F321; Temperature</div><div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
+                wxPreset(0, "Classic", "Icon + temp");
+                wxPreset(1, "Bar", "Horizontal bar");
+                wxPreset(2, "Corner", "Tinted bg");
+                wxPreset(3, "Anim", "Animated bg");
+                wxPreset(4, "Minimal", "Big digits");
+                wxPreset(7, "Big", "Large type");
+                wxPreset(16, "Thermo", "Mercury tube");
+                wxPreset(22, "TempBar", "Gradient fill");
+                
+                html += "</div><div style=\"width:100%;margin:12px 0 6px;padding:4px 8px;background:#e8e8e8;border-left:3px solid #f59e0b;font-weight:bold;font-size:0.85em;color:#444\">&#x1F305; Animated Scenes</div><div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
+                wxPreset(5, "Day/Nite", "Sky cycle");
+                wxPreset(9, "Pixel", "Cute diorama");
+                wxPreset(11, "Mood", "Color waves");
+                wxPreset(13, "Waves", "Water scene");
+                wxPreset(17, "Icon", "Big symbol");
+                wxPreset(18, "Rain", "Matrix drops");
+                wxPreset(20, "Particle", "Floating dots");
+                wxPreset(21, "Wave", "Waveform");
+                wxPreset(23, "Aurora", "Northern lights");
+                wxPreset(26, "Horizon", "Sunrise/set");
+                wxPreset(27, "Frost", "Ice crystals");
+                
+                html += "</div><div style=\"width:100%;margin:12px 0 6px;padding:4px 8px;background:#e8e8e8;border-left:3px solid #3b82f6;font-weight:bold;font-size:0.85em;color:#444\">&#x1F4CA; Data Views</div><div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
+                wxPreset(8, "Forecast", "3-hour bars");
+                wxPreset(10, "LCD", "Retro green");
+                wxPreset(14, "Split", "Dual tone");
+                wxPreset(15, "Count", "Countdown");
+                wxPreset(24, "Radar", "Sweep anim");
+                
+                html += "</div><div style=\"width:100%;margin:12px 0 6px;padding:4px 8px;background:#e8e8e8;border-left:3px solid #8b5cf6;font-weight:bold;font-size:0.85em;color:#444\">&#x1F916; Effects</div><div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
+                wxPreset(6, "Term", "CLI style");
+                wxPreset(12, "Type", "Typewriter");
+                wxPreset(19, "Cyber", "Neon glow");
+                wxPreset(25, "Glitch", "Digital noise");
+                
+                html += "</div><div style=\"width:100%;margin:12px 0 6px;padding:4px 8px;background:#e8e8e8;border-left:3px solid #10b981;font-weight:bold;font-size:0.85em;color:#444\">&#x1F5FA; Maps</div><div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
+                wxPreset(28, "Radar", "RainViewer");
+                wxPreset(29, "Grid", "Precip grid");
+                
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">"; // Close preset buttons, open settings
                 
                 // Location settings
@@ -251,13 +294,18 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
                 html += "<input name=\"city\" placeholder=\"City name\" style=\"flex:1;padding:6px\">";
                 html += "</div>";
                 html += "<div style=\"display:flex;gap:8px;flex-wrap:wrap\">";
-                html += "<input name=\"lat\" type=\"number\" step=\"0.01\" placeholder=\"Lat\" value=\"" + String(lat, 2) + "\" style=\"width:80px;padding:6px\">";
-                html += "<input name=\"lon\" type=\"number\" step=\"0.01\" placeholder=\"Lon\" value=\"" + String(lon, 2) + "\" style=\"width:80px;padding:6px\">";
+                html += "<input name=\"lat\" type=\"number\" step=\"0.01\" placeholder=\"Lat\" value=\"" + String(lat, 4) + "\" style=\"width:80px;padding:6px\">";
+                html += "<input name=\"lon\" type=\"number\" step=\"0.01\" placeholder=\"Lon\" value=\"" + String(lon, 4) + "\" style=\"width:80px;padding:6px\">";
                 html += "</div></div></details>";
                 
                 // Display settings
                 html += "<details style=\"margin-top:8px\"><summary style=\"cursor:pointer;font-weight:bold\">&#x1F3A8; Display</summary>";
                 html += "<div style=\"padding:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center\">";
+                html += "<label>Provider:</label><select name=\"wxProv\" style=\"padding:6px\">";
+                html += "<option value=\"0\""; if (cfg.weatherProvider == 0) html += " selected"; html += ">Auto</option>";
+                html += "<option value=\"1\""; if (cfg.weatherProvider == 1) html += " selected"; html += ">Open-Meteo</option>";
+                html += "<option value=\"2\""; if (cfg.weatherProvider == 2) html += " selected"; html += ">MET Norway</option>";
+                html += "</select>";
                 html += "<label>Palette:</label><select name=\"tempPalette\" style=\"padding:6px\">";
                 html += "<option value=\"0\""; if (cfg.tempPalette == 0) html += " selected"; html += ">Default</option>";
                 html += "<option value=\"1\""; if (cfg.tempPalette == 1) html += " selected"; html += ">Cool</option>";
@@ -267,6 +315,19 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
                 html += "<option value=\"12\""; if (cfg.forecastHours == 12) html += " selected"; html += ">12h</option>";
                 html += "<option value=\"24\""; if (cfg.forecastHours == 24) html += " selected"; html += ">24h</option>";
                 html += "<option value=\"48\""; if (cfg.forecastHours == 48) html += " selected"; html += ">48h</option>";
+                html += "</select></div>";
+                // Map settings
+                html += "<div style=\"padding:10px 0;border-top:1px solid #ddd;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap;align-items:center\">";
+                html += "<label>&#x1F5FA; Map Zoom:</label><select name=\"mapZoom\" style=\"padding:6px\">";
+                html += "<option value=\"2\""; if (cfg.mapZoom == 2) html += " selected"; html += ">Wide (region)</option>";
+                html += "<option value=\"3\""; if (cfg.mapZoom == 3) html += " selected"; html += ">Medium</option>";
+                html += "<option value=\"4\""; if (cfg.mapZoom == 4) html += " selected"; html += ">City</option>";
+                html += "<option value=\"5\""; if (cfg.mapZoom == 5) html += " selected"; html += ">Close</option>";
+                html += "</select>";
+                html += "<label>Style:</label><select name=\"mapStyle\" style=\"padding:6px\">";
+                html += "<option value=\"0\""; if (cfg.mapStyle == 0) html += " selected"; html += ">Precipitation</option>";
+                html += "<option value=\"1\""; if (cfg.mapStyle == 1) html += " selected"; html += ">Cloud Focus</option>";
+                html += "<option value=\"2\""; if (cfg.mapStyle == 2) html += " selected"; html += ">Radar Sweep</option>";
                 html += "</select></div></details>";
                 // Save button for Weather settings
                 html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='margin-top:10px;padding:8px 16px'>&#x1F4BE; Save Weather Settings</button>";
@@ -357,6 +418,7 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
                 presetBtn(5, 21, "Nyan"); presetBtn(5, 22, "Ocean"); presetBtn(5, 23, "Tetris");
                 sendChunk();
                 presetBtn(5, 24, "Stars"); presetBtn(5, 25, "Lava"); presetBtn(5, 26, "Geo");
+                presetBtn(5, 27, "Sparkle"); presetBtn(5, 28, "Aurora");
                 html += "</div>"; // Close preset buttons wrapper
                 sendChunk(); // Flush buffer after massive list of presets
                 html += "<div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
@@ -1189,6 +1251,7 @@ static void handleSettingsGet()
     json += "\"vuPalette\":" + String(cfg.vuPalette) + ",";
     json += "\"vuSensitivity\":" + String(cfg.vuSensitivity) + ",";
     json += "\"weatherPreset\":" + String(cfg.weatherPreset) + ",";
+    json += "\"weatherProvider\":" + String(cfg.weatherProvider) + ",";
     json += "\"stockSymbol\":\"" + String(cfg.stockSymbol) + "\",";
     json += "\"stockEnabled\":" + String(cfg.stockEnabled ? "true" : "false");
     json += "}";
@@ -1322,15 +1385,51 @@ static void handleCardsConfigPost()
     if (server.hasArg("noiseGate")) {
         cfg.vuNoiseGate = (uint8_t)server.arg("noiseGate").toInt();
     }
+    if (server.hasArg("micBoost")) {
+        cfg.micBoost = (uint8_t)server.arg("micBoost").toInt();
+        if (cfg.micBoost > 10) cfg.micBoost = 10;
+    }
+    if (server.hasArg("silenceMs")) {
+        cfg.vuSilenceMs = (uint16_t)server.arg("silenceMs").toInt();
+        if (cfg.vuSilenceMs > 2000) cfg.vuSilenceMs = 2000;
+    }
     cfg.vuInvert = server.hasArg("micInvert");
+    cfg.agcEnabled = server.hasArg("agcOn");
     
     // 5. Weather settings (from Weather card in gallery)
+    String city = server.hasArg("city") ? server.arg("city") : "";
+    city.trim();
+    if (city.length() >= 2) {
+        weather_set_city(city.c_str());
+    } else if (server.hasArg("lat") && server.hasArg("lon")) {
+        float newLat = server.arg("lat").toFloat();
+        float newLon = server.arg("lon").toFloat();
+        if (newLat >= -90.0f && newLat <= 90.0f && newLon >= -180.0f && newLon <= 180.0f) {
+            float curLat, curLon;
+            weather_get_location(&curLat, &curLon);
+            if (fabsf(newLat - curLat) > 0.0005f || fabsf(newLon - curLon) > 0.0005f) {
+                weather_set_location(newLat, newLon);
+            }
+        }
+    }
+    if (server.hasArg("wxProv")) {
+        cfg.weatherProvider = (uint8_t)server.arg("wxProv").toInt();
+        if (cfg.weatherProvider > 2) cfg.weatherProvider = 0;
+    }
     if (server.hasArg("tempPalette")) {
         cfg.tempPalette = (uint8_t)server.arg("tempPalette").toInt();
         if (cfg.tempPalette > 2) cfg.tempPalette = 0;
     }
     if (server.hasArg("forecastHours")) {
         cfg.forecastHours = (uint8_t)server.arg("forecastHours").toInt();
+    }
+    if (server.hasArg("mapZoom")) {
+        uint8_t z = (uint8_t)server.arg("mapZoom").toInt();
+        if (z >= 2 && z <= 6) cfg.mapZoom = z;
+    }
+    if (server.hasArg("mapStyle")) {
+        uint8_t s = (uint8_t)server.arg("mapStyle").toInt();
+        if (s <= 2) cfg.mapStyle = s;
     }
     
     // 6. Clock settings
