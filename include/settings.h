@@ -26,9 +26,12 @@ struct Settings
     // Audio/VU
     uint8_t vuPalette;       // ColorPalette enum
     uint8_t vuSensitivity;   // 1-10
-    uint8_t vuNoiseGate;     // 0-255
+    uint8_t vuNoiseGate;     // 0-255 (noise floor level)
     uint8_t micGain;         // 1-10 (1=low, 5=normal, 10=high)
+    uint8_t micBoost;        // 0-10 (extra amplification: 0=off, 10=max ~50x extra)
     bool vuInvert;           // Invert VU meter response
+    bool agcEnabled;         // Enable automatic gain control
+    uint16_t vuSilenceMs;    // Silence detection threshold in ms (0=disabled, 100-2000)
     
     // Weather display
     uint8_t weatherPreset;   // 0=classic, 1=fullscreen
@@ -37,6 +40,7 @@ struct Settings
     // Ticker
     char stockSymbol[12];    // Stock ticker symbol (e.g., "AAPL")
     bool stockEnabled;       // Show stock instead of BTC
+    char cryptoSymbol[12];   // Crypto ticker symbol (e.g., "ETH", "DOGE") - empty = BTC
     
     // Clock
     int8_t tzOffset;         // Timezone offset in hours (-12 to +14)
@@ -72,6 +76,8 @@ struct Settings
     uint8_t rssPalette;      // Color palette for RSS
     uint8_t rssSpeed;        // Scroll speed (1-10)
     uint8_t rssUpdateMins;   // Update interval
+    uint8_t rssItemCount;    // Number of items to fetch (1-10)
+    uint8_t rssFormat;       // 0=Title only, 1=Title + Description
     
     // Card Cycle Settings
     bool cardEnabled[16];     // Enabled/Disabled state for each card (expanded for social)
@@ -91,6 +97,14 @@ struct Settings
     char instaUser[32];          // Instagram username
     char tiktokUser[32];         // TikTok username
     uint8_t socialUpdateMins;    // Update interval for social cards (1-60 min)
+    
+    // Transition Settings
+    bool showTransitionTitle;    // Show card title during transitions (default true)
+    bool showTransitionAnim;     // Show transition animations (default true)
+    
+    // Demo Mode Settings
+    bool demoMode;               // Enable demo mode for video capture
+    uint8_t demoDurationSecs;    // Seconds per preset in demo mode (3-30, default 5)
 };
 
 // Initialize settings (load from flash)

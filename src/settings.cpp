@@ -55,18 +55,22 @@ void settings_begin()
     g_settings.vuSensitivity = 5;
     g_settings.vuNoiseGate = 50;
     g_settings.micGain = 5;  // Normal gain
+    g_settings.micBoost = 5; // Medium extra boost
     g_settings.vuInvert = false; // Normal direction by default
+    g_settings.agcEnabled = true; // AGC enabled by default
+    g_settings.vuSilenceMs = 500; // 500ms silence detection threshold
     g_settings.weatherPreset = 0;
     g_settings.tempPalette = 0;  // Default temperature colors
     g_settings.stockSymbol[0] = '\0';
     g_settings.stockEnabled = false;
+    g_settings.cryptoSymbol[0] = '\0'; // Empty = BTC default
     g_settings.tzOffset = 0;  // UTC by default
     g_settings.btcUpdateMins = 5;    // 5 minute default
     g_settings.stockUpdateMins = 5;  // 5 minute default
-    g_settings.brightMin = 2;        // Dark room brightness (Lowered)
-    g_settings.brightMax = 30;       // Light room brightness (Lowered)
+    g_settings.brightMin = 5;        // Dark room brightness
+    g_settings.brightMax = 150;      // Light room brightness (max 255)
     g_settings.brightMode = 0;       // Auto by default
-    g_settings.brightManual = 10;    // Manual brightness level (Lowered)
+    g_settings.brightManual = 50;    // Manual brightness level
     g_settings.brightBlanking = true; // Use blanking for cleaner readings
     g_settings.brightBlankSecs = 30;  // 30 second blanking interval
     g_settings.forecastHours = 12;   // 12 hour forecast default
@@ -85,11 +89,13 @@ void settings_begin()
     g_settings.rssPalette = 0;
     g_settings.rssSpeed = 5;
     g_settings.rssUpdateMins = 15;
+    g_settings.rssItemCount = 3;     // Default 3 items
+    g_settings.rssFormat = 0;        // Default title only
 
     // Card Cycle defaults
     for(int i=0; i<16; ++i) {
-        // Enable cards 0-10 (original), but NOT 11-15 (social) by default
-        g_settings.cardEnabled[i] = (i < 11);
+        // Enable cards 0-7 by default, disable Games(8), MQTT(9), RSS(10), and social(11-15)
+        g_settings.cardEnabled[i] = (i < 8);
         g_settings.cardOrder[i] = i;
         g_settings.presetEnabled[i] = 0xFFFFFFFF; // All presets enabled by default
     }
@@ -106,6 +112,14 @@ void settings_begin()
     g_settings.cycleDuration = 10;
     g_settings.cycleEnabled = false; // Disabled by default
     
+    // Transition defaults
+    g_settings.showTransitionTitle = true;  // Show titles by default
+    g_settings.showTransitionAnim = true;   // Show animations by default
+    
+    // Demo mode defaults
+    g_settings.demoMode = false;            // Disabled by default
+    g_settings.demoDurationSecs = 5;        // 5 seconds per preset
+    
     // Load from flash
     if (g_prefs.begin("wtsettings", true))
     {
@@ -114,7 +128,10 @@ void settings_begin()
         g_settings.vuSensitivity = g_prefs.getUChar("vuSens", 5);
         g_settings.vuNoiseGate = g_prefs.getUChar("vuNoise", 50);
         g_settings.micGain = g_prefs.getUChar("micGain", 5);
+        g_settings.micBoost = g_prefs.getUChar("micBoost", 5);
         g_settings.vuInvert = g_prefs.getBool("vuInv", false);
+        g_settings.agcEnabled = g_prefs.getBool("agcOn", true);
+        g_settings.vuSilenceMs = g_prefs.getUShort("vuSilMs", 500);
         g_settings.weatherPreset = g_prefs.getUChar("wxPreset", 0);
         g_settings.tempPalette = g_prefs.getUChar("tempPal", 0);
         g_settings.stockEnabled = g_prefs.getBool("stockOn", false);
@@ -126,11 +143,15 @@ void settings_begin()
         strncpy(g_settings.stockSymbol, sym.c_str(), sizeof(g_settings.stockSymbol) - 1);
         g_settings.stockSymbol[sizeof(g_settings.stockSymbol) - 1] = '\0';
         
+        String crypto = g_prefs.getString("cryptoSym", "");
+        strncpy(g_settings.cryptoSymbol, crypto.c_str(), sizeof(g_settings.cryptoSymbol) - 1);
+        g_settings.cryptoSymbol[sizeof(g_settings.cryptoSymbol) - 1] = '\0';
+        
         // Brightness settings
-        g_settings.brightMin = g_prefs.getUChar("brightMin", 8);
-        g_settings.brightMax = g_prefs.getUChar("brightMax", 50);
+        g_settings.brightMin = g_prefs.getUChar("brightMin", 5);
+        g_settings.brightMax = g_prefs.getUChar("brightMax", 80);
         g_settings.brightMode = g_prefs.getUChar("brightMode", 0);
-        g_settings.brightManual = g_prefs.getUChar("brightMan", 30);
+        g_settings.brightManual = g_prefs.getUChar("brightMan", 50);
         g_settings.brightBlanking = g_prefs.getBool("brightBlk", true);
         g_settings.brightBlankSecs = g_prefs.getUChar("blankSec", 30);
         g_settings.forecastHours = g_prefs.getUChar("fcstHours", 12);
@@ -165,6 +186,8 @@ void settings_begin()
         g_settings.rssPalette = g_prefs.getUChar("rssPal", 0);
         g_settings.rssSpeed = g_prefs.getUChar("rssSpd", 5);
         g_settings.rssUpdateMins = g_prefs.getUChar("rssMins", 15);
+        g_settings.rssItemCount = g_prefs.getUChar("rssCnt", 3);
+        g_settings.rssFormat = g_prefs.getUChar("rssFmt", 0);
         
         // Card Cycle settings
         if (g_prefs.isKey("cardEn16")) g_prefs.getBytes("cardEn16", g_settings.cardEnabled, 16);
@@ -207,6 +230,14 @@ void settings_begin()
         g_settings.cycleDuration = g_prefs.getUShort("cycleDur", 10);
         g_settings.cycleEnabled = g_prefs.getBool("cycleOn", false);
         
+        // Transition settings
+        g_settings.showTransitionTitle = g_prefs.getBool("trTitle", true);
+        g_settings.showTransitionAnim = g_prefs.getBool("trAnim", true);
+        
+        // Demo mode settings
+        g_settings.demoMode = g_prefs.getBool("demoOn", false);
+        g_settings.demoDurationSecs = g_prefs.getUChar("demoSecs", 5);
+        
         g_prefs.end();
     }
     
@@ -229,9 +260,9 @@ void settings_begin()
     if (g_settings.brightMin < 5) g_settings.brightMin = 5;
     if (g_settings.brightMin > 40) g_settings.brightMin = 40;
     if (g_settings.brightMax < 20) g_settings.brightMax = 20;
-    if (g_settings.brightMax > 80) g_settings.brightMax = 80;
+    if (g_settings.brightMax > 255) g_settings.brightMax = 255;
     if (g_settings.brightManual < 5) g_settings.brightManual = 5;
-    if (g_settings.brightManual > 80) g_settings.brightManual = 80;
+    if (g_settings.brightManual > 255) g_settings.brightManual = 255;
     if (g_settings.forecastHours != 12 && g_settings.forecastHours != 24 && g_settings.forecastHours != 48) {
         g_settings.forecastHours = 12;
     }
@@ -252,10 +283,14 @@ void settings_save()
         g_prefs.putUChar("vuNoise", g_settings.vuNoiseGate);
         g_prefs.putUChar("micGain", g_settings.micGain);
         g_prefs.putBool("vuInv", g_settings.vuInvert);
+        g_prefs.putUChar("micBoost", g_settings.micBoost);
+        g_prefs.putBool("agcOn", g_settings.agcEnabled);
+        g_prefs.putUShort("vuSilMs", g_settings.vuSilenceMs);
         g_prefs.putUChar("wxPreset", g_settings.weatherPreset);
         g_prefs.putUChar("tempPal", g_settings.tempPalette);
         g_prefs.putBool("stockOn", g_settings.stockEnabled);
         g_prefs.putString("stockSym", g_settings.stockSymbol);
+        g_prefs.putString("cryptoSym", g_settings.cryptoSymbol);
         g_prefs.putChar("tzOffset", g_settings.tzOffset);
         g_prefs.putUChar("btcMins", g_settings.btcUpdateMins);
         g_prefs.putUChar("stockMins", g_settings.stockUpdateMins);
@@ -281,7 +316,9 @@ void settings_save()
         g_prefs.putUChar("rssPal", g_settings.rssPalette);
         g_prefs.putUChar("rssSpd", g_settings.rssSpeed);
         g_prefs.putUChar("rssMins", g_settings.rssUpdateMins);
-
+        g_prefs.putUChar("rssCnt", g_settings.rssItemCount);
+        g_prefs.putUChar("rssFmt", g_settings.rssFormat);
+        
         // Card Cycle settings
         g_prefs.putBytes("cardEn16", g_settings.cardEnabled, 16);
         g_prefs.putBytes("cardOrd16", g_settings.cardOrder, 16);
@@ -298,6 +335,14 @@ void settings_save()
         g_prefs.putUChar("socMins", g_settings.socialUpdateMins);
         g_prefs.putUShort("cycleDur", g_settings.cycleDuration);
         g_prefs.putBool("cycleOn", g_settings.cycleEnabled);
+        
+        // Transition settings
+        g_prefs.putBool("trTitle", g_settings.showTransitionTitle);
+        g_prefs.putBool("trAnim", g_settings.showTransitionAnim);
+        
+        // Demo mode settings
+        g_prefs.putBool("demoOn", g_settings.demoMode);
+        g_prefs.putUChar("demoSecs", g_settings.demoDurationSecs);
         
         g_prefs.end();
     }

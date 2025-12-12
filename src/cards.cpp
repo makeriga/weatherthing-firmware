@@ -189,8 +189,19 @@ static const bool g_cardMusical[] = {
 // Title animation state
 static bool g_showingTitle = false;
 static uint32_t g_titleStartTime = 0;
-static const uint32_t TITLE_DURATION_MS = 1500;  // Show title for 1.5 seconds
+static const uint32_t TITLE_DURATION_MS = 2000;  // Show title for 2 seconds
 static int16_t g_titleScrollX = 0;
+static uint8_t g_transitionEffect = 0;  // Cycles through effects
+
+// Transition particle system
+struct TransParticle {
+    float x, y;
+    float vx, vy;
+    uint8_t life;
+    uint32_t color;
+};
+static const uint8_t TRANS_PARTICLES = 20;
+static TransParticle g_transParticles[TRANS_PARTICLES];
 
 static uint16_t g_diagLedStep = 0;
 static uint32_t g_diagLastPrint = 0;
@@ -229,7 +240,7 @@ static uint32_t g_weatherAnimFrame = 0;
 static uint32_t g_weatherLastAnim = 0;
 
 // Global sound-reactive state
-static bool g_soundReactive = true;
+static bool g_soundReactive = false;
 static uint8_t g_audioLevel = 0;      // 0-255 envelope
 static uint32_t g_lastAudioSample = 0;
 static uint32_t g_soundToggleFlashUntil = 0;
@@ -762,11 +773,12 @@ static void drawWeatherIcon(int8_t x, int8_t y, uint8_t type, uint8_t frame)
         }
         
         case WEATHER_CLOUDY: {
-            // Animated morphing cloud
+            // Dark rain cloud - bluish-grey for threatening overcast weather
             float pulse = 0.9f + 0.1f * sinf(now * 0.0015f);
-            uint8_t br = (uint8_t)(180 * pulse);
-            uint32_t cloudCol = wt_color(br, br, (uint8_t)(br + 20));
-            uint32_t darkCol = wt_color(br - 30, br - 30, br - 10);
+            uint8_t br = (uint8_t)(95 * pulse);  // Darker base for rain clouds
+            // Blue-grey tint: less red, more blue for that ominous look
+            uint32_t cloudCol = wt_color((uint8_t)(br * 0.7f), (uint8_t)(br * 0.75f), (uint8_t)(br + 35));
+            uint32_t darkCol = wt_color((uint8_t)(br * 0.5f), (uint8_t)(br * 0.55f), (uint8_t)(br + 15));
             drawAnimCloud(3, cloudCol, darkCol);
             break;
         }
@@ -801,20 +813,33 @@ static void drawWeatherIcon(int8_t x, int8_t y, uint8_t type, uint8_t frame)
             uint32_t darkCol = wt_color(60, 60, 90 + blueShift);
             drawAnimCloud(4, cloudCol, darkCol);
             
-            // Rain drops
-            uint8_t dropCount = (type == WEATHER_DRIZZLE) ? 2 : (type == WEATHER_RAIN) ? 4 : 6;
-            uint8_t fallSpeed = (type == WEATHER_HEAVY_RAIN) ? 2 : (type == WEATHER_DRIZZLE) ? 6 : 4;
+            // Rain drops with trails - falling DOWN (decreasing Y)
+            uint8_t dropCount = (type == WEATHER_DRIZZLE) ? 3 : (type == WEATHER_RAIN) ? 5 : 7;
             
             for (uint8_t d = 0; d < dropCount; ++d) {
-                int8_t dropX = x + 1 + ((d * 7 + 3) % 6);
-                int8_t dropY = y + 3 - ((frame / fallSpeed + d * 5) % 4);
+                int8_t dropX = x + (d * 11 + 3) % 7;
+                // Drops fall from top (y+3) to bottom (y+0)
+                int8_t dropY = y + 3 - ((now / (40 + d * 10) + d * 17) % 5);
                 
-                uint32_t dropCol = wt_color(80, 140, 255);
+                // Bright drop head
+                uint32_t headCol = wt_color(120, 180, 255);
+                uint32_t trailCol = wt_color(60, 100, 200);
+                uint32_t trailDim = wt_color(30, 50, 120);
+                
                 if (dropY >= y && dropY <= y + 3) {
-                    wt_display_set_pixel_xy(dropX, dropY, dropCol);
-                    if (type == WEATHER_HEAVY_RAIN && dropY < y + 3) {
-                        wt_display_set_pixel_xy(dropX, dropY + 1, wt_color(40, 80, 180));
+                    wt_display_set_pixel_xy(dropX, dropY, headCol);
+                    // Trail above the drop (where it came from)
+                    if (dropY + 1 <= y + 3) {
+                        wt_display_set_pixel_xy(dropX, dropY + 1, trailCol);
                     }
+                    if (type != WEATHER_DRIZZLE && dropY + 2 <= y + 3) {
+                        wt_display_set_pixel_xy(dropX, dropY + 2, trailDim);
+                    }
+                }
+                // Splash at bottom
+                if (dropY == y && type == WEATHER_HEAVY_RAIN) {
+                    wt_display_set_pixel_xy(dropX - 1, y, wt_color(40, 60, 100));
+                    wt_display_set_pixel_xy(dropX + 1, y, wt_color(40, 60, 100));
                 }
             }
             break;
@@ -855,14 +880,21 @@ static void drawWeatherIcon(int8_t x, int8_t y, uint8_t type, uint8_t frame)
             uint32_t cloudCol = wt_color(150, 150, 165);
             drawAnimCloud(4, cloudCol, wt_color(120, 120, 135));
             
-            // Drifting snowflakes
-            for (uint8_t f = 0; f < 5; ++f) {
-                float drift = sinf(now * 0.0015f + f * 1.2f) * 2.0f;
-                int8_t flakeX = x + 1 + (f * 5 / 4) % 5 + (int8_t)drift;
-                int8_t flakeY = y + 3 - ((frame / 8 + f * 3) % 4);
+            // Drifting snowflakes with gentle sway - falling DOWN
+            for (uint8_t f = 0; f < 6; ++f) {
+                float drift = sinf(now * 0.002f + f * 1.5f) * 1.5f;
+                int8_t flakeX = x + (f * 13 + 2) % 7 + (int8_t)drift;
+                // Snowflakes fall slowly from top to bottom
+                int8_t flakeY = y + 3 - ((now / (120 + f * 20) + f * 11) % 5);
                 
                 if (flakeX >= 0 && flakeX < WT_MATRIX_WIDTH && flakeY >= y && flakeY <= y + 3) {
+                    // Bright snowflake
                     wt_display_set_pixel_xy(flakeX, flakeY, wt_color(255, 255, 255));
+                    // Subtle sparkle trail
+                    if (flakeY + 1 <= y + 3) {
+                        uint8_t sparkle = 60 + (uint8_t)(40 * sinf(now * 0.01f + f));
+                        wt_display_set_pixel_xy(flakeX, flakeY + 1, wt_color(sparkle, sparkle, sparkle + 20));
+                    }
                 }
             }
             break;
@@ -1020,79 +1052,331 @@ static void drawNoteIcon(int16_t x, uint8_t y, uint32_t color) {
     wt_display_set_pixel_xy(x + 3, y + 1, color);
 }
 
-// Render the title animation - short and centered
+// Card icons - 7x7 bitmaps for epic transitions
+static const uint8_t ICON_SUN[7] = {0x10, 0x54, 0x38, 0xFE, 0x38, 0x54, 0x10};      // ☀
+static const uint8_t ICON_CLOCK[7] = {0x38, 0x44, 0x4C, 0x54, 0x44, 0x44, 0x38};    // ⏰
+static const uint8_t ICON_BTC[7] = {0x7C, 0x52, 0x72, 0x52, 0x72, 0x52, 0x7C};      // ₿
+static const uint8_t ICON_CHART[7] = {0x01, 0x03, 0x07, 0x0E, 0x1C, 0x38, 0x7F};    // 📈
+static const uint8_t ICON_WIFI[7] = {0x00, 0x7E, 0x00, 0x3C, 0x00, 0x18, 0x18};     // 📶
+static const uint8_t ICON_MIC[7] = {0x18, 0x3C, 0x3C, 0x3C, 0x18, 0x18, 0x7E};      // 🎤
+static const uint8_t ICON_STAR[7] = {0x10, 0x10, 0x54, 0x38, 0x54, 0x10, 0x10};     // ✨
+static const uint8_t ICON_WAVE[7] = {0x60, 0x90, 0x60, 0x06, 0x09, 0x06, 0x00};     // 🌈
+static const uint8_t ICON_GAME[7] = {0x7F, 0x41, 0x5D, 0x55, 0x5D, 0x41, 0x7F};     // 🎮
+static const uint8_t ICON_HOME[7] = {0x10, 0x38, 0x7C, 0x54, 0x54, 0x54, 0x7C};     // 🏠
+static const uint8_t ICON_NEWS[7] = {0x7F, 0x41, 0x7F, 0x41, 0x5F, 0x41, 0x7F};     // 📰
+static const uint8_t ICON_PLAY[7] = {0x00, 0x7C, 0x38, 0x10, 0x00, 0x00, 0x00};     // ▶
+
+// Get icon for card
+static const uint8_t* getCardIcon(uint8_t card) {
+    switch (card) {
+        case CARD_WEATHER: return ICON_SUN;
+        case CARD_CLOCK:   return ICON_CLOCK;
+        case CARD_BTC:     return ICON_BTC;
+        case CARD_STOCK:   return ICON_CHART;
+        case CARD_NETWORK: return ICON_WIFI;
+        case CARD_VU:      return ICON_MIC;
+        case CARD_SPARKLE: return ICON_STAR;
+        case CARD_AURORA:  return ICON_WAVE;
+        case CARD_GAMES:   return ICON_GAME;
+        case CARD_MQTT:    return ICON_HOME;
+        case CARD_RSS:     return ICON_NEWS;
+        default:           return ICON_PLAY;
+    }
+}
+
+// Get card color
+static uint32_t getCardColor(uint8_t card) {
+    switch (card) {
+        case CARD_WEATHER: return wt_color(100, 180, 255);  // Sky blue
+        case CARD_CLOCK:   return wt_color(255, 220, 100);  // Golden
+        case CARD_BTC:     return wt_color(255, 160, 30);   // Bitcoin orange
+        case CARD_STOCK:   return wt_color(50, 255, 100);   // Money green
+        case CARD_NETWORK: return wt_color(0, 200, 255);    // Cyan
+        case CARD_VU:      return wt_color(255, 50, 200);   // Hot pink
+        case CARD_SPARKLE: return wt_color(255, 255, 255);  // White
+        case CARD_AURORA:  return wt_color(50, 255, 150);   // Aurora green
+        case CARD_GAMES:   return wt_color(255, 80, 255);   // Magenta
+        case CARD_MQTT:    return wt_color(65, 180, 255);   // Home Assistant blue
+        case CARD_RSS:     return wt_color(255, 150, 50);   // RSS orange
+        case CARD_YOUTUBE: return wt_color(255, 0, 0);      // YouTube red
+        case CARD_TWITCH:  return wt_color(145, 70, 255);   // Twitch purple
+        case CARD_TWITTER: return wt_color(29, 161, 242);   // Twitter blue
+        case CARD_INSTA:   return wt_color(255, 100, 150);  // Insta pink
+        case CARD_TIKTOK:  return wt_color(0, 255, 200);    // TikTok teal
+        default:           return wt_color(200, 200, 200);
+    }
+}
+
+// Draw 7x7 icon at position
+static void drawIcon7x7(int8_t x, int8_t y, const uint8_t* icon, uint32_t color) {
+    for (int row = 0; row < 7; row++) {
+        uint8_t bits = icon[row];
+        for (int col = 0; col < 7; col++) {
+            if (bits & (0x40 >> col)) {
+                int px = x + col;
+                int py = y + row;
+                if (px >= 0 && px < WT_MATRIX_WIDTH && py >= 0 && py < WT_MATRIX_HEIGHT) {
+                    wt_display_set_pixel_xy(px, py, color);
+                }
+            }
+        }
+    }
+}
+
+// Initialize particles for transition
+static void initTransitionParticles(uint32_t color) {
+    for (int i = 0; i < TRANS_PARTICLES; i++) {
+        g_transParticles[i].x = random(WT_MATRIX_WIDTH);
+        g_transParticles[i].y = random(WT_MATRIX_HEIGHT);
+        g_transParticles[i].vx = (random(100) - 50) / 25.0f;
+        g_transParticles[i].vy = (random(100) - 50) / 25.0f;
+        g_transParticles[i].life = random(30, 60);
+        // Color variation
+        uint8_t r = ((color >> 16) & 0xFF);
+        uint8_t g = ((color >> 8) & 0xFF);
+        uint8_t b = (color & 0xFF);
+        int var = random(-30, 30);
+        g_transParticles[i].color = wt_color(
+            constrain(r + var, 0, 255),
+            constrain(g + var, 0, 255),
+            constrain(b + var, 0, 255)
+        );
+    }
+}
+
+// Update and draw particles
+static void updateParticles() {
+    for (int i = 0; i < TRANS_PARTICLES; i++) {
+        if (g_transParticles[i].life > 0) {
+            g_transParticles[i].x += g_transParticles[i].vx;
+            g_transParticles[i].y += g_transParticles[i].vy;
+            g_transParticles[i].life--;
+            
+            int px = (int)g_transParticles[i].x;
+            int py = (int)g_transParticles[i].y;
+            if (px >= 0 && px < WT_MATRIX_WIDTH && py >= 0 && py < WT_MATRIX_HEIGHT) {
+                uint8_t fade = g_transParticles[i].life * 4;
+                uint32_t c = g_transParticles[i].color;
+                uint8_t r = ((c >> 16) & 0xFF) * fade / 255;
+                uint8_t g = ((c >> 8) & 0xFF) * fade / 255;
+                uint8_t b = (c & 0xFF) * fade / 255;
+                wt_display_set_pixel_xy(px, py, wt_color(r, g, b));
+            }
+        }
+    }
+}
+
+// Render the title animation - EPIC TRANSITIONS!
 static void renderTitle(uint32_t now) {
     wt_display_clear();
     wt_timeline_clear();
     
-    const char* name = g_cardNames[g_currentCard];
-    bool musical = g_cardMusical[g_currentCard];
-    
-    // Calculate text width
-    uint8_t len = strlen(name);
-    uint8_t textW = len * 4;  // 3 pixels + 1 space per char
-    if (musical) textW += 5;  // Note icon + space
-    
-    // Animation progress (0.0 to 1.0)
     float progress = (float)(now - g_titleStartTime) / TITLE_DURATION_MS;
     if (progress > 1.0f) progress = 1.0f;
     
-    // Fade in, hold centered, fade out (no scrolling)
-    int16_t x = (WT_MATRIX_WIDTH - textW) / 2;
-    if (x < 0) x = 0;  // If too wide, start from left
+    uint32_t color = getCardColor(g_currentCard);
+    const uint8_t* icon = getCardIcon(g_currentCard);
+    const char* name = g_cardNames[g_currentCard];
+    uint8_t len = strlen(name);
     
-    // Calculate brightness based on progress
-    uint8_t bright = 255;
-    if (progress < 0.15f) {
-        bright = (uint8_t)(255 * progress / 0.15f);
-    } else if (progress > 0.85f) {
-        bright = (uint8_t)(255 * (1.0f - progress) / 0.15f);
+    uint8_t r = (color >> 16) & 0xFF;
+    uint8_t g = (color >> 8) & 0xFF;
+    uint8_t b = color & 0xFF;
+    
+    // Pick transition effect based on g_transitionEffect (0-5)
+    switch (g_transitionEffect % 6) {
+        case 0: { // WIPE IN from left with icon + text
+            int wipeX = (int)(progress * (WT_MATRIX_WIDTH + 10)) - 10;
+            // Draw wipe edge (vertical rainbow line)
+            for (int y = 0; y < WT_MATRIX_HEIGHT; y++) {
+                if (wipeX >= 0 && wipeX < WT_MATRIX_WIDTH) {
+                    uint8_t hue = (y * 36 + (int)(now / 10)) % 256;
+                    wt_display_set_pixel_xy(wipeX, y, wt_color_hsv(hue, 255, 255));
+                }
+            }
+            // Draw icon centered, fading in after wipe passes
+            int iconX = 5;
+            if (wipeX > iconX) {
+                uint8_t iconBr = min(255, (wipeX - iconX) * 30);
+                uint32_t iconCol = wt_color(r * iconBr / 255, g * iconBr / 255, b * iconBr / 255);
+                drawIcon7x7(iconX, 0, icon, iconCol);
+            }
+            // Draw text scrolling in from right
+            int textX = WT_MATRIX_WIDTH - (int)(progress * (WT_MATRIX_WIDTH - 13));
+            for (uint8_t i = 0; i < len && i < 3; i++) {
+                drawChar3x5(textX + i * 4, 1, name[i], color);
+            }
+            break;
+        }
+        
+        case 1: { // EXPLOSION - icon bursts into particles, reforms as text
+            if (progress < 0.4f) {
+                // Draw icon exploding outward
+                float explode = progress / 0.4f;
+                for (int row = 0; row < 7; row++) {
+                    uint8_t bits = icon[row];
+                    for (int col = 0; col < 7; col++) {
+                        if (bits & (0x40 >> col)) {
+                            float dx = (col - 3) * explode * 3;
+                            float dy = (row - 3) * explode * 2;
+                            int px = 6 + col + (int)dx;
+                            int py = row + (int)dy;
+                            if (px >= 0 && px < WT_MATRIX_WIDTH && py >= 0 && py < WT_MATRIX_HEIGHT) {
+                                uint8_t br = (uint8_t)(255 * (1.0f - explode));
+                                wt_display_set_pixel_xy(px, py, wt_color(r*br/255, g*br/255, b*br/255));
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Text fades in
+                float textProg = (progress - 0.4f) / 0.6f;
+                uint8_t br = (uint8_t)(255 * textProg);
+                uint32_t textCol = wt_color(r*br/255, g*br/255, b*br/255);
+                int textX = (WT_MATRIX_WIDTH - len * 4) / 2;
+                for (uint8_t i = 0; i < len; i++) {
+                    drawChar3x5(textX + i * 4, 1, name[i], textCol);
+                }
+            }
+            updateParticles();
+            break;
+        }
+        
+        case 2: { // RAIN DROP - pixels fall from top, revealing icon
+            int revealLine = (int)(progress * (WT_MATRIX_HEIGHT + 3));
+            // Draw rain drops
+            for (int x = 0; x < WT_MATRIX_WIDTH; x++) {
+                int dropY = (revealLine + (x * 3) % 5) % (WT_MATRIX_HEIGHT + 5);
+                if (dropY >= 0 && dropY < WT_MATRIX_HEIGHT) {
+                    uint8_t hue = (x * 15 + (int)(now / 20)) % 256;
+                    wt_display_set_pixel_xy(x, dropY, wt_color_hsv(hue, 200, 255));
+                }
+                if (dropY > 0 && dropY - 1 < WT_MATRIX_HEIGHT) {
+                    wt_display_set_pixel_xy(x, dropY - 1, wt_color(50, 50, 80));
+                }
+            }
+            // Icon appears as rain clears
+            if (progress > 0.3f) {
+                float iconBr = (progress - 0.3f) / 0.7f;
+                uint32_t iconCol = wt_color((uint8_t)(r*iconBr), (uint8_t)(g*iconBr), (uint8_t)(b*iconBr));
+                drawIcon7x7(6, 0, icon, iconCol);
+            }
+            break;
+        }
+        
+        case 3: { // SPIRAL IN - pixels spiral into center forming icon
+            float angle = progress * 6.28f * 3;  // 3 rotations
+            float radius = (1.0f - progress) * 12;
+            // Spiral trail
+            for (int i = 0; i < 8; i++) {
+                float a = angle - i * 0.3f;
+                float rad = radius + i * 0.5f;
+                int px = 10 + (int)(cosf(a) * rad);
+                int py = 3 + (int)(sinf(a) * rad * 0.5f);
+                if (px >= 0 && px < WT_MATRIX_WIDTH && py >= 0 && py < WT_MATRIX_HEIGHT) {
+                    uint8_t br = 255 - i * 30;
+                    uint8_t hue = ((int)(a * 40) + (int)(now / 10)) % 256;
+                    wt_display_set_pixel_xy(px, py, wt_color_hsv(hue, 255, br));
+                }
+            }
+            // Icon fades in at center
+            if (progress > 0.5f) {
+                float iconBr = (progress - 0.5f) * 2;
+                uint32_t iconCol = wt_color((uint8_t)(r*iconBr), (uint8_t)(g*iconBr), (uint8_t)(b*iconBr));
+                drawIcon7x7(6, 0, icon, iconCol);
+            }
+            break;
+        }
+        
+        case 4: { // MATRIX RAIN + icon
+            // Green matrix rain effect
+            for (int x = 0; x < WT_MATRIX_WIDTH; x++) {
+                int speed = 2 + (x % 3);
+                int dropY = ((int)(now / (30 + x * 2)) + x * 7) % (WT_MATRIX_HEIGHT + 8) - 4;
+                for (int t = 0; t < 4; t++) {
+                    int py = dropY - t;
+                    if (py >= 0 && py < WT_MATRIX_HEIGHT) {
+                        uint8_t br = 255 - t * 60;
+                        wt_display_set_pixel_xy(x, py, wt_color(0, br, br/3));
+                    }
+                }
+            }
+            // Icon pulses in center
+            float pulse = 0.6f + 0.4f * sinf(now * 0.01f);
+            uint32_t iconCol = wt_color((uint8_t)(r*pulse), (uint8_t)(g*pulse), (uint8_t)(b*pulse));
+            drawIcon7x7(6, 0, icon, iconCol);
+            break;
+        }
+        
+        case 5: { // WAVE WIPE with rainbow trail
+            float wavePhase = progress * 3.14159f;
+            for (int x = 0; x < WT_MATRIX_WIDTH; x++) {
+                float wave = sinf(wavePhase + x * 0.3f);
+                int waveY = 3 + (int)(wave * 3);
+                // Rainbow wave
+                uint8_t hue = (x * 12 + (int)(now / 5)) % 256;
+                for (int y = 0; y < WT_MATRIX_HEIGHT; y++) {
+                    if (y == waveY || y == waveY + 1) {
+                        wt_display_set_pixel_xy(x, y, wt_color_hsv(hue, 255, 255));
+                    }
+                }
+            }
+            // Show icon and short text
+            if (progress > 0.2f) {
+                float br = min(1.0f, (progress - 0.2f) * 2);
+                drawIcon7x7(2, 0, icon, wt_color((uint8_t)(r*br), (uint8_t)(g*br), (uint8_t)(b*br)));
+                // Show first 3 chars
+                for (uint8_t i = 0; i < 3 && i < len; i++) {
+                    drawChar3x5(11 + i * 4, 1, name[i], wt_color((uint8_t)(r*br), (uint8_t)(g*br), (uint8_t)(b*br)));
+                }
+            }
+            break;
+        }
     }
     
-    // Color - use card-specific colors (match new card order)
-    uint32_t color;
-    switch (g_currentCard) {
-        case CARD_WEATHER: color = wt_color(100, 180, 255); break;  // Sky blue
-        case CARD_CLOCK:   color = wt_color(255, 255, 150); break;  // Warm white
-        case CARD_BTC:     color = wt_color(255, 180, 50); break;   // Bitcoin orange
-        case CARD_STOCK:   color = wt_color(100, 255, 100); break;  // Money green
-        case CARD_NETWORK: color = wt_color(100, 200, 255); break;  // Cyan
-        case CARD_VU:      color = wt_color(255, 50, 150); break;   // Pink
-        case CARD_SPARKLE: color = wt_color(255, 255, 255); break;  // White
-        case CARD_AURORA:  color = wt_color(100, 255, 150); break;  // Green
-        case CARD_GAMES:   color = wt_color(255, 100, 255); break;  // Magenta
-        case CARD_MQTT:    color = wt_color(50, 200, 255); break;   // HA Blue
-        default: color = wt_color(200, 200, 200); break;
-    }
-    
-    // Apply brightness
-    uint8_t r = ((color >> 16) & 0xFF) * bright / 255;
-    uint8_t g = ((color >> 8) & 0xFF) * bright / 255;
-    uint8_t b = (color & 0xFF) * bright / 255;
-    color = wt_color(r, g, b);
-    
-    // Draw music note if musical
-    int16_t textX = x;
-    if (musical) {
-        drawNoteIcon(x, 1, color);
-        textX += 5;
-    }
-    
-    // Draw each character
-    for (uint8_t i = 0; i < len; ++i) {
-        drawChar3x5(textX + i * 4, 1, name[i], color);
-    }
-    
-    // Simple timeline - solid color matching card
+    // Epic timeline animation - rainbow chase with sparkles
+    float tlPhase = progress * WT_TIMELINE_PIXELS * 2;
     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
-        wt_timeline_set_pixel(i, wt_color(r/3, g/3, b/3));
+        float dist = fabsf(i - tlPhase);
+        if (dist < 5) {
+            uint8_t br = (uint8_t)(255 * (1.0f - dist / 5.0f));
+            uint8_t hue = (i * 8 + (int)(now / 10)) % 256;
+            wt_timeline_set_pixel(i, wt_color_hsv(hue, 255, br));
+        } else {
+            // Subtle card color glow
+            wt_timeline_set_pixel(i, wt_color(r/8, g/8, b/8));
+        }
     }
 }
 
-// Preset counts
-static const uint8_t WEATHER_PRESET_COUNT = 12;  // 12 weather display styles
-static const uint8_t CLOCK_PRESET_COUNT = 14;    // 14 clock watchfaces
-static const uint8_t VU_PRESET_COUNT = 27;       // 27 visualizers
+// Preset counts - IMPORTANT: Update these when adding new presets!
+// Also update the presetBtn() calls in net.cpp for the UI buttons
+static const uint8_t WEATHER_PRESET_COUNT = 28;  // Weather presets 0-27 (update in weather_render switch + net.cpp UI)
+static const uint8_t CLOCK_PRESET_COUNT = 14;    // Clock presets 0-13 (update in clock_render switch + net.cpp UI)
+static const uint8_t VU_PRESET_COUNT = 27;       // VU presets 0-26 (update in vu_render switch + net.cpp UI)
+
+// Demo mode state
+static bool g_demoActive = false;
+static uint32_t g_demoLastSwitch = 0;
+static uint8_t g_demoTransitionPhase = 0;  // 0=showing preset, 1=flashy transition
+
+// Get random enabled preset for a card type
+static uint8_t getRandomEnabledPreset(uint8_t card, uint8_t maxPresets) {
+    Settings& cfg = settings_get();
+    uint32_t enabled = cfg.presetEnabled[card];
+    
+    // Count enabled presets
+    uint8_t enabledList[32];
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < maxPresets && i < 32; ++i) {
+        if (enabled & (1UL << i)) {
+            enabledList[count++] = i;
+        }
+    }
+    
+    if (count == 0) return 0;  // Fallback to preset 0
+    return enabledList[random(count)];
+}
 
 // Count total items (cards + presets)
 static uint8_t getTotalItems()
@@ -1117,9 +1401,22 @@ static uint32_t g_lastAutoCycle = 0;
 static void startTitleAnimation(uint32_t now);
 
 static void startTitleAnimation(uint32_t now) {
-    g_showingTitle = true;
-    g_titleStartTime = now;
+    Settings& cfg = settings_get();
     g_lastAutoCycle = now; // Reset auto cycle timer on manual switch
+    
+    // Check if transitions are enabled
+    if (!cfg.showTransitionTitle && !cfg.showTransitionAnim) {
+        g_showingTitle = false;
+        return;  // Skip all transitions
+    }
+    
+    g_showingTitle = cfg.showTransitionTitle;
+    g_titleStartTime = now;
+    
+    if (cfg.showTransitionAnim) {
+        g_transitionEffect++;  // Cycle to next effect
+        initTransitionParticles(getCardColor(g_currentCard));
+    }
 }
 
 static uint8_t getNextEnabledCard(uint8_t current) {
@@ -1297,7 +1594,6 @@ static void handleButtons(uint32_t now)
 // Adaptive gain / automatic gain control state
 static uint16_t g_agcPeak = 500;          // Adaptive peak level
 static uint32_t g_silenceStartMs = 0;     // When silence started
-static const uint32_t SILENCE_THRESHOLD_MS = 500;  // 500ms of low signal = silence
 
 static void sampleAudio(uint32_t now)
 {
@@ -1320,28 +1616,45 @@ static void sampleAudio(uint32_t now)
 
     uint16_t amp = maxVal - minVal;
     
-    // Apply mic gain (1-10 -> 0.3x to 3x multiplier)
-    float gainMult = 0.3f + (cfg.micGain - 1) * 0.3f;
-    amp = (uint16_t)(amp * gainMult);
+    // Apply mic gain (1-10) with EXTREME boost for high sensitivity
+    // Range: ~1x (min) to ~100x (max) - exponential curve
+    float gainVal = (float)cfg.micGain;
+    float gainMult = powf(2.5f, gainVal * 0.5f);  // Exponential: 2.5^(gain/2)
     
-    // Dynamic noise floor based on vuNoiseGate setting (0-255 -> 100-600)
-    uint16_t noiseFloor = 100 + cfg.vuNoiseGate * 2;
-    
-    // Adaptive gain control - slowly track peak level
-    if (amp > g_agcPeak) {
-        g_agcPeak = (g_agcPeak * 7 + amp) / 8;  // Fast rise
-    } else {
-        g_agcPeak = (g_agcPeak * 127 + 500) / 128;  // Very slow decay toward baseline
+    // Apply additional boost (0-10) for extra amplification
+    // boost 0=1x, 5=~10x, 10=~50x additional
+    if (cfg.micBoost > 0) {
+        float boostMult = 1.0f + (float)cfg.micBoost * (float)cfg.micBoost * 0.5f;
+        gainMult *= boostMult;
     }
-    if (g_agcPeak < 500) g_agcPeak = 500;
-    if (g_agcPeak > 4000) g_agcPeak = 4000;
+    
+    amp = (uint16_t)((float)amp * gainMult);
+    if (amp > 65000) amp = 65000;  // Prevent overflow
+    
+    // Dynamic noise floor based on vuNoiseGate setting (0-255 -> 10-200)
+    // Very low baseline for maximum sensitivity
+    uint16_t noiseFloor = 10 + (cfg.vuNoiseGate * 3 / 4);
+    
+    // Adaptive gain control (AGC) - can be disabled via settings
+    if (cfg.agcEnabled) {
+        if (amp > g_agcPeak) {
+            g_agcPeak = (g_agcPeak * 3 + amp) / 4;  // Very fast rise
+        } else {
+            g_agcPeak = (g_agcPeak * 63 + 150) / 64;  // Slow decay toward low baseline
+        }
+        if (g_agcPeak < 150) g_agcPeak = 150;   // Very low minimum for sensitivity
+        if (g_agcPeak > 10000) g_agcPeak = 10000; // Higher max for loud audio
+    } else {
+        g_agcPeak = 1000;  // Fixed reference when AGC disabled
+    }
     
     // Silence detection - if signal is low for a while, suppress output
-    if (amp < noiseFloor) {
+    // cfg.vuSilenceMs = 0 disables silence detection
+    if (cfg.vuSilenceMs > 0 && amp < noiseFloor) {
         if (g_silenceStartMs == 0) {
             g_silenceStartMs = now;
         }
-        if (now - g_silenceStartMs > SILENCE_THRESHOLD_MS) {
+        if (now - g_silenceStartMs > cfg.vuSilenceMs) {
             // Sustained silence - zero out
             amp = 0;
         }
@@ -1790,8 +2103,89 @@ void cards_loop()
         return;
     }
     
-    // Auto cycle
-    if (cfg.cycleEnabled && cfg.cycleDuration > 0 && g_currentCard != CARD_GAMES) {
+    // Demo mode - stunning preset showcase for video capture
+    if (cfg.demoMode) {
+        // Initialize demo mode on first run
+        if (!g_demoActive) {
+            g_demoActive = true;
+            g_demoLastSwitch = now;
+            g_demoTransitionPhase = 0;
+        }
+        
+        uint32_t demoDuration = (uint32_t)cfg.demoDurationSecs * 1000;
+        uint32_t elapsed = now - g_demoLastSwitch;
+        
+        // Flashy transition effect in last 500ms
+        if (elapsed > demoDuration - 500 && elapsed < demoDuration) {
+            // Stunning wipe/flash transition
+            float progress = (float)(elapsed - (demoDuration - 500)) / 500.0f;
+            wt_display_clear();
+            
+            // Rainbow sweep from left to right
+            int sweepX = (int)(progress * (WT_MATRIX_WIDTH + 4)) - 2;
+            for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+                int dist = abs(x - sweepX);
+                if (dist < 3) {
+                    uint8_t bright = (dist == 0) ? 255 : (dist == 1) ? 180 : 80;
+                    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+                        uint8_t hue = (x * 12 + y * 20 + (now / 5)) % 256;
+                        wt_display_set_pixel_xy(x, y, wt_color_hsv(hue, 255, bright));
+                    }
+                }
+            }
+            
+            // Sparkle particles
+            for (int i = 0; i < 8; ++i) {
+                int px = random(WT_MATRIX_WIDTH);
+                int py = random(WT_MATRIX_HEIGHT);
+                if (random(100) < 30) {
+                    wt_display_set_pixel_xy(px, py, wt_color(255, 255, 255));
+                }
+            }
+            
+            wt_leds_show();
+            return;
+        }
+        
+        // Time to switch to next random preset
+        if (elapsed >= demoDuration) {
+            g_demoLastSwitch = now;
+            
+            // Pick a random enabled card that has presets
+            uint8_t cardChoices[3] = {CARD_WEATHER, CARD_CLOCK, CARD_VU};
+            uint8_t presetCounts[3] = {WEATHER_PRESET_COUNT, CLOCK_PRESET_COUNT, VU_PRESET_COUNT};
+            
+            // Filter to only enabled cards
+            uint8_t validCards[3];
+            uint8_t validCount = 0;
+            for (int i = 0; i < 3; ++i) {
+                if (cfg.cardEnabled[cardChoices[i]]) {
+                    validCards[validCount++] = i;
+                }
+            }
+            
+            if (validCount > 0) {
+                uint8_t pick = validCards[random(validCount)];
+                uint8_t newCard = cardChoices[pick];
+                uint8_t newPreset = getRandomEnabledPreset(newCard, presetCounts[pick]);
+                
+                g_currentCard = newCard;
+                g_cards[g_currentCard].setup();
+                
+                // Set the preset
+                if (newCard == CARD_WEATHER) g_weatherPreset = newPreset;
+                else if (newCard == CARD_CLOCK) g_clockPreset = newPreset;
+                else if (newCard == CARD_VU) g_vuPreset = newPreset;
+                
+                startTitleAnimation(now);
+            }
+        }
+    } else {
+        g_demoActive = false;  // Reset when demo mode disabled
+    }
+    
+    // Auto cycle (skip if demo mode active)
+    if (!cfg.demoMode && cfg.cycleEnabled && cfg.cycleDuration > 0 && g_currentCard != CARD_GAMES) {
         if (now - g_lastAutoCycle > (uint32_t)cfg.cycleDuration * 1000) {
             // Switch to next card
             uint8_t next = getNextEnabledCard(g_currentCard);
@@ -3169,12 +3563,12 @@ static void weather_render_forecast_strip() {
     }
 }
 
-// Weather Preset 9: Pixel Art Scene
+// Weather Preset 9: Pixel Art Scene - cute diorama with weather
 static void weather_render_pixel_art() {
     WeatherData current = weather_get_current();
     uint32_t now = millis();
     
-    // Check if night (between 9pm and 6am) - use clock if available
+    // Check if night
     int hour = 12;
     if (g_clockTimeValid) {
         time_t rawTime = time(nullptr);
@@ -3183,116 +3577,135 @@ static void weather_render_pixel_art() {
     }
     bool isNight = (hour >= 21 || hour < 6);
     
-    // Sky based on time and weather
-    uint8_t skyR, skyG, skyB;
-    if (isNight) {
-        skyR = 10; skyG = 10; skyB = 40; // Dark night sky
-    } else if (current.type == WEATHER_SUNNY) {
-        skyR = 80; skyG = 150; skyB = 255; // Bright blue
-    } else if (current.type == WEATHER_CLOUDY || current.type == WEATHER_PARTLY_CLOUDY) {
-        skyR = 100; skyG = 100; skyB = 110; // Overcast
-    } else {
-        skyR = 60; skyG = 80; skyB = 120; // Default
-    }
-    
-    // Draw sky (upper half)
-    for (int y = 3; y < 7; ++y) {
+    // Sky gradient based on time and weather
+    for (int y = 2; y < 7; ++y) {
+        uint8_t skyR, skyG, skyB;
+        float yNorm = (y - 2) / 4.0f;  // 0 at bottom, 1 at top
+        
+        if (isNight) {
+            skyR = 5 + (uint8_t)(15 * yNorm);
+            skyG = 5 + (uint8_t)(10 * yNorm);
+            skyB = 30 + (uint8_t)(30 * yNorm);
+        } else if (current.type == WEATHER_SUNNY) {
+            skyR = 60 + (uint8_t)(40 * yNorm);
+            skyG = 120 + (uint8_t)(60 * yNorm);
+            skyB = 200 + (uint8_t)(55 * yNorm);
+        } else if (current.type >= WEATHER_RAIN && current.type <= WEATHER_HEAVY_RAIN) {
+            skyR = 50 + (uint8_t)(20 * yNorm);
+            skyG = 55 + (uint8_t)(25 * yNorm);
+            skyB = 70 + (uint8_t)(40 * yNorm);
+        } else {
+            skyR = 70 + (uint8_t)(30 * yNorm);
+            skyG = 90 + (uint8_t)(40 * yNorm);
+            skyB = 130 + (uint8_t)(50 * yNorm);
+        }
+        
         for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
             wt_display_set_pixel_xy(x, y, wt_color(skyR, skyG, skyB));
         }
     }
     
-    // Ground (green grass or snow)
-    uint32_t groundCol = (current.temp < 0) ? wt_color(200, 200, 220) : wt_color(40, 100, 40);
-    uint32_t groundCol2 = (current.temp < 0) ? wt_color(180, 180, 200) : wt_color(30, 80, 30);
+    // Ground
+    uint32_t groundCol = (current.temp < 0) ? wt_color(200, 210, 220) : wt_color(50, 120, 50);
+    uint32_t groundCol2 = (current.temp < 0) ? wt_color(180, 190, 200) : wt_color(40, 90, 40);
     for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
         wt_display_set_pixel_xy(x, 0, groundCol2);
         wt_display_set_pixel_xy(x, 1, groundCol);
     }
     
-    // House (centered left area)
-    uint32_t wallCol = wt_color(180, 120, 60);
-    uint32_t roofCol = wt_color(150, 60, 30);
+    // House
+    uint32_t wallCol = wt_color(180, 130, 80);
+    uint32_t roofCol = wt_color(140, 60, 40);
     uint32_t windowCol = isNight ? wt_color(255, 220, 100) : wt_color(150, 200, 255);
-    // Walls
-    for (int x = 2; x <= 6; ++x) {
-        wt_display_set_pixel_xy(x, 2, wallCol);
-        wt_display_set_pixel_xy(x, 3, wallCol);
+    
+    // Walls (x=1-5)
+    for (int wx = 1; wx <= 5; ++wx) {
+        wt_display_set_pixel_xy(wx, 2, wallCol);
+        wt_display_set_pixel_xy(wx, 3, wallCol);
     }
-    // Roof (triangle)
-    wt_display_set_pixel_xy(3, 4, roofCol);
-    wt_display_set_pixel_xy(4, 4, roofCol);
-    wt_display_set_pixel_xy(5, 4, roofCol);
+    // Roof
+    wt_display_set_pixel_xy(0, 4, roofCol);
+    for (int rx = 1; rx <= 5; ++rx) wt_display_set_pixel_xy(rx, 4, roofCol);
+    wt_display_set_pixel_xy(6, 4, roofCol);
+    wt_display_set_pixel_xy(2, 5, roofCol);
+    wt_display_set_pixel_xy(3, 5, roofCol);
     wt_display_set_pixel_xy(4, 5, roofCol);
     // Window
-    wt_display_set_pixel_xy(4, 3, windowCol);
+    wt_display_set_pixel_xy(3, 3, windowCol);
     
-    // Sun or Moon
+    // Sun or Moon (top area)
     if (isNight) {
-        // Moon (top right)
-        wt_display_set_pixel_xy(16, 5, wt_color(220, 220, 180));
-        wt_display_set_pixel_xy(17, 5, wt_color(250, 250, 200));
-        wt_display_set_pixel_xy(17, 6, wt_color(220, 220, 180));
-        // Stars
-        if ((now / 300) % 2) wt_display_set_pixel_xy(12, 6, wt_color(100, 100, 120));
-        if ((now / 400) % 2) wt_display_set_pixel_xy(14, 5, wt_color(80, 80, 100));
+        // Moon crescent
+        wt_display_set_pixel_xy(15, 5, wt_color(220, 220, 180));
+        wt_display_set_pixel_xy(16, 6, wt_color(255, 255, 220));
+        wt_display_set_pixel_xy(16, 5, wt_color(240, 240, 200));
+        // Twinkling stars
+        uint8_t tw = 60 + (uint8_t)(40 * sinf(now * 0.003f));
+        wt_display_set_pixel_xy(10, 6, wt_color(tw, tw, tw));
+        wt_display_set_pixel_xy(13, 5, wt_color(tw/2, tw/2, tw/2));
+        wt_display_set_pixel_xy(19, 6, wt_color(tw, tw, tw));
     } else if (current.type == WEATHER_SUNNY || current.type == WEATHER_PARTLY_CLOUDY) {
-        // Sun (top right)
-        uint32_t sunCol = wt_color(255, 220, 50);
+        // Sun with rays
+        float pulse = 0.9f + 0.1f * sinf(now * 0.002f);
+        uint32_t sunCol = wt_color((uint8_t)(255 * pulse), (uint8_t)(220 * pulse), 50);
         wt_display_set_pixel_xy(16, 5, sunCol);
         wt_display_set_pixel_xy(17, 5, sunCol);
         wt_display_set_pixel_xy(16, 6, sunCol);
         wt_display_set_pixel_xy(17, 6, sunCol);
+        // Rays
+        uint32_t rayCol = wt_color((uint8_t)(200 * pulse), (uint8_t)(180 * pulse), 30);
+        wt_display_set_pixel_xy(15, 6, rayCol);
+        wt_display_set_pixel_xy(18, 6, rayCol);
     }
     
-    // Rain overlay
+    // Weather effects
     if (current.type >= WEATHER_RAIN && current.type <= WEATHER_HEAVY_RAIN) {
+        // Rain drops with trails
+        for (int i = 0; i < 6; ++i) {
+            int rx = 8 + (now / 60 + i * 3) % 12;
+            int ry = 6 - (now / 50 + i * 7) % 5;
+            if (ry >= 2) {
+                wt_display_set_pixel_xy(rx, ry, wt_color(100, 150, 255));
+                if (ry + 1 <= 6) wt_display_set_pixel_xy(rx, ry + 1, wt_color(60, 90, 150));
+            }
+        }
+    } else if (current.type == WEATHER_SNOW) {
+        // Snowflakes
         for (int i = 0; i < 5; ++i) {
-            int rx = (now / 80 + i * 4) % WT_MATRIX_WIDTH;
-            int ry = 6 - (now / 60 + i * 2) % 5;
-            wt_display_set_pixel_xy(rx, ry, wt_color(100, 150, 255));
+            float drift = sinf(now * 0.002f + i) * 2;
+            int sx = 8 + (int)drift + (i * 3) % 10;
+            int sy = 6 - (now / 150 + i * 5) % 5;
+            if (sy >= 2 && sx < WT_MATRIX_WIDTH) {
+                wt_display_set_pixel_xy(sx, sy, wt_color(255, 255, 255));
+            }
         }
     }
     
-    // Temperature display (right side) - high contrast white on dark area
+    // Temperature - bottom right, clean display
     int8_t temp = current.temp;
     bool neg = temp < 0;
     if (neg) temp = -temp;
     if (temp > 99) temp = 99;
     
-    // Draw dark background behind temp for contrast
-    for (int tx = 9; tx < WT_MATRIX_WIDTH; ++tx) {
-        for (int ty = 0; ty < 6; ++ty) {
-            wt_display_set_pixel_xy(tx, ty, wt_color(20, 20, 30));
-        }
-    }
-    
-    // Bright white digits for visibility
-    uint32_t tCol = wt_color(255, 255, 255);
+    uint32_t tCol = tempToColor(current.temp);
     uint8_t x = 10;
-    if (neg) {
-        wt_display_set_pixel_xy(x, 2, tCol);
-        wt_display_set_pixel_xy(x+1, 2, tCol);
-        x += 3;
-    }
-    if (temp >= 10) {
-        drawChar3x5(x, 0, '0' + temp/10, tCol);
-        x += 4;
-    }
-    drawChar3x5(x, 0, '0' + temp%10, tCol);
+    if (neg) { wt_display_set_pixel_xy(x, 1, tCol); x += 2; }
+    if (temp >= 10) { drawDigit(x, 0, temp/10, tCol); x += 4; }
+    drawDigit(x, 0, temp%10, tCol);
 }
 
 // Weather Preset 10: Retro LCD style  
 static void weather_render_lcd() {
     WeatherData current = weather_get_current();
     // Classic LCD green-on-dark style
-    uint32_t lcdBg = wt_color(20, 35, 20);     // Dark LCD background
+    uint32_t lcdBg = wt_color(15, 25, 15);     // Dark LCD background
     uint32_t lcdDigit = wt_color(80, 200, 80); // Bright green digits
-    uint32_t lcdDim = wt_color(30, 60, 30);    // Dim segments
+    uint32_t lcdDim = wt_color(25, 45, 25);    // Dim segment outlines
     
     int8_t temp = current.temp;
     bool neg = temp < 0;
     if (neg) temp = -temp;
+    if (temp > 99) temp = 99;
     
     // Fill background
     for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
@@ -3301,68 +3714,133 @@ static void weather_render_lcd() {
         }
     }
     
-    // Draw all 7-segment outlines dim (gives LCD look)
-    // We show temp in center
-    uint8_t startX = 3;
+    // LCD frame border
+    for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        wt_display_set_pixel_xy(x, 0, lcdDim);
+        wt_display_set_pixel_xy(x, 6, lcdDim);
+    }
+    
+    // Calculate centered position - digits start at y=0 (not y=1!)
+    uint8_t numDigits = (temp >= 10) ? 2 : 1;
+    uint8_t totalWidth = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t startX = (WT_MATRIX_WIDTH - totalWidth - 2) / 2;
+    
     if (neg) {
-        // Minus sign
+        // Minus sign centered vertically
         wt_display_set_pixel_xy(startX, 3, lcdDigit);
         wt_display_set_pixel_xy(startX + 1, 3, lcdDigit);
+        startX += 3;
+    }
+    
+    // Tens digit - y=0 so digits aren't cut off
+    if (temp >= 10) {
+        drawDigit(startX, 0, temp / 10, lcdDigit);
         startX += 4;
     }
-    
-    // Tens digit
-    if (temp >= 10 || neg) {
-        drawDigit(startX, 1, temp / 10, lcdDigit);
-        startX += 5;
-    }
     // Ones digit
-    drawDigit(startX, 1, temp % 10, lcdDigit);
+    drawDigit(startX, 0, temp % 10, lcdDigit);
+    startX += 4;
     
-    // Degree symbol (small square)
-    uint8_t dx = startX + 4;
-    wt_display_set_pixel_xy(dx, 5, lcdDigit);
-    wt_display_set_pixel_xy(dx + 1, 5, lcdDigit);
-    wt_display_set_pixel_xy(dx, 6, lcdDigit);
-    wt_display_set_pixel_xy(dx + 1, 6, lcdDigit);
+    // Degree symbol (small square) - positioned to not go out of bounds
+    wt_display_set_pixel_xy(startX, 5, lcdDigit);
+    wt_display_set_pixel_xy(startX + 1, 5, lcdDigit);
+    wt_display_set_pixel_xy(startX, 6, lcdDigit);
+    wt_display_set_pixel_xy(startX + 1, 6, lcdDigit);
 }
 
-// Weather Preset 11: Gradient Mood
+// Weather Preset 11: Gradient Mood - weather-representative animated background
 static void weather_render_mood() {
     WeatherData current = weather_get_current();
     uint32_t now = millis();
-    float phase = now * 0.0008f; // Slower
+    float phase = now * 0.001f;
     
-    // Full-screen flowing gradient based on temp
-    // Hot = red/orange, Cold = blue/purple
     int8_t t = current.temp;
-    float tempNorm = (t + 20.0f) / 50.0f; // -20 to +30 -> 0 to 1
+    float tempNorm = (t + 20.0f) / 50.0f;
     if (tempNorm < 0) tempNorm = 0;
     if (tempNorm > 1) tempNorm = 1;
     
+    // Weather-dependent animation style
     for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
         for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
-            float wave = sinf(x * 0.25f + y * 0.4f + phase) * 0.5f + 0.5f;
-            // Blend between cold (blue/purple) and hot (red/orange)
-            uint8_t r = (uint8_t)(tempNorm * 200 * wave + 30);
-            uint8_t g = (uint8_t)(50 * wave);
-            uint8_t b = (uint8_t)((1.0f - tempNorm) * 200 * wave + 30);
+            float wave;
+            uint8_t r, g, b;
+            
+            switch (current.type) {
+                case WEATHER_SUNNY:
+                case WEATHER_CLEAR_NIGHT: {
+                    // Warm radial pulse from center
+                    float dx = x - 10.0f, dy = y - 3.0f;
+                    float dist = sqrtf(dx*dx + dy*dy);
+                    wave = 0.5f + 0.5f * sinf(dist * 0.3f - phase * 2);
+                    r = (uint8_t)(200 * wave + 50);
+                    g = (uint8_t)(150 * wave * tempNorm);
+                    b = (uint8_t)(50 * wave);
+                    break;
+                }
+                case WEATHER_RAIN:
+                case WEATHER_DRIZZLE:
+                case WEATHER_HEAVY_RAIN: {
+                    // Vertical rain streaks
+                    wave = 0.3f + 0.7f * sinf(y * 1.5f + x * 0.2f - phase * 3);
+                    r = (uint8_t)(30 * wave);
+                    g = (uint8_t)(60 * wave + 20);
+                    b = (uint8_t)(150 * wave + 50);
+                    break;
+                }
+                case WEATHER_SNOW: {
+                    // Gentle swirling white/blue
+                    wave = 0.5f + 0.5f * sinf(x * 0.3f + y * 0.5f + phase);
+                    r = (uint8_t)(180 * wave + 40);
+                    g = (uint8_t)(180 * wave + 40);
+                    b = (uint8_t)(200 * wave + 55);
+                    break;
+                }
+                case WEATHER_STORM: {
+                    // Dark purple with occasional flash
+                    wave = 0.3f + 0.2f * sinf(x * 0.4f + phase);
+                    bool flash = ((now / 100) % 30 == 0);
+                    r = flash ? 200 : (uint8_t)(60 * wave + 20);
+                    g = flash ? 200 : (uint8_t)(30 * wave);
+                    b = flash ? 255 : (uint8_t)(100 * wave + 40);
+                    break;
+                }
+                default: {
+                    // Default temp-based gradient
+                    wave = sinf(x * 0.25f + y * 0.4f + phase) * 0.5f + 0.5f;
+                    r = (uint8_t)(tempNorm * 180 * wave + 30);
+                    g = (uint8_t)(60 * wave);
+                    b = (uint8_t)((1.0f - tempNorm) * 180 * wave + 30);
+                }
+            }
             wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
         }
     }
     
-    // Overlay temp number - centered, starting at y=0 so not cut off
-    uint32_t white = wt_color(255, 255, 255);
+    // Temperature overlay - centered with shadow for legibility
     int8_t temp = current.temp;
-    uint8_t startX = 6;
-    if (temp < 0) {
-        wt_display_set_pixel_xy(startX, 2, white);
-        wt_display_set_pixel_xy(startX + 1, 2, white);
+    bool neg = temp < 0;
+    if (neg) temp = -temp;
+    if (temp > 99) temp = 99;
+    
+    uint8_t numDigits = (temp >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t startX = (WT_MATRIX_WIDTH - width) / 2;
+    
+    // Shadow
+    uint32_t shadow = wt_color(0, 0, 0);
+    if (neg) { wt_display_set_pixel_xy(startX+1, 4, shadow); }
+    if (temp >= 10) drawDigit(startX + (neg ? 4 : 1), 1, temp / 10, shadow);
+    drawDigit(startX + (neg ? 8 : (temp >= 10 ? 5 : 1)), 1, temp % 10, shadow);
+    
+    // White text
+    uint32_t white = wt_color(255, 255, 255);
+    if (neg) {
+        wt_display_set_pixel_xy(startX, 3, white);
+        wt_display_set_pixel_xy(startX + 1, 3, white);
         startX += 3;
-        temp = -temp;
     }
-    drawDigit(startX, 0, temp / 10, white);
-    drawDigit(startX + 4, 0, temp % 10, white);
+    if (temp >= 10) { drawDigit(startX, 0, temp / 10, white); startX += 4; }
+    drawDigit(startX, 0, temp % 10, white);
 }
 
 // Weather Preset 4: Big Digits
@@ -3468,7 +3946,7 @@ static void weather_render_daynight()
         wt_display_set_pixel_xy(x, 0, groundCol);
     }
 
-    // Temp overlay (bottom right, small)
+    // Temp overlay (bottom right corner, compact)
     WeatherData current = weather_get_current();
     if (current.valid) {
         uint32_t tCol = wt_color(255, 255, 255);
@@ -3477,105 +3955,201 @@ static void weather_render_daynight()
         if (neg) t = -t;
         if (t > 99) t = 99;
         
-        uint8_t x = WT_MATRIX_WIDTH - 7;
-        if (neg) { wt_display_set_pixel_xy(x-2, 3, tCol); }
-        if (t >= 10) { drawChar3x5(x-4, 1, '0' + t/10, tCol); }
-        drawChar3x5(x, 1, '0' + t%10, tCol);
+        uint8_t x = WT_MATRIX_WIDTH - 8;
+        if (neg) {
+            wt_display_set_pixel_xy(x, 3, tCol);
+            wt_display_set_pixel_xy(x+1, 3, tCol);
+            x += 3;
+        }
+        if (t >= 10) {
+            drawDigit(x, 0, t / 10, tCol);
+            x += 4;
+        }
+        drawDigit(x, 0, t % 10, tCol);
     }
 }
 
 
 
-// Weather Preset 12: Typewriter - letters appear one by one spelling temp
+// Weather Preset 12: Typewriter - digits appear one by one with CRT effect
 static void weather_render_typewriter() {
     static uint8_t charIndex = 0;
     static uint32_t lastType = 0;
+    static int8_t lastTemp = 0;
     WeatherData current = weather_get_current();
     uint32_t now = millis();
     
-    // Build the string to type: "-12°" or "25°"
-    char tempStr[8];
     int8_t t = current.temp;
-    int len = 0;
-    if (t < 0) { tempStr[len++] = '-'; t = -t; }
-    if (t >= 10) tempStr[len++] = '0' + (t / 10);
-    tempStr[len++] = '0' + (t % 10);
-    tempStr[len++] = '*'; // degree symbol placeholder
-    tempStr[len] = '\0';
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
     
-    // Type one char every 400ms
-    if (now - lastType > 400) {
-        lastType = now;
-        charIndex++;
-        if (charIndex > len + 3) charIndex = 0; // Reset with pause
+    // Reset animation if temp changed
+    if (current.temp != lastTemp) {
+        charIndex = 0;
+        lastTemp = current.temp;
     }
     
-    // Amber monochrome CRT look
-    uint32_t amber = wt_color(255, 180, 0);
-    uint32_t dimAmber = wt_color(60, 40, 0);
+    // Calculate total elements: minus (if neg) + tens (if >= 10) + ones + degree
+    uint8_t totalItems = 1 + (neg ? 1 : 0) + (t >= 10 ? 1 : 0) + 1; // ones + optional minus + optional tens + degree
     
-    // Draw typed characters
-    uint8_t x = 2;
-    for (int i = 0; i < (int)charIndex && i < len; ++i) {
-        if (tempStr[i] == '-') {
-            wt_display_set_pixel_xy(x, 3, amber);
-            wt_display_set_pixel_xy(x+1, 3, amber);
-            x += 3;
-        } else if (tempStr[i] == '*') {
-            // Degree
-            wt_display_set_pixel_xy(x, 5, amber);
-            wt_display_set_pixel_xy(x+1, 5, amber);
-            wt_display_set_pixel_xy(x, 6, amber);
-            wt_display_set_pixel_xy(x+1, 6, amber);
-        } else {
-            drawChar3x5(x, 1, tempStr[i], amber);
-            x += 4;
+    // Type one element every 350ms
+    if (now - lastType > 350) {
+        lastType = now;
+        charIndex++;
+        if (charIndex > totalItems + 2) charIndex = 0; // Reset with pause
+    }
+    
+    // Amber monochrome CRT look with scanline effect
+    uint32_t amber = wt_color(255, 180, 0);
+    uint32_t dimAmber = wt_color(40, 30, 0);
+    
+    // Subtle CRT scanlines
+    for (int y = 0; y < WT_MATRIX_HEIGHT; y += 2) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, dimAmber);
         }
     }
     
-    // Blinking cursor at end
-    if ((now / 300) % 2 && charIndex <= len) {
-        for (int cy = 0; cy < 7; ++cy)
-            wt_display_set_pixel_xy(x, cy, amber);
+    // Draw typed elements
+    uint8_t x = 3;
+    uint8_t itemIdx = 0;
+    
+    // Minus sign
+    if (neg && itemIdx < charIndex) {
+        wt_display_set_pixel_xy(x, 3, amber);
+        wt_display_set_pixel_xy(x+1, 3, amber);
+        wt_display_set_pixel_xy(x+2, 3, amber);
+        itemIdx++;
+        x += 4;
+    } else if (neg) {
+        itemIdx++;
+        x += 4;
+    }
+    
+    // Tens digit
+    if (t >= 10) {
+        if (itemIdx < charIndex) {
+            drawDigit(x, 0, t / 10, amber);
+        }
+        itemIdx++;
+        x += 4;
+    }
+    
+    // Ones digit
+    if (itemIdx < charIndex) {
+        drawDigit(x, 0, t % 10, amber);
+    }
+    itemIdx++;
+    x += 4;
+    
+    // Degree symbol
+    if (itemIdx < charIndex) {
+        wt_display_set_pixel_xy(x, 5, amber);
+        wt_display_set_pixel_xy(x+1, 5, amber);
+        wt_display_set_pixel_xy(x, 6, amber);
+        wt_display_set_pixel_xy(x+1, 6, amber);
+    }
+    
+    // Blinking block cursor at current position
+    if ((now / 400) % 2 && charIndex <= totalItems) {
+        uint8_t cursorX = 3;
+        if (neg) cursorX += 4;
+        if (t >= 10 && charIndex > (neg ? 1 : 0)) cursorX += 4;
+        if (charIndex > (neg ? 1 : 0) + (t >= 10 ? 1 : 0)) cursorX += 4;
+        
+        for (int cy = 0; cy < 7; ++cy) {
+            wt_display_set_pixel_xy(cursorX, cy, amber);
+        }
     }
 }
 
-// Weather Preset 13: Waves - temp floats on animated sine wave ocean
+// Weather Preset 13: Waves - weather-linked animated water scene
 static void weather_render_waves() {
     WeatherData current = weather_get_current();
     uint32_t now = millis();
-    float phase = now * 0.003f;
+    float phase = now * 0.002f;
     
-    // Draw animated wave layers
-    for (int layer = 0; layer < 3; ++layer) {
-        uint8_t blue = 80 + layer * 50;
+    // Weather-dependent water color and intensity
+    uint8_t waterR = 0, waterG = 40, waterB = 80;
+    float waveIntensity = 1.0f;
+    bool showRain = false;
+    
+    switch (current.type) {
+        case WEATHER_SUNNY:
+            waterR = 20; waterG = 80; waterB = 140;  // Bright blue
+            waveIntensity = 0.8f;
+            break;
+        case WEATHER_STORM:
+        case WEATHER_HEAVY_RAIN:
+            waterR = 10; waterG = 30; waterB = 60;   // Dark stormy
+            waveIntensity = 2.0f;
+            showRain = true;
+            break;
+        case WEATHER_RAIN:
+        case WEATHER_DRIZZLE:
+            waterR = 15; waterG = 50; waterB = 90;
+            waveIntensity = 1.3f;
+            showRain = true;
+            break;
+        case WEATHER_CLOUDY:
+            waterR = 20; waterG = 45; waterB = 70;   // Muted grey-blue
+            break;
+        default:
+            break;
+    }
+    
+    // Gradient background - sky to water
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        uint8_t skyFade = (y > 3) ? (y - 3) * 20 : 0;
         for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
-            float wave = sinf(x * 0.4f + phase + layer * 1.0f);
-            int y = 2 + layer + (int)(wave * 1.2f);
-            if (y >= 0 && y < WT_MATRIX_HEIGHT) {
-                wt_display_set_pixel_xy(x, y, wt_color(0, 40, blue));
+            wt_display_set_pixel_xy(x, y, wt_color(waterR + skyFade/4, waterG + skyFade/2, waterB + skyFade));
+        }
+    }
+    
+    // Animated wave layers
+    for (int layer = 0; layer < 3; ++layer) {
+        uint8_t blue = waterB + 30 + layer * 25;
+        uint8_t green = waterG + 20 + layer * 15;
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            float wave = sinf(x * 0.35f + phase * (1.0f + layer * 0.3f) * waveIntensity + layer * 1.5f);
+            int y = layer + (int)(wave * waveIntensity);
+            if (y >= 0 && y < 4) {
+                wt_display_set_pixel_xy(x, y, wt_color(waterR, green, blue));
+                // Foam on wave peaks
+                if (wave > 0.6f && y + 1 < 4) {
+                    wt_display_set_pixel_xy(x, y + 1, wt_color(180, 200, 220));
+                }
             }
         }
     }
     
-    // Temperature floats on waves (bobbing motion)
+    // Rain overlay if needed
+    if (showRain) {
+        for (int i = 0; i < 4; ++i) {
+            int rx = (now / 50 + i * 5) % WT_MATRIX_WIDTH;
+            int ry = 6 - (now / 40 + i * 3) % 4;
+            if (ry >= 3) wt_display_set_pixel_xy(rx, ry, wt_color(100, 150, 220));
+        }
+    }
+    
+    // Temperature display - y=0 so not cut off
     int8_t t = current.temp;
     bool neg = t < 0;
     if (neg) t = -t;
-    
-    float bob = sinf(phase * 1.5f) * 0.8f;
-    int baseY = 4 + (int)bob;
-    if (baseY < 0) baseY = 0;
-    if (baseY > 5) baseY = 5;
+    if (t > 99) t = 99;
     
     uint32_t white = wt_color(255, 255, 255);
-    uint8_t x = 6;
-    if (neg) { wt_display_set_pixel_xy(x, baseY + 1, white); wt_display_set_pixel_xy(x+1, baseY + 1, white); x += 3; }
-    if (t >= 10) { drawChar3x5(x, baseY, '0' + t/10, white); x += 4; }
-    drawChar3x5(x, baseY, '0' + t%10, white);
+    uint8_t numDigits = (t >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t x = (WT_MATRIX_WIDTH - width) / 2;
+    
+    if (neg) { wt_display_set_pixel_xy(x, 3, white); wt_display_set_pixel_xy(x+1, 3, white); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, white); x += 4; }
+    drawDigit(x, 0, t%10, white);
 }
 
-// Weather Preset 14: Split - screen split diagonally, temp on each half different style
+// Weather Preset 14: Split - weather-dependent contrasting halves
 static void weather_render_split() {
     WeatherData current = weather_get_current();
     uint32_t now = millis();
@@ -3583,40 +4157,81 @@ static void weather_render_split() {
     int8_t t = current.temp;
     bool neg = t < 0;
     if (neg) t = -t;
+    if (t > 99) t = 99;
     
-    // Diagonal split - top-left is dark with bright text, bottom-right is bright with dark text
+    // Weather-dependent color scheme
+    uint8_t darkR = 20, darkG = 20, darkB = 40;
+    uint8_t lightR = 200, lightG = 180, lightB = 100;
+    
+    switch (current.type) {
+        case WEATHER_SUNNY:
+            darkR = 40; darkG = 30; darkB = 10;
+            lightR = 255; lightG = 220; lightB = 100;
+            break;
+        case WEATHER_RAIN:
+        case WEATHER_DRIZZLE:
+        case WEATHER_HEAVY_RAIN:
+            darkR = 20; darkG = 30; darkB = 50;
+            lightR = 100; lightG = 140; lightB = 200;
+            break;
+        case WEATHER_STORM:
+            darkR = 30; darkG = 20; darkB = 50;
+            lightR = 120; lightG = 80; lightB = 180;
+            break;
+        case WEATHER_SNOW:
+            darkR = 40; darkG = 50; darkB = 60;
+            lightR = 220; lightG = 230; lightB = 255;
+            break;
+        case WEATHER_CLOUDY:
+            darkR = 40; darkG = 45; darkB = 50;
+            lightR = 150; lightG = 160; lightB = 170;
+            break;
+        default:
+            break;
+    }
+    
+    // Animated diagonal split
+    float animOffset = sinf(now * 0.001f) * 0.1f;
+    
     for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
         for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
-            bool topHalf = (x + y * 3) < 30;
-            if (topHalf) {
-                wt_display_set_pixel_xy(x, y, wt_color(10, 10, 30)); // Dark blue
+            float diag = (float)x / WT_MATRIX_WIDTH - (float)y / WT_MATRIX_HEIGHT + animOffset;
+            if (diag < 0.2f) {
+                float blend = (diag + 0.2f) / 0.4f;
+                if (blend < 0) blend = 0;
+                if (blend > 1) blend = 1;
+                uint8_t r = darkR + (uint8_t)((lightR - darkR) * blend * 0.3f);
+                uint8_t g = darkG + (uint8_t)((lightG - darkG) * blend * 0.3f);
+                uint8_t b = darkB + (uint8_t)((lightB - darkB) * blend * 0.3f);
+                wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
             } else {
-                wt_display_set_pixel_xy(x, y, wt_color(255, 200, 100)); // Warm cream
+                float blend = (diag - 0.2f) / 0.8f;
+                if (blend > 1) blend = 1;
+                uint8_t r = lightR - (uint8_t)(30 * blend);
+                uint8_t g = lightG - (uint8_t)(20 * blend);
+                uint8_t b = lightB + (uint8_t)(20 * blend);
+                wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
             }
         }
     }
     
-    // Draw temp twice - once in each style
-    // Top half: cyan outline style
-    uint32_t cyan = wt_color(0, 255, 255);
-    uint8_t x1 = 1;
-    if (neg) { wt_display_set_pixel_xy(x1, 3, cyan); x1 += 2; }
-    if (t >= 10) { drawChar3x5(x1, 1, '0' + t/10, cyan); x1 += 4; }
-    drawChar3x5(x1, 1, '0' + t%10, cyan);
+    // Centered temperature with shadow
+    uint32_t tCol = wt_color(255, 255, 255);
+    uint32_t shadow = wt_color(0, 0, 0);
     
-    // Bottom half: dark text
-    uint32_t dark = wt_color(60, 30, 0);
-    uint8_t x2 = 10;
-    if (t >= 10) { drawChar3x5(x2, 1, '0' + t/10, dark); x2 += 4; }
-    drawChar3x5(x2, 1, '0' + t%10, dark);
+    uint8_t numDigits = (t >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t x = (WT_MATRIX_WIDTH - width) / 2;
     
-    // Animated diagonal line
-    int offset = (now / 100) % 10;
-    for (int i = 0; i < 20; ++i) {
-        int x = (i + offset) % 20;
-        int y = 6 - (x * 7 / 20);
-        if (y >= 0 && y < 7) wt_display_set_pixel_xy(x, y, wt_color(255, 255, 255));
-    }
+    // Shadow offset
+    if (neg) { wt_display_set_pixel_xy(x+1, 4, shadow); }
+    if (t >= 10) drawDigit(x + (neg ? 4 : 1), 1, t/10, shadow);
+    drawDigit(x + (neg ? 8 : (t >= 10 ? 5 : 1)), 1, t%10, shadow);
+    
+    // Main digits
+    if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, tCol); x += 4; }
+    drawDigit(x, 0, t%10, tCol);
 }
 
 // Weather Preset 15: Countdown - temp displayed as dramatic countdown ticker
@@ -3676,70 +4291,1019 @@ static void weather_render_countdown() {
     }
 }
 
-// Weather Preset 16: Vertical Stack - temp digits stacked vertically, scrolling
+// Weather Preset 16: Thermometer - horizontal bar thermometer
 static void weather_render_stack() {
-    static float scrollY = 0;
-    static uint32_t lastScroll = 0;
     WeatherData current = weather_get_current();
-    uint32_t now = millis();
-    
-    // Slow vertical scroll
-    if (now - lastScroll > 50) {
-        lastScroll = now;
-        scrollY += 0.15f;
-        if (scrollY > 14) scrollY = 0;
-    }
     
     int8_t t = current.temp;
     bool neg = t < 0;
-    if (neg) t = -t;
+    int8_t absT = neg ? -t : t;
+    if (absT > 99) absT = 99;
     
-    // Gradient background (vertical)
+    // Dark background
     for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
-        uint8_t shade = 20 + y * 8;
         for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
-            wt_display_set_pixel_xy(x, y, wt_color(shade/3, shade/4, shade));
+            wt_display_set_pixel_xy(x, y, wt_color(10, 12, 15));
         }
     }
     
-    // Draw vertically stacked: tens on top, ones below, scrolling
-    uint32_t col = tempToColor(current.temp);
+    // Horizontal thermometer tube (y=1-2, x=0-17)
+    uint32_t glassCol = wt_color(50, 60, 70);
+    uint32_t mercuryCol = tempToColor(t);
+    uint32_t emptyCol = wt_color(25, 30, 35);
     
-    // Tens digit
-    int y1 = (int)scrollY - 7;
-    if (y1 > -6 && y1 < 7) {
-        if (t >= 10 || neg) {
-            uint8_t d = t >= 10 ? t/10 : 0;
-            // Draw centered horizontally, at y1
-            for (int dy = 0; dy < 5 && y1 + dy >= 0 && y1 + dy < 7; ++dy) {
-                drawChar3x5(8, y1, '0' + d, col);
+    // Glass outline
+    for (int x = 0; x < 18; ++x) {
+        wt_display_set_pixel_xy(x, 0, glassCol);
+        wt_display_set_pixel_xy(x, 3, glassCol);
+    }
+    wt_display_set_pixel_xy(18, 1, glassCol);
+    wt_display_set_pixel_xy(18, 2, glassCol);
+    
+    // Mercury level - map temp to 0-16 pixels
+    // -20 to +40 range -> 0 to 16
+    int mercuryLen = (t + 20) * 16 / 60;
+    if (mercuryLen < 1) mercuryLen = 1;
+    if (mercuryLen > 16) mercuryLen = 16;
+    
+    // Fill tube
+    for (int x = 1; x < 17; ++x) {
+        if (x <= mercuryLen) {
+            wt_display_set_pixel_xy(x, 1, mercuryCol);
+            wt_display_set_pixel_xy(x, 2, mercuryCol);
+        } else {
+            wt_display_set_pixel_xy(x, 1, emptyCol);
+            wt_display_set_pixel_xy(x, 2, emptyCol);
+        }
+    }
+    
+    // Bulb on left
+    wt_display_set_pixel_xy(0, 1, mercuryCol);
+    wt_display_set_pixel_xy(0, 2, mercuryCol);
+    
+    // Scale marks
+    wt_display_set_pixel_xy(5, 0, wt_color(80, 80, 90));   // ~0°
+    wt_display_set_pixel_xy(11, 0, wt_color(80, 80, 90));  // ~20°
+    
+    // Temperature digits (top area, centered)
+    uint32_t textCol = wt_color(255, 255, 255);
+    uint8_t numDigits = (absT >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t x = (WT_MATRIX_WIDTH - width) / 2;
+    
+    if (neg) {
+        wt_display_set_pixel_xy(x, 5, textCol);
+        wt_display_set_pixel_xy(x+1, 5, textCol);
+        x += 3;
+    }
+    if (absT >= 10) {
+        drawDigit(x, 4, absT / 10, textCol);
+        x += 4;
+    }
+    drawDigit(x, 4, absT % 10, textCol);
+}
+
+// Weather Preset 17: Weather Icon Large - animated weather symbol with temp
+static void weather_render_emoji() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Weather-appropriate background
+    uint8_t bgR = 20, bgG = 25, bgB = 35;
+    switch (current.type) {
+        case WEATHER_SUNNY: bgR = 40; bgG = 35; bgB = 20; break;
+        case WEATHER_PARTLY_CLOUDY: bgR = 35; bgG = 38; bgB = 45; break;
+        case WEATHER_RAIN:
+        case WEATHER_HEAVY_RAIN:
+        case WEATHER_DRIZZLE: bgR = 15; bgG = 25; bgB = 45; break;
+        case WEATHER_SNOW:
+        case WEATHER_SLEET: bgR = 30; bgG = 35; bgB = 40; break;
+        case WEATHER_STORM: bgR = 25; bgG = 15; bgB = 35; break;
+        case WEATHER_FOG: bgR = 35; bgG = 38; bgB = 40; break;
+        case WEATHER_WIND: bgR = 25; bgG = 35; bgB = 45; break;
+        case WEATHER_CLEAR_NIGHT: bgR = 10; bgG = 15; bgB = 30; break;
+        default: break;
+    }
+    
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, wt_color(bgR, bgG, bgB));
+        }
+    }
+    
+    // Draw large weather symbol (left side, 8x7)
+    float pulse = 0.85f + 0.15f * sinf(now * 0.003f);
+    
+    switch (current.type) {
+        case WEATHER_SUNNY: {
+            // Big sun with animated rays
+            uint32_t sunCol = wt_color((uint8_t)(255*pulse), (uint8_t)(200*pulse), 30);
+            uint32_t rayCol = wt_color((uint8_t)(200*pulse), (uint8_t)(150*pulse), 20);
+            // Core
+            for (int sy = 2; sy <= 4; ++sy)
+                for (int sx = 2; sx <= 4; ++sx)
+                    wt_display_set_pixel_xy(sx, sy, sunCol);
+            // Rays
+            wt_display_set_pixel_xy(3, 6, rayCol); wt_display_set_pixel_xy(3, 0, rayCol);
+            wt_display_set_pixel_xy(0, 3, rayCol); wt_display_set_pixel_xy(6, 3, rayCol);
+            wt_display_set_pixel_xy(1, 5, rayCol); wt_display_set_pixel_xy(5, 5, rayCol);
+            wt_display_set_pixel_xy(1, 1, rayCol); wt_display_set_pixel_xy(5, 1, rayCol);
+            break;
+        }
+        case WEATHER_CLEAR_NIGHT: {
+            // Moon with stars
+            uint32_t moonCol = wt_color((uint8_t)(220*pulse), (uint8_t)(220*pulse), (uint8_t)(180*pulse));
+            uint32_t starCol = wt_color(200, 200, 255);
+            // Crescent moon
+            wt_display_set_pixel_xy(2, 1, moonCol); wt_display_set_pixel_xy(3, 1, moonCol);
+            wt_display_set_pixel_xy(1, 2, moonCol); wt_display_set_pixel_xy(4, 2, moonCol);
+            wt_display_set_pixel_xy(1, 3, moonCol); wt_display_set_pixel_xy(1, 4, moonCol);
+            wt_display_set_pixel_xy(2, 5, moonCol); wt_display_set_pixel_xy(3, 5, moonCol);
+            // Twinkling stars
+            if ((now / 300) % 2 == 0) wt_display_set_pixel_xy(6, 1, starCol);
+            if ((now / 400) % 2 == 0) wt_display_set_pixel_xy(5, 4, starCol);
+            if ((now / 350) % 2 == 0) wt_display_set_pixel_xy(7, 3, starCol);
+            break;
+        }
+        case WEATHER_PARTLY_CLOUDY: {
+            // Sun behind cloud
+            uint32_t sunCol = wt_color((uint8_t)(255*pulse), (uint8_t)(180*pulse), 30);
+            uint32_t cloudCol = wt_color(160, 165, 175);
+            // Sun peeking out
+            wt_display_set_pixel_xy(5, 0, sunCol); wt_display_set_pixel_xy(6, 0, sunCol);
+            wt_display_set_pixel_xy(6, 1, sunCol); wt_display_set_pixel_xy(7, 1, sunCol);
+            wt_display_set_pixel_xy(7, 2, sunCol);
+            // Cloud in front
+            for (int cx = 0; cx <= 5; ++cx) wt_display_set_pixel_xy(cx, 3, cloudCol);
+            for (int cx = 0; cx <= 6; ++cx) wt_display_set_pixel_xy(cx, 4, cloudCol);
+            wt_display_set_pixel_xy(1, 5, cloudCol); wt_display_set_pixel_xy(4, 5, cloudCol);
+            break;
+        }
+        case WEATHER_RAIN:
+        case WEATHER_DRIZZLE:
+        case WEATHER_HEAVY_RAIN: {
+            // Cloud with animated rain falling DOWN
+            uint32_t cloudCol = wt_color(120, 130, 150);
+            for (int cx = 1; cx <= 6; ++cx) wt_display_set_pixel_xy(cx, 5, cloudCol);
+            for (int cx = 0; cx <= 7; ++cx) wt_display_set_pixel_xy(cx, 6, cloudCol);
+            // Animated rain drops falling down
+            uint32_t rainCol = wt_color(100, 150, 255);
+            int numDrops = (current.type == WEATHER_HEAVY_RAIN) ? 4 : (current.type == WEATHER_DRIZZLE) ? 2 : 3;
+            for (int i = 0; i < numDrops; ++i) {
+                int ry = (now / 80 + i * 5) % 5;  // 0-4, increases = falls down
+                int rx = 1 + i * 2;
+                if (ry < 5) wt_display_set_pixel_xy(rx, ry, rainCol);
+            }
+            break;
+        }
+        case WEATHER_SNOW: {
+            // Cloud with drifting snowflakes
+            uint32_t cloudCol = wt_color(150, 160, 170);
+            for (int cx = 1; cx <= 6; ++cx) wt_display_set_pixel_xy(cx, 5, cloudCol);
+            for (int cx = 0; cx <= 7; ++cx) wt_display_set_pixel_xy(cx, 6, cloudCol);
+            // Animated snowflakes drifting down
+            for (int i = 0; i < 4; ++i) {
+                float drift = sinf(now * 0.002f + i) * 1.5f;
+                int sy = (now / 150 + i * 7) % 5;  // Falls down
+                int sx = 1 + i * 2 + (int)drift;
+                if (sy < 5 && sx >= 0 && sx < 8)
+                    wt_display_set_pixel_xy(sx, sy, wt_color(255, 255, 255));
+            }
+            break;
+        }
+        case WEATHER_SLEET: {
+            // Cloud with mixed rain/snow
+            uint32_t cloudCol = wt_color(140, 150, 165);
+            for (int cx = 1; cx <= 6; ++cx) wt_display_set_pixel_xy(cx, 5, cloudCol);
+            for (int cx = 0; cx <= 7; ++cx) wt_display_set_pixel_xy(cx, 6, cloudCol);
+            // Mixed precipitation
+            for (int i = 0; i < 3; ++i) {
+                int ry = (now / 90 + i * 6) % 5;
+                if (i % 2 == 0)
+                    wt_display_set_pixel_xy(1 + i * 2, ry, wt_color(100, 150, 255)); // Rain
+                else
+                    wt_display_set_pixel_xy(1 + i * 2, ry, wt_color(255, 255, 255)); // Snow
+            }
+            break;
+        }
+        case WEATHER_STORM: {
+            // Dark cloud with lightning
+            uint32_t cloudCol = wt_color(80, 85, 100);
+            for (int cx = 1; cx <= 6; ++cx) wt_display_set_pixel_xy(cx, 5, cloudCol);
+            for (int cx = 0; cx <= 7; ++cx) wt_display_set_pixel_xy(cx, 6, cloudCol);
+            // Animated lightning bolt
+            if ((now / 200) % 8 < 2) {
+                uint32_t boltCol = wt_color(255, 255, 100);
+                wt_display_set_pixel_xy(3, 4, boltCol);
+                wt_display_set_pixel_xy(4, 3, boltCol);
+                wt_display_set_pixel_xy(3, 2, boltCol);
+                wt_display_set_pixel_xy(4, 1, boltCol);
+                wt_display_set_pixel_xy(5, 0, boltCol);
+            }
+            break;
+        }
+        case WEATHER_FOG: {
+            // Horizontal fog lines with animation
+            uint32_t fogBright = wt_color(150, 155, 160);
+            uint32_t fogDim = wt_color(100, 105, 110);
+            int offset = (now / 200) % 3;
+            for (int y = 1; y < 6; y += 2) {
+                for (int x = 0; x < 8; ++x) {
+                    int xShift = (x + offset) % 8;
+                    wt_display_set_pixel_xy(xShift, y, (x % 2 == 0) ? fogBright : fogDim);
+                }
+            }
+            break;
+        }
+        case WEATHER_WIND: {
+            // Animated wind streaks
+            uint32_t windCol = wt_color(150, 180, 200);
+            uint32_t windDim = wt_color(80, 100, 120);
+            int offset = (now / 50) % 8;
+            // Multiple wind lines
+            for (int x = 0; x < 7; ++x) {
+                int xPos = (x + offset) % 8;
+                wt_display_set_pixel_xy(xPos, 2, windCol);
+            }
+            for (int x = 0; x < 5; ++x) {
+                int xPos = (x + offset + 2) % 8;
+                wt_display_set_pixel_xy(xPos, 4, windDim);
+            }
+            break;
+        }
+        case WEATHER_CLOUDY:
+        default: {
+            // Big fluffy cloud
+            uint32_t cloudCol = wt_color(150, 155, 165);
+            uint32_t cloudDark = wt_color(110, 115, 125);
+            for (int cx = 1; cx <= 6; ++cx) { 
+                wt_display_set_pixel_xy(cx, 3, cloudCol); 
+                wt_display_set_pixel_xy(cx, 4, cloudCol); 
+            }
+            for (int cx = 0; cx <= 7; ++cx) wt_display_set_pixel_xy(cx, 5, cloudCol);
+            wt_display_set_pixel_xy(2, 2, cloudCol); wt_display_set_pixel_xy(5, 2, cloudCol);
+            wt_display_set_pixel_xy(3, 6, cloudDark); wt_display_set_pixel_xy(4, 6, cloudDark);
+            break;
+        }
+    }
+    
+    // Temperature on right
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
+    
+    uint32_t tCol = tempToColor(current.temp);
+    uint8_t x = 10;
+    if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, tCol); x += 4; }
+    drawDigit(x, 0, t%10, tCol);
+}
+
+// Weather Preset 18: Matrix Rain - falling rain with weather intensity
+static void weather_render_matrix() {
+    static uint8_t dropY[10];  // Y positions for drops (0=top, 6=bottom, falling DOWN)
+    static uint8_t dropSpeed[10];
+    static uint32_t lastDrop = 0;
+    static bool init = false;
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Initialize drops at random positions
+    if (!init) {
+        for (int i = 0; i < 10; ++i) {
+            dropY[i] = random(7);
+            dropSpeed[i] = 1 + random(2);
+        }
+        init = true;
+    }
+    
+    // Weather affects rain intensity and color
+    uint8_t intensity = 3;  // Default drops
+    uint32_t bright, mid, dim;
+    
+    if (current.type >= WEATHER_RAIN && current.type <= WEATHER_HEAVY_RAIN) {
+        intensity = (current.type == WEATHER_HEAVY_RAIN) ? 8 : 5;
+        bright = wt_color(100, 180, 255);
+        mid = wt_color(50, 100, 180);
+        dim = wt_color(20, 50, 100);
+    } else if (current.type == WEATHER_SNOW) {
+        intensity = 4;
+        bright = wt_color(255, 255, 255);
+        mid = wt_color(180, 180, 200);
+        dim = wt_color(100, 100, 120);
+    } else {
+        bright = wt_color(0, 255, 100);
+        mid = wt_color(0, 150, 60);
+        dim = wt_color(0, 60, 25);
+    }
+    
+    // Update drops - falling DOWN (Y increases from 0 to 6)
+    if (now - lastDrop > 60) {
+        lastDrop = now;
+        for (int i = 0; i < 10; ++i) {
+            if (i < intensity) {
+                dropY[i] = (dropY[i] + 1) % 10;  // Increment with wrap (falls down)
             }
         }
     }
     
-    // Ones digit
-    int y2 = (int)scrollY;
-    if (y2 > -6 && y2 < 7) {
-        drawChar3x5(8, y2, '0' + t%10, col);
-    }
-    
-    // Minus sign if negative (at very top)
-    if (neg) {
-        int ym = (int)scrollY - 14;
-        if (ym >= 0 && ym < 7) {
-            wt_display_set_pixel_xy(9, ym, col);
-            wt_display_set_pixel_xy(10, ym, col);
+    // Clear to dark
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, wt_color(0, 8, 4));
         }
     }
     
-    // Side bars showing temp (like a thermometer)
-    int barHeight = (t + 10) * 7 / 50;
-    if (barHeight < 1) barHeight = 1;
-    if (barHeight > 7) barHeight = 7;
-    for (int y = 0; y < barHeight; ++y) {
-        wt_display_set_pixel_xy(0, y, col);
-        wt_display_set_pixel_xy(19, y, col);
+    // Draw falling drops - Y=0 is TOP, Y=6 is BOTTOM
+    for (int col = 0; col < WT_MATRIX_WIDTH; col += 2) {
+        int dropIdx = col / 2;
+        if (dropIdx >= intensity) continue;
+        
+        int headY = dropY[dropIdx] % 7;  // Head position (0=top, 6=bottom)
+        
+        // Draw drop with trail ABOVE it (smaller Y values = higher on screen)
+        if (headY >= 0 && headY < 7) wt_display_set_pixel_xy(col, headY, bright);
+        if (headY - 1 >= 0) wt_display_set_pixel_xy(col, headY - 1, mid);
+        if (headY - 2 >= 0) wt_display_set_pixel_xy(col, headY - 2, dim);
     }
+    
+    // Temperature - bottom center
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
+    
+    uint8_t numDigits = (t >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t x = (WT_MATRIX_WIDTH - width) / 2;
+    
+    if (neg) { wt_display_set_pixel_xy(x, 3, bright); wt_display_set_pixel_xy(x+1, 3, bright); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, bright); x += 4; }
+    drawDigit(x, 0, t%10, bright);
+}
+
+// Weather Preset 19: Cyber - neon glow with pulsing temperature display
+static void weather_render_neon() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    int8_t absT = neg ? -t : t;
+    if (absT > 99) absT = 99;
+    
+    // Dark background with subtle gradient
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            uint8_t base = 3 + y;
+            wt_display_set_pixel_xy(x, y, wt_color(base, base + 2, base + 5));
+        }
+    }
+    
+    // Animated scan line moving across
+    int scanX = (now / 40) % (WT_MATRIX_WIDTH + 4) - 2;
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        if (scanX >= 0 && scanX < WT_MATRIX_WIDTH)
+            wt_display_set_pixel_xy(scanX, y, wt_color(20, 40, 60));
+        if (scanX + 1 >= 0 && scanX + 1 < WT_MATRIX_WIDTH)
+            wt_display_set_pixel_xy(scanX + 1, y, wt_color(40, 80, 120));
+        if (scanX + 2 >= 0 && scanX + 2 < WT_MATRIX_WIDTH)
+            wt_display_set_pixel_xy(scanX + 2, y, wt_color(20, 40, 60));
+    }
+    
+    // Neon color based on temperature with smooth pulse
+    float pulse = 0.7f + 0.3f * sinf(now * 0.005f);
+    uint8_t r, g, b;
+    if (current.temp < 0) { r = 80; g = 180; b = 255; }       // Freezing - ice blue
+    else if (current.temp < 10) { r = 0; g = 220; b = 255; }  // Cold - cyan
+    else if (current.temp < 20) { r = 0; g = 255; b = 120; }  // Mild - green
+    else if (current.temp < 30) { r = 255; g = 200; b = 0; }  // Warm - yellow
+    else { r = 255; g = 50; b = 80; }                          // Hot - pink/red
+    
+    r = (uint8_t)(r * pulse);
+    g = (uint8_t)(g * pulse);
+    b = (uint8_t)(b * pulse);
+    uint32_t neonCol = wt_color(r, g, b);
+    uint32_t glowCol = wt_color(r/4, g/4, b/4);
+    uint32_t dimGlow = wt_color(r/8, g/8, b/8);
+    
+    // Calculate digit positioning
+    uint8_t numDigits = (absT >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t startX = (WT_MATRIX_WIDTH - width) / 2;
+    
+    // Draw outer glow halo
+    for (int gx = startX - 2; gx <= startX + width + 1; ++gx) {
+        if (gx >= 0 && gx < WT_MATRIX_WIDTH) {
+            wt_display_set_pixel_xy(gx, 0, dimGlow);
+            wt_display_set_pixel_xy(gx, 6, dimGlow);
+        }
+    }
+    for (int gy = 1; gy < 6; ++gy) {
+        if (startX - 2 >= 0) wt_display_set_pixel_xy(startX - 2, gy, dimGlow);
+        if (startX + width + 1 < WT_MATRIX_WIDTH) wt_display_set_pixel_xy(startX + width + 1, gy, dimGlow);
+    }
+    
+    // Draw inner glow border
+    for (int gx = startX - 1; gx <= startX + width; ++gx) {
+        if (gx >= 0 && gx < WT_MATRIX_WIDTH) {
+            wt_display_set_pixel_xy(gx, 0, glowCol);
+            wt_display_set_pixel_xy(gx, 6, glowCol);
+        }
+    }
+    
+    // Draw digits with neon glow
+    uint8_t x = startX;
+    if (neg) {
+        wt_display_set_pixel_xy(x, 3, neonCol);
+        wt_display_set_pixel_xy(x+1, 3, neonCol);
+        x += 3;
+    }
+    if (absT >= 10) { drawDigit(x, 0, absT/10, neonCol); x += 4; }
+    drawDigit(x, 0, absT%10, neonCol);
+}
+
+// Weather Preset 20: Particles - weather-driven particle system
+static void weather_render_bubbles() {
+    static float partY[8] = {0, 2, 4, 1, 3, 5, 2, 4};
+    static float partX[8] = {2, 6, 10, 14, 4, 12, 8, 16};
+    static uint32_t lastPart = 0;
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Weather-dependent background and particle style
+    uint8_t bgR = 20, bgG = 25, bgB = 35;
+    uint32_t partCol, partTrail;
+    float speed = 0.2f;
+    bool goingUp = false;  // Most particles fall down
+    
+    switch (current.type) {
+        case WEATHER_SUNNY:
+            bgR = 50; bgG = 40; bgB = 20;
+            partCol = wt_color(255, 200, 50);  // Golden dust
+            partTrail = wt_color(150, 120, 30);
+            goingUp = true;  // Rising heat
+            speed = 0.15f;
+            break;
+        case WEATHER_RAIN:
+        case WEATHER_HEAVY_RAIN:
+            bgR = 15; bgG = 25; bgB = 45;
+            partCol = wt_color(100, 160, 255);  // Rain
+            partTrail = wt_color(50, 90, 150);
+            speed = 0.35f;
+            break;
+        case WEATHER_SNOW:
+            bgR = 25; bgG = 30; bgB = 40;
+            partCol = wt_color(255, 255, 255);  // Snow
+            partTrail = wt_color(150, 160, 180);
+            speed = 0.1f;
+            break;
+        default:
+            partCol = wt_color(150, 180, 200);
+            partTrail = wt_color(80, 100, 120);
+    }
+    
+    // Gradient background
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        uint8_t fade = y * 3;
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, wt_color(bgR + fade/2, bgG + fade/2, bgB + fade));
+        }
+    }
+    
+    // Update particles
+    if (now - lastPart > 40) {
+        lastPart = now;
+        for (int i = 0; i < 8; ++i) {
+            float drift = sinf(now * 0.002f + i * 1.5f) * 0.15f;
+            partX[i] += drift;
+            if (goingUp) {
+                partY[i] += speed + (i % 3) * 0.05f;
+                if (partY[i] > 8) { partY[i] = -1; partX[i] = random(WT_MATRIX_WIDTH); }
+            } else {
+                partY[i] -= speed + (i % 3) * 0.05f;
+                if (partY[i] < -1) { partY[i] = 8; partX[i] = random(WT_MATRIX_WIDTH); }
+            }
+        }
+    }
+    
+    // Draw particles with trails
+    for (int i = 0; i < 8; ++i) {
+        int px = (int)partX[i];
+        int py = (int)partY[i];
+        if (py >= 0 && py < 7 && px >= 0 && px < WT_MATRIX_WIDTH) {
+            wt_display_set_pixel_xy(px, py, partCol);
+            int trailY = goingUp ? py - 1 : py + 1;
+            if (trailY >= 0 && trailY < 7) wt_display_set_pixel_xy(px, trailY, partTrail);
+        }
+    }
+    
+    // Temperature
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
+    
+    uint32_t tCol = wt_color(255, 255, 255);
+    uint8_t numDigits = (t >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t x = (WT_MATRIX_WIDTH - width) / 2;
+    
+    if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, tCol); x += 4; }
+    drawDigit(x, 0, t%10, tCol);
+}
+
+// Weather Preset 21: Waveform - weather-reactive audio-style visualization  
+static void weather_render_pulse() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Weather-dependent wave pattern and color
+    uint32_t lineCol, bgCol;
+    float freq = 0.3f, amp = 2.0f;
+    
+    switch (current.type) {
+        case WEATHER_SUNNY:
+            lineCol = wt_color(255, 200, 50);
+            bgCol = wt_color(30, 25, 10);
+            freq = 0.25f; amp = 1.5f;  // Calm waves
+            break;
+        case WEATHER_STORM:
+            lineCol = wt_color(200, 100, 255);
+            bgCol = wt_color(20, 10, 30);
+            freq = 0.5f; amp = 3.0f;  // Chaotic
+            break;
+        case WEATHER_RAIN:
+        case WEATHER_HEAVY_RAIN:
+            lineCol = wt_color(100, 180, 255);
+            bgCol = wt_color(10, 20, 35);
+            freq = 0.4f; amp = 2.5f;
+            break;
+        case WEATHER_WIND:
+            lineCol = wt_color(150, 200, 180);
+            bgCol = wt_color(15, 25, 20);
+            freq = 0.6f; amp = 2.0f;
+            break;
+        default:
+            lineCol = wt_color(0, 255, 150);
+            bgCol = wt_color(5, 15, 10);
+    }
+    
+    // Dark background
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, bgCol);
+        }
+    }
+    
+    // Draw animated waveform
+    float phase = now * 0.003f;
+    for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        float wave = sinf(x * freq + phase) * amp;
+        int y = 3 + (int)wave;
+        if (y < 0) y = 0;
+        if (y > 6) y = 6;
+        
+        wt_display_set_pixel_xy(x, y, lineCol);
+        
+        // Glow above/below
+        uint8_t r = (lineCol >> 16) & 0xFF;
+        uint8_t g = (lineCol >> 8) & 0xFF;
+        uint8_t b = lineCol & 0xFF;
+        uint32_t glowCol = wt_color(r/3, g/3, b/3);
+        if (y > 0) wt_display_set_pixel_xy(x, y - 1, glowCol);
+        if (y < 6) wt_display_set_pixel_xy(x, y + 1, glowCol);
+    }
+    
+    // Weather icon indicator (top-right)
+    uint32_t iconCol = wt_color(100, 100, 100);
+    if (current.type == WEATHER_SUNNY) {
+        wt_display_set_pixel_xy(18, 5, wt_color(255, 200, 50));
+        wt_display_set_pixel_xy(19, 6, wt_color(200, 150, 30));
+    } else if (current.type >= WEATHER_RAIN) {
+        wt_display_set_pixel_xy(18, 6, wt_color(100, 150, 255));
+        wt_display_set_pixel_xy(19, 5, wt_color(80, 120, 200));
+    }
+    
+    // Temperature on left
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
+    
+    uint32_t tCol = wt_color(255, 255, 255);
+    uint8_t x = 1;
+    if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, tCol); x += 4; }
+    drawDigit(x, 0, t%10, tCol);
+}
+
+// Weather Preset 22: TempBar - clean horizontal thermometer with gradient fill
+static void weather_render_dot() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    int8_t absT = neg ? -t : t;
+    if (absT > 99) absT = 99;
+    
+    // Clean dark background
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, wt_color(5, 5, 8));
+        }
+    }
+    
+    // Thermometer outline (rows 2-4, centered)
+    uint32_t outlineCol = wt_color(40, 45, 55);
+    for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        wt_display_set_pixel_xy(x, 1, outlineCol);
+        wt_display_set_pixel_xy(x, 5, outlineCol);
+    }
+    
+    // Temperature bar fill (rows 2-4) - map -30 to +45 -> 0 to 18 pixels
+    int barLen = (current.temp + 30) * 18 / 75;
+    if (barLen < 1) barLen = 1;
+    if (barLen > 18) barLen = 18;
+    
+    // Animated pulse
+    float pulse = 0.9f + 0.1f * sinf(now * 0.003f);
+    
+    for (int x = 0; x < barLen; ++x) {
+        // Gradient from cold to hot across the bar
+        float ratio = (float)x / 18.0f;
+        uint8_t r, g, b;
+        if (ratio < 0.33f) {
+            // Blue to cyan
+            r = 30; g = (uint8_t)(100 + 100 * ratio * 3); b = 255;
+        } else if (ratio < 0.66f) {
+            // Cyan to yellow
+            float t2 = (ratio - 0.33f) * 3;
+            r = (uint8_t)(30 + 225 * t2); g = (uint8_t)(200 + 55 * t2); b = (uint8_t)(255 * (1 - t2));
+        } else {
+            // Yellow to red
+            float t2 = (ratio - 0.66f) * 3;
+            r = 255; g = (uint8_t)(255 * (1 - t2 * 0.7f)); b = 0;
+        }
+        
+        r = (uint8_t)(r * pulse); g = (uint8_t)(g * pulse); b = (uint8_t)(b * pulse);
+        uint32_t col = wt_color(r, g, b);
+        uint32_t dimCol = wt_color(r/2, g/2, b/2);
+        
+        wt_display_set_pixel_xy(x, 2, dimCol);
+        wt_display_set_pixel_xy(x, 3, col);
+        wt_display_set_pixel_xy(x, 4, dimCol);
+    }
+    
+    // End cap glow
+    if (barLen > 0 && barLen < 18) {
+        uint32_t capCol = tempToColor(current.temp);
+        uint8_t cr = (capCol >> 16) & 0xFF;
+        uint8_t cg = (capCol >> 8) & 0xFF;
+        uint8_t cb = capCol & 0xFF;
+        wt_display_set_pixel_xy(barLen, 3, wt_color(cr/3, cg/3, cb/3));
+    }
+    
+    // Temperature digits (bottom right, small)
+    uint32_t tCol = wt_color(255, 255, 255);
+    char buf[5];
+    snprintf(buf, sizeof(buf), "%d", current.temp);
+    int len = strlen(buf);
+    int x = WT_MATRIX_WIDTH - len * 4;
+    for (int i = 0; i < len; ++i) {
+        if (buf[i] == '-') {
+            wt_display_set_pixel_xy(x, 6, tCol);
+            wt_display_set_pixel_xy(x+1, 6, tCol);
+            x += 3;
+        } else {
+            drawDigit(x, 0, buf[i] - '0', tCol);
+            x += 4;
+        }
+    }
+}
+
+// Weather Preset 23: Aurora - flowing northern lights effect
+static void weather_render_aurora() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Dark sky background
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, wt_color(5, 8, 15));
+        }
+    }
+    
+    // Aurora waves - multiple layers with different speeds
+    for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        // Layer 1: Green aurora
+        float wave1 = sinf(x * 0.4f + now * 0.002f) * 2.0f;
+        int y1 = 3 + (int)wave1;
+        if (y1 >= 0 && y1 < 7) {
+            float bright = 0.6f + 0.4f * sinf(x * 0.3f + now * 0.003f);
+            wt_display_set_pixel_xy(x, y1, wt_color(0, (uint8_t)(180*bright), (uint8_t)(80*bright)));
+            if (y1+1 < 7) wt_display_set_pixel_xy(x, y1+1, wt_color(0, (uint8_t)(100*bright), (uint8_t)(50*bright)));
+        }
+        
+        // Layer 2: Purple/pink aurora
+        float wave2 = sinf(x * 0.3f - now * 0.0015f + 2.0f) * 1.5f;
+        int y2 = 4 + (int)wave2;
+        if (y2 >= 0 && y2 < 7) {
+            float bright = 0.5f + 0.5f * sinf(x * 0.25f + now * 0.002f);
+            wt_display_set_pixel_xy(x, y2, wt_color((uint8_t)(100*bright), 0, (uint8_t)(150*bright)));
+        }
+    }
+    
+    // Stars twinkling
+    if ((now / 200) % 5 == 0) wt_display_set_pixel_xy(2, 0, wt_color(200, 200, 255));
+    if ((now / 300) % 4 == 0) wt_display_set_pixel_xy(10, 1, wt_color(180, 180, 220));
+    if ((now / 250) % 6 == 0) wt_display_set_pixel_xy(15, 0, wt_color(220, 220, 255));
+    
+    // Temperature display - bottom right
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
+    
+    uint32_t tCol = wt_color(150, 255, 200);  // Aurora green
+    uint8_t x = WT_MATRIX_WIDTH - ((t >= 10) ? 8 : 4) - (neg ? 3 : 0);
+    if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, tCol); x += 4; }
+    drawDigit(x, 0, t%10, tCol);
+}
+
+// Weather Preset 24: Radar - weather radar sweep animation
+static void weather_render_radar() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Dark background with radar grid
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            uint8_t grid = ((x % 6 == 0) || (y % 3 == 0)) ? 15 : 5;
+            wt_display_set_pixel_xy(x, y, wt_color(0, grid, 0));
+        }
+    }
+    
+    // Radar sweep line
+    float angle = now * 0.003f;
+    int cx = 9, cy = 3;  // Center
+    for (int r = 1; r < 8; ++r) {
+        int sx = cx + (int)(cosf(angle) * r);
+        int sy = cy + (int)(sinf(angle) * r * 0.5f);
+        if (sx >= 0 && sx < WT_MATRIX_WIDTH && sy >= 0 && sy < 7) {
+            wt_display_set_pixel_xy(sx, sy, wt_color(0, 255, 50));
+        }
+    }
+    
+    // Weather blips based on condition
+    uint32_t blipCol;
+    int numBlips = 0;
+    switch (current.type) {
+        case WEATHER_SUNNY: blipCol = wt_color(255, 200, 0); numBlips = 1; break;
+        case WEATHER_RAIN:
+        case WEATHER_DRIZZLE: blipCol = wt_color(0, 150, 255); numBlips = 3; break;
+        case WEATHER_HEAVY_RAIN: blipCol = wt_color(0, 100, 255); numBlips = 5; break;
+        case WEATHER_STORM: blipCol = wt_color(255, 50, 50); numBlips = 4; break;
+        case WEATHER_SNOW: blipCol = wt_color(200, 200, 255); numBlips = 3; break;
+        default: blipCol = wt_color(100, 100, 100); numBlips = 2; break;
+    }
+    
+    // Draw blips with fade effect
+    for (int i = 0; i < numBlips; ++i) {
+        int bx = 3 + (i * 7 + (now/500)) % 12;
+        int by = 1 + (i * 3) % 5;
+        float fade = 0.5f + 0.5f * sinf(now * 0.005f + i);
+        uint8_t r = ((blipCol >> 16) & 0xFF) * fade;
+        uint8_t g = ((blipCol >> 8) & 0xFF) * fade;
+        uint8_t b = (blipCol & 0xFF) * fade;
+        wt_display_set_pixel_xy(bx, by, wt_color(r, g, b));
+    }
+    
+    // Temperature - top left in radar green
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    uint32_t tCol = wt_color(0, 200, 80);
+    uint8_t x = 0;
+    if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, tCol); x += 4; }
+    drawDigit(x, 0, t%10, tCol);
+}
+
+// Weather Preset 25: Glitch - digital glitch effect
+static void weather_render_glitch() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    static uint32_t lastGlitch = 0;
+    static int glitchY = -1;
+    static int glitchOffset = 0;
+    
+    // Trigger random glitch every ~2 seconds
+    if (now - lastGlitch > 2000 + random(1000)) {
+        lastGlitch = now;
+        glitchY = random(7);
+        glitchOffset = random(5) - 2;
+    }
+    
+    // Clear glitch after 100ms
+    if (now - lastGlitch > 100) {
+        glitchY = -1;
+    }
+    
+    // Dark background
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, wt_color(8, 8, 12));
+        }
+    }
+    
+    // Glitch scanlines
+    if (glitchY >= 0) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            int gx = (x + glitchOffset + WT_MATRIX_WIDTH) % WT_MATRIX_WIDTH;
+            wt_display_set_pixel_xy(gx, glitchY, wt_color(255, 0, 100));
+        }
+    }
+    
+    // Random noise pixels during glitch
+    if (glitchY >= 0) {
+        for (int i = 0; i < 5; ++i) {
+            int nx = random(WT_MATRIX_WIDTH);
+            int ny = random(7);
+            wt_display_set_pixel_xy(nx, ny, wt_color(random(100), random(255), random(200)));
+        }
+    }
+    
+    // Temperature with RGB split effect
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
+    
+    uint8_t numDigits = (t >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t startX = (WT_MATRIX_WIDTH - width) / 2;
+    
+    // Draw with color separation effect
+    uint8_t x = startX;
+    uint32_t mainCol = wt_color(255, 255, 255);
+    
+    // RGB ghost offset during glitch
+    int rgbOff = (glitchY >= 0) ? 1 : 0;
+    
+    if (neg) { 
+        if (rgbOff) wt_display_set_pixel_xy(x-1, 3, wt_color(255, 0, 0));
+        wt_display_set_pixel_xy(x, 3, mainCol); 
+        wt_display_set_pixel_xy(x+1, 3, mainCol);
+        if (rgbOff) wt_display_set_pixel_xy(x+2, 3, wt_color(0, 255, 255));
+        x += 3; 
+    }
+    if (t >= 10) { drawDigit(x, 0, t/10, mainCol); x += 4; }
+    drawDigit(x, 0, t%10, mainCol);
+}
+
+// Weather Preset 26: Horizon - sunrise/sunset gradient scene
+static void weather_render_horizon() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Animated sun position (rises and sets)
+    float sunPhase = sinf(now * 0.0005f);  // -1 to 1
+    int sunY = 3 - (int)(sunPhase * 2.5f);  // 0-6
+    
+    // Sky gradient based on sun position
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            uint8_t r, g, b;
+            float yRatio = (float)y / 6.0f;
+            
+            if (sunPhase > 0.3f) {
+                // Day sky - blue gradient
+                r = (uint8_t)(100 + 80 * yRatio);
+                g = (uint8_t)(180 + 50 * yRatio);
+                b = 255;
+            } else if (sunPhase > -0.3f) {
+                // Sunrise/sunset - orange to purple
+                float blend = (sunPhase + 0.3f) / 0.6f;
+                r = (uint8_t)(255 - 80 * yRatio);
+                g = (uint8_t)(100 + 80 * blend - 60 * yRatio);
+                b = (uint8_t)(100 + 100 * yRatio);
+            } else {
+                // Night sky - dark blue
+                r = (uint8_t)(10 + 5 * yRatio);
+                g = (uint8_t)(15 + 10 * yRatio);
+                b = (uint8_t)(40 + 20 * yRatio);
+            }
+            wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
+        }
+    }
+    
+    // Draw sun/moon
+    if (sunPhase > -0.5f) {
+        // Sun
+        uint32_t sunCol = wt_color(255, 220, 100);
+        if (sunY >= 0 && sunY < 7) wt_display_set_pixel_xy(3, sunY, sunCol);
+        if (sunY-1 >= 0) wt_display_set_pixel_xy(3, sunY-1, sunCol);
+        if (sunY+1 < 7) wt_display_set_pixel_xy(3, sunY+1, sunCol);
+        wt_display_set_pixel_xy(2, sunY, sunCol);
+        wt_display_set_pixel_xy(4, sunY, sunCol);
+    } else {
+        // Moon
+        uint32_t moonCol = wt_color(200, 200, 180);
+        wt_display_set_pixel_xy(3, 1, moonCol);
+        wt_display_set_pixel_xy(4, 1, moonCol);
+        wt_display_set_pixel_xy(2, 2, moonCol);
+    }
+    
+    // Ground line
+    for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        wt_display_set_pixel_xy(x, 6, wt_color(30, 50, 30));
+    }
+    
+    // Temperature - right side
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
+    
+    uint32_t tCol = (sunPhase > 0) ? wt_color(50, 50, 80) : wt_color(200, 200, 255);
+    uint8_t x = WT_MATRIX_WIDTH - ((t >= 10) ? 8 : 4) - (neg ? 3 : 0);
+    if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, tCol); x += 4; }
+    drawDigit(x, 0, t%10, tCol);
+}
+
+// Weather Preset 27: Frost - ice crystal formation effect
+static void weather_render_frost() {
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Temperature affects frost intensity
+    float frostLevel = 1.0f;
+    if (current.temp > 5) frostLevel = 0.3f;
+    else if (current.temp > 0) frostLevel = 0.6f;
+    else if (current.temp < -10) frostLevel = 1.0f;
+    
+    // Dark blue background
+    for (int y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            wt_display_set_pixel_xy(x, y, wt_color(5, 10, 20));
+        }
+    }
+    
+    // Frost crystal patterns growing from edges
+    float phase = now * 0.001f;
+    
+    // Crystal branches
+    for (int i = 0; i < 6; ++i) {
+        float angle = i * 1.047f + phase * 0.2f;  // 60 degree spacing
+        int cx = 9, cy = 3;
+        
+        for (int r = 1; r < (int)(5 * frostLevel); ++r) {
+            int fx = cx + (int)(cosf(angle) * r);
+            int fy = cy + (int)(sinf(angle) * r * 0.5f);
+            
+            if (fx >= 0 && fx < WT_MATRIX_WIDTH && fy >= 0 && fy < 7) {
+                float bright = 0.6f + 0.4f * sinf(phase + r * 0.5f);
+                uint32_t frostCol = wt_color(
+                    (uint8_t)(150 * bright * frostLevel),
+                    (uint8_t)(200 * bright * frostLevel),
+                    (uint8_t)(255 * bright * frostLevel)
+                );
+                wt_display_set_pixel_xy(fx, fy, frostCol);
+            }
+        }
+    }
+    
+    // Edge frost on corners
+    uint32_t edgeCol = wt_color((uint8_t)(100*frostLevel), (uint8_t)(150*frostLevel), (uint8_t)(200*frostLevel));
+    wt_display_set_pixel_xy(0, 0, edgeCol);
+    wt_display_set_pixel_xy(1, 0, edgeCol);
+    wt_display_set_pixel_xy(0, 1, edgeCol);
+    wt_display_set_pixel_xy(WT_MATRIX_WIDTH-1, 0, edgeCol);
+    wt_display_set_pixel_xy(WT_MATRIX_WIDTH-2, 0, edgeCol);
+    wt_display_set_pixel_xy(WT_MATRIX_WIDTH-1, 1, edgeCol);
+    wt_display_set_pixel_xy(0, 6, edgeCol);
+    wt_display_set_pixel_xy(WT_MATRIX_WIDTH-1, 6, edgeCol);
+    
+    // Temperature in ice blue
+    int8_t t = current.temp;
+    bool neg = t < 0;
+    if (neg) t = -t;
+    if (t > 99) t = 99;
+    
+    uint32_t tCol = wt_color(180, 220, 255);
+    uint8_t numDigits = (t >= 10) ? 2 : 1;
+    uint8_t width = numDigits * 4 + (neg ? 3 : 0);
+    uint8_t x = (WT_MATRIX_WIDTH - width) / 2;
+    
+    if (neg) { wt_display_set_pixel_xy(x, 3, tCol); wt_display_set_pixel_xy(x+1, 3, tCol); x += 3; }
+    if (t >= 10) { drawDigit(x, 0, t/10, tCol); x += 4; }
+    drawDigit(x, 0, t%10, tCol);
 }
 
 static void weather_render()
@@ -3756,7 +5320,7 @@ static void weather_render()
         return;
     }
 
-    // 17 weather display presets
+    // 23 weather display presets
     switch (g_weatherPreset) {
         case 0: weather_render_classic(); break;       // Icon + temp
         case 1: weather_render_fs_bar(); break;        // Horizontal gradient bar
@@ -3774,7 +5338,18 @@ static void weather_render()
         case 13: weather_render_waves(); break;        // Ocean Waves
         case 14: weather_render_split(); break;        // Diagonal Split
         case 15: weather_render_countdown(); break;    // Countdown
-        case 16: weather_render_stack(); break;        // Vertical Stack
+        case 16: weather_render_stack(); break;        // Thermometer
+        case 17: weather_render_emoji(); break;        // Emoji Face
+        case 18: weather_render_matrix(); break;       // Matrix Rain
+        case 19: weather_render_neon(); break;         // Neon Sign
+        case 20: weather_render_bubbles(); break;      // Bubbles
+        case 21: weather_render_pulse(); break;        // Heartbeat/Pulse
+        case 22: weather_render_dot(); break;          // TempBar
+        case 23: weather_render_aurora(); break;       // Aurora
+        case 24: weather_render_radar(); break;        // Radar
+        case 25: weather_render_glitch(); break;       // Glitch
+        case 26: weather_render_horizon(); break;      // Horizon
+        case 27: weather_render_frost(); break;        // Frost
         default: weather_render_classic(); break;
     }
 
@@ -6398,7 +7973,7 @@ static void mqttcard_render()
 // RSS Card - Custom RSS Feed Reader with Extended Character Support
 // ============================================================================
 
-static char g_rssTitle[512] = "Loading RSS...";
+static char g_rssTitle[2048] = "Loading RSS...";
 static uint32_t g_rssLastFetch = 0;
 static int16_t g_rssScrollX = 20;
 static uint32_t g_rssLastScroll = 0;
@@ -6475,6 +8050,42 @@ static const uint8_t* getCharBitmap(uint8_t c) {
     return FONT_SPACE; // Unknown chars become space
 }
 
+static void cleanRSSString(String& s) {
+    s.trim();
+    // Handle CDATA
+    if (s.startsWith("<![CDATA[")) {
+        s = s.substring(9);
+        int end = s.indexOf("]]>");
+        if (end > 0) s = s.substring(0, end);
+    }
+    
+    // Strip HTML tags
+    while (true) {
+        int tagStart = s.indexOf("<");
+        if (tagStart < 0) break;
+        int tagEnd = s.indexOf(">", tagStart);
+        if (tagEnd < 0) break;
+        s.remove(tagStart, tagEnd - tagStart + 1);
+    }
+    
+    // Decode entities
+    s.replace("&quot;", "\"");
+    s.replace("&apos;", "'");
+    s.replace("&lt;", "<");
+    s.replace("&gt;", ">");
+    s.replace("&amp;", "&");
+    s.replace("&#39;", "'");
+    s.replace("&#x27;", "'");
+    s.replace("&nbsp;", " ");
+    
+    // Collapse spaces
+    while (s.indexOf("  ") >= 0) {
+        s.replace("  ", " ");
+    }
+    
+    s.trim();
+}
+
 static void fetchRSS() {
     Settings& cfg = settings_get();
     if (strlen(cfg.rssUrl) < 5) {
@@ -6503,7 +8114,7 @@ static void fetchRSS() {
         http.begin(cfg.rssUrl);
     }
     
-    http.setTimeout(15000); // 15 second timeout for SSL handshake
+    http.setTimeout(15000);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.addHeader("User-Agent", "WeatherThing/1.0");
     http.addHeader("Accept", "application/rss+xml, application/xml, text/xml");
@@ -6512,162 +8123,137 @@ static void fetchRSS() {
     Serial.printf("[RSS] HTTP code: %d\n", httpCode);
     
     if (httpCode != HTTP_CODE_OK) {
-        if (httpCode < 0) {
-            snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS connection failed");
-        } else if (httpCode == 404) {
-            snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS feed not found 404");
-        } else if (httpCode >= 500) {
-            snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS server error %d", httpCode);
-        } else {
-            snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS error %d", httpCode);
-        }
+        snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS error %d", httpCode);
         g_rssValid = false;
         http.end();
         if (secureClient) delete secureClient;
         return;
     }
     
-    // Limit response size to prevent memory issues
-    int contentLen = http.getSize();
-    Serial.printf("[RSS] Content length: %d\n", contentLen);
-    if (contentLen > 64000) {
-        Serial.println("[RSS] Feed too large, reading partial");
-    }
-    
-    // Read response in chunks, look for first <item><title>
+    // Read response
     String response = "";
     WiFiClient *stream = http.getStreamPtr();
     uint32_t startTime = millis();
     int bytesRead = 0;
-    const int maxBytes = 32000; // Limit memory usage
+    const int maxBytes = 48000; // Increased buffer for multiple items
     
-    while (stream->available() && bytesRead < maxBytes && (millis() - startTime) < 8000) {
-        int toRead = min(512, stream->available());
-        char buf[513];
-        int len = stream->readBytes(buf, toRead);
-        buf[len] = 0;
-        response += buf;
-        bytesRead += len;
-        
-        // Check if we have enough to parse
-        if (response.indexOf("</title>") > 0 && response.indexOf("<item") > 0) {
-            break; // Got what we need
+    while (stream->available() || (millis() - startTime) < 5000) {
+        if (stream->available()) {
+            int toRead = min(1024, stream->available());
+            char buf[1025];
+            int len = stream->readBytes(buf, toRead);
+            if (len > 0) {
+                buf[len] = 0;
+                response += buf;
+                bytesRead += len;
+                if (bytesRead >= maxBytes) break;
+                startTime = millis(); // Reset timeout on data
+            }
         }
-        yield(); // Let other tasks run
+        delay(1);
     }
     
     http.end();
-    Serial.printf("[RSS] Read %d bytes\n", bytesRead);
     
-    // Find first item's title
-    int itemPos = response.indexOf("<item");
-    if (itemPos < 0) {
-        // Try <entry> for Atom feeds
-        itemPos = response.indexOf("<entry");
-    }
+    // Parse Items
+    String fullText = "";
+    int searchPos = 0;
+    int itemsFound = 0;
+    int targetItems = (cfg.rssItemCount > 0) ? cfg.rssItemCount : 3;
     
-    if (itemPos < 0) {
-        snprintf(g_rssTitle, sizeof(g_rssTitle), "No items in RSS feed");
-        g_rssValid = false;
-        if (secureClient) delete secureClient;
-        return;
-    }
-    
-    int titleStart = response.indexOf("<title", itemPos);
-    if (titleStart < 0) {
-        snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS parse error - no title");
-        g_rssValid = false;
-        if (secureClient) delete secureClient;
-        return;
-    }
-    
-    // Skip past the <title> or <title ...> tag
-    int titleContentStart = response.indexOf(">", titleStart) + 1;
-    int titleEnd = response.indexOf("</title>", titleContentStart);
-    
-    if (titleContentStart <= 0 || titleEnd < 0) {
-        snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS parse error");
-        g_rssValid = false;
-        if (secureClient) delete secureClient;
-        return;
-    }
-    
-    String title = response.substring(titleContentStart, titleEnd);
-    
-    // Handle CDATA sections: <![CDATA[actual content]]>
-    if (title.startsWith("<![CDATA[")) {
-        title = title.substring(9); // Remove <![CDATA[
-        int cdataEnd = title.indexOf("]]>");
-        if (cdataEnd > 0) {
-            title = title.substring(0, cdataEnd);
-        }
-    }
-    
-    // Decode HTML entities
-    title.replace("&quot;", "\"");
-    title.replace("&apos;", "'");
-    title.replace("&lt;", "<");
-    title.replace("&gt;", ">");
-    title.replace("&amp;", "&");
-    title.replace("&#39;", "'");
-    title.replace("&#x27;", "'");
-    title.replace("&nbsp;", " ");
-    title.trim();
-    
-    Serial.printf("[RSS] Title: %s\n", title.c_str());
-    
-    // Convert to display format with UTF-8 handling
-    int outLen = 0;
-    for(size_t i = 0; i < title.length() && outLen < (int)sizeof(g_rssTitle) - 1; i++) {
-        uint8_t c = title[i];
+    while (itemsFound < targetItems) {
+        // Find item start
+        int itemStart = response.indexOf("<item", searchPos);
+        if (itemStart < 0) itemStart = response.indexOf("<entry", searchPos); // Atom support
+        if (itemStart < 0) break;
         
-        // Handle UTF-8 multi-byte sequences for Latvian chars
-        if (c == 0xC4 || c == 0xC5) {
-            if (i + 1 < title.length()) {
-                uint8_t c2 = title[++i];
-                uint8_t code = 0;
-                if (c == 0xC4) {
-                    if(c2==0x80) code=128; else if(c2==0x81) code=139;
-                    else if(c2==0x8C) code=129; else if(c2==0x8D) code=140;
-                    else if(c2==0x92) code=130; else if(c2==0x93) code=141;
-                    else if(c2==0x9C) code=131; else if(c2==0x9D) code=142;
-                    else if(c2==0xAA) code=132; else if(c2==0xAB) code=143;
-                    else if(c2==0xB6) code=133; else if(c2==0xB7) code=144;
-                    else if(c2==0xBB) code=134; else if(c2==0xBC) code=145;
-                } else if (c == 0xC5) {
-                    if(c2==0x85) code=135; else if(c2==0x86) code=146;
-                    else if(c2==0x60) code=136; else if(c2==0x61) code=147;
-                    else if(c2==0xAA) code=137; else if(c2==0xAB) code=148;
-                    else if(c2==0xBD) code=138; else if(c2==0xBE) code=149;
+        int itemEnd = response.indexOf("</item>", itemStart);
+        if (itemEnd < 0) itemEnd = response.indexOf("</entry>", itemStart);
+        if (itemEnd < 0) itemEnd = response.length();
+        
+        // Find Title
+        int titleStart = response.indexOf("<title", itemStart);
+        if (titleStart > 0 && titleStart < itemEnd) {
+            int contentStart = response.indexOf(">", titleStart) + 1;
+            int titleEnd = response.indexOf("</title>", contentStart);
+            
+            if (contentStart > 0 && titleEnd > 0) {
+                String title = response.substring(contentStart, titleEnd);
+                cleanRSSString(title);
+                
+                if (fullText.length() > 0) fullText += "   ***   ";
+                fullText += title;
+                
+                // Find Description/Summary if requested
+                if (cfg.rssFormat == 1) {
+                    int descStart = response.indexOf("<description", itemStart);
+                    if (descStart < 0) descStart = response.indexOf("<summary", itemStart);
+                    
+                    if (descStart > 0 && descStart < itemEnd) {
+                        int dContentStart = response.indexOf(">", descStart) + 1;
+                        int dEnd = response.indexOf("</", dContentStart);
+                        
+                        if (dContentStart > 0 && dEnd > 0) {
+                            String desc = response.substring(dContentStart, dEnd);
+                            cleanRSSString(desc);
+                            if (desc.length() > 0) {
+                                fullText += ": " + desc;
+                            }
+                        }
+                    }
                 }
-                if (code != 0) g_rssTitle[outLen++] = code;
-                // Skip unknown UTF-8 sequences
             }
-        } else if ((c & 0xE0) == 0xC0) {
-            // Skip other 2-byte UTF-8 sequences
-            if (i + 1 < title.length()) i++;
-        } else if ((c & 0xF0) == 0xE0) {
-            // Skip 3-byte UTF-8 sequences (emoji, etc)
-            if (i + 2 < title.length()) i += 2;
-        } else if ((c & 0xF8) == 0xF0) {
-            // Skip 4-byte UTF-8 sequences
-            if (i + 3 < title.length()) i += 3;
-        } else if (c < 128) {
-            // ASCII character
-            g_rssTitle[outLen++] = c;
         }
+        
+        searchPos = itemEnd;
+        itemsFound++;
     }
-    g_rssTitle[outLen] = 0;
     
-    if (outLen == 0) {
-        snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS title empty");
+    if (fullText.length() == 0) {
+        snprintf(g_rssTitle, sizeof(g_rssTitle), "No items found");
         g_rssValid = false;
     } else {
+        // Convert UTF-8 to display format
+        int outLen = 0;
+        for(size_t i = 0; i < fullText.length() && outLen < (int)sizeof(g_rssTitle) - 1; i++) {
+            uint8_t c = fullText[i];
+            
+            // Handle UTF-8 multi-byte sequences for Latvian chars
+            if (c == 0xC4 || c == 0xC5) {
+                if (i + 1 < fullText.length()) {
+                    uint8_t c2 = fullText[++i];
+                    uint8_t code = 0;
+                    if (c == 0xC4) {
+                        if(c2==0x80) code=128; else if(c2==0x81) code=139;
+                        else if(c2==0x8C) code=129; else if(c2==0x8D) code=140;
+                        else if(c2==0x92) code=130; else if(c2==0x93) code=141;
+                        else if(c2==0x9C) code=131; else if(c2==0x9D) code=142;
+                        else if(c2==0xAA) code=132; else if(c2==0xAB) code=143;
+                        else if(c2==0xB6) code=133; else if(c2==0xB7) code=144;
+                        else if(c2==0xBB) code=134; else if(c2==0xBC) code=145;
+                    } else if (c == 0xC5) {
+                        if(c2==0x85) code=135; else if(c2==0x86) code=146;
+                        else if(c2==0x60) code=136; else if(c2==0x61) code=147;
+                        else if(c2==0xAA) code=137; else if(c2==0xAB) code=148;
+                        else if(c2==0xBD) code=138; else if(c2==0xBE) code=149;
+                    }
+                    if (code != 0) g_rssTitle[outLen++] = code;
+                }
+            } else if ((c & 0xE0) == 0xC0) {
+                i++; // Skip other 2-byte char
+            } else if ((c & 0xF0) == 0xE0) {
+                i += 2; // Skip 3-byte char
+            } else if ((c & 0xF8) == 0xF0) {
+                i += 3; // Skip 4-byte char
+            } else if (c < 128) {
+                g_rssTitle[outLen++] = c;
+            }
+        }
+        g_rssTitle[outLen] = 0;
         g_rssValid = true;
-        Serial.printf("[RSS] Display text: %s\n", g_rssTitle);
+        Serial.printf("[RSS] Text: %s\n", g_rssTitle);
     }
     
-    // Clean up secure client
     if (secureClient) delete secureClient;
 }
 

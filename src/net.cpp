@@ -72,9 +72,9 @@ static void handleRoot()
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#f0f0f0;--card:#ffffff;--border:#000000;--text:#000000;--accent:#ffcc00;--success:#4ade80;--danger:#ff6b6b}
 body{font-family:'Courier New', Courier, monospace;background-color:var(--bg);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Cpath fill='%23d8eef5' opacity='0.6' d='M85,25c0-8-6-15-14-15c-2,0-3,0.2-5,0.5c-3-5-8-8-14-8c-5,0-9,2-12,5c-5-11-16-18-29-18c-13,0-24,8-29,19c-3-3-7-5-12-5c-9,0-16,7-16,16c0,1,0.1,2,0.3,3c-8,5-13,14-13,25c0,17,14,30,30,30h90c17,0,30-14,30-30c0-12-4-22-16-22z'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Cpath fill='%23c5e4ed' opacity='0.4' d='M85,25c0-8-6-15-14-15c-2,0-3,0.2-5,0.5c-3-5-8-8-14-8c-5,0-9,2-12,5c-5-11-16-18-29-18c-13,0-24,8-29,19c-3-3-7-5-12-5c-9,0-16,7-16,16c0,1,0.1,2,0.3,3c-8,5-13,14-13,25c0,17,14,30,30,30h90c17,0,30-14,30-30c0-12-4-22-16-22z'/%3E%3C/svg%3E");background-size:400px 200px,300px 150px;background-position:0 0,200px 80px;animation:drift 120s linear infinite,drift2 90s linear infinite reverse;color:var(--text);min-height:100vh;line-height:1.5;padding-bottom:50px}
-.header{background:#000;color:#fff;padding:20px;text-align:center;border-bottom:6px solid #000;margin-bottom:30px;box-shadow:0 8px 0 rgba(0,0,0,0.2)}
-.header h1{font-size:2.5em;font-weight:900;text-transform:uppercase;letter-spacing:-2px;margin-bottom:10px;text-shadow:4px 4px 0 #ff00ff}
-.header .subtitle{font-weight:bold;text-transform:uppercase;letter-spacing:2px;font-size:0.8em}
+.header{background:#000;color:#fff;padding:15px 20px;text-align:center;border-bottom:6px solid #000;margin-bottom:30px;box-shadow:0 8px 0 rgba(0,0,0,0.2)}
+.logo-svg{height:60px;width:auto}.logo-svg path,.logo-svg rect{fill:url(#rg)}
+@keyframes rainbowShift{0%,100%{stop-color:#ff0000}14%{stop-color:#ff8800}28%{stop-color:#ffff00}42%{stop-color:#00ff00}57%{stop-color:#00ffff}71%{stop-color:#0088ff}85%{stop-color:#ff00ff}}.rs1{animation:rainbowShift 4s linear infinite}.rs2{animation:rainbowShift 4s linear infinite;animation-delay:-1.3s}.rs3{animation:rainbowShift 4s linear infinite;animation-delay:-2.6s}
 .status-bar{display:flex;justify-content:center;gap:16px;margin-top:16px;flex-wrap:wrap;font-weight:bold}
 .status-item{display:flex;align-items:center;gap:8px;background:#fff;color:#000;padding:5px 10px;border:3px solid #000;box-shadow:4px 4px 0 #000}
 .status-dot{width:12px;height:12px;background:#000;border:2px solid #000}
@@ -113,13 +113,21 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
 .temp-input{display:flex;align-items:center;gap:10px}
 .temp-input input{width:100px;text-align:center;font-size:1.5em}
 .footer{text-align:center;margin-top:40px;font-weight:bold;text-transform:uppercase}
+.weather-title{position:relative;overflow:hidden;display:inline-block}
+.weather-title::before{content:'\\2600\\FE0F';position:absolute;animation:sunRain 4s ease-in-out infinite}
+.weather-title::after{content:'\\1F327\\FE0F';position:absolute;animation:sunRain 4s ease-in-out infinite;animation-delay:2s}
+@keyframes sunRain{0%{left:-30px;opacity:0}15%{left:0;opacity:1}35%{left:100%;opacity:0}100%{left:100%;opacity:0}}
 @keyframes drift{0%{background-position:0 0,200px 80px}100%{background-position:400px 200px,600px 230px}}@keyframes drift2{0%{background-position:200px 80px}100%{background-position:-100px -70px}}
 @media(max-width:600px){.grid{grid-template-columns:1fr}.row{flex-direction:column}.row>*{width:100%}}
-</style></head><body>
+</style>
+<script>
+function showCard(c,p,el){if(el)el.style.background='#ffa500';fetch('/api/card?card='+c+'&preset='+p).then(function(r){return r.json();}).then(function(){if(el){el.style.background='#4ade80';setTimeout(function(){el.style.background='#fffacd';},500);}}).catch(function(){if(el)el.style.background='#f00';});}
+function showFirstPreset(btn,card){showCard(card,0,btn);}
+</script>
+</head><body>
 <div class="header">
-<h1>WeatherThing</h1>
-<p class="subtitle">LED Matrix Weather Display</p>
-<div class="status-bar">
+<svg class="logo-svg" viewBox="0 0 243 29" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient x1="0%%" y1="0%%" x2="100%%" y2="0%%"><stop offset="0%%" class="rs1"/><stop offset="50%%" class="rs2"/><stop offset="100%%" class="rs3"/></linearGradient></defs><g><path d="M11.545,16.062c-0.922,1.893-1.746,3.842-2.795,5.662 c-0.932,1.616-1.973,3.216-3.22,4.593c-1.633,1.803-3.694,1.406-4.508-0.903c-0.614-1.742-1.06-3.664-1.02-5.493 c0.104-4.712,0.499-9.419,0.826-14.125c0.078-1.115,0.57-2.02,1.933-1.735c1.251,0.261,1.25,1.215,1.172,2.26 c-0.335,4.509-0.675,9.019-0.893,13.534c-0.063,1.31,0.274,2.64,0.428,3.961c0.129,0.03,0.259,0.062,0.389,0.093 c0.408-0.498,0.855-0.97,1.217-1.5c3.037-4.461,4.97-9.447,6.865-14.451c0.154-0.405,0.287-0.817,0.442-1.223 c0.326-0.853,0.854-1.426,1.858-1.172c1.028,0.259,1.316,0.947,1.176,1.974c-0.278,2.052-0.589,4.11-0.675,6.175 c-0.092,2.206,0.041,4.422,0.118,6.633c0.018,0.521,0.16,1.05,0.321,1.551c0.372,1.158,0.767,2.417,2.128,2.689 c1.407,0.282,2.219-0.828,2.897-1.795c2.464-3.51,3.708-7.51,4.212-11.71c0.256-2.133,0.175-4.321,0.063-6.476 c-0.047-0.915-0.628-1.791-0.841-2.714c-0.123-0.532-0.199-1.451,0.064-1.613c0.463-0.286,1.52-0.395,1.766-0.104 c0.747,0.885,1.468,1.931,1.761,3.031c0.794,2.979,0.568,6.018,0.081,9.039c-0.644,3.993-1.918,7.769-4.068,11.194 c-0.73,1.164-1.676,2.261-2.733,3.135c-2.494,2.062-5.679,1.462-6.979-1.475c-0.838-1.893-1.108-4.05-1.526-6.109 c-0.188-0.924-0.114-1.9-0.16-2.852C11.745,16.11,11.645,16.086,11.545,16.062z"/><path d="M125.396,10.28c-0.787,0.44-1.24,0.694-1.694,0.947 c-0.69,0.385-1.433,0.397-1.667-0.407c-0.164-0.562-0.069-1.456,0.292-1.854c0.519-0.567,1.405-0.783,2.099-1.209 c0.788-0.483,1.493-1.118,2.315-1.523c0.541-0.267,1.23-0.35,1.845-0.323c0.804,0.033,1.597,0.359,2.398,0.378 c2.59,0.062,5.184-0.028,7.769,0.094c0.76,0.036,1.583,0.465,2.221,0.927c1.071,0.775,1.444,1.874,0.917,3.186 c-0.835,2.08-2.523,3.387-4.287,4.554c-1.559,1.032-3.259,1.852-4.898,2.76c-0.443,0.245-0.897,0.474-1.188,0.626 c3.227,1.791,6.419,3.543,9.586,5.339c0.531,0.301,1.19,0.711,1.362,1.216c0.19,0.557,0.089,1.453-0.27,1.875 c-0.246,0.29-1.355,0.275-1.724-0.031c-4.106-3.407-8.894-5.3-14.237-6.572c-0.154,1.285-0.316,2.551-0.455,3.819 c-0.062,0.572-0.031,1.157-0.125,1.724c-0.157,0.952-0.248,2.033-1.692,1.751c-1.071-0.21-1.741-1.24-1.519-2.394 c0.777-4.016,1.576-8.026,2.369-12.038C124.979,12.285,125.156,11.449,125.396,10.28z M126.591,18.329 c1.874-0.944,3.375-1.573,4.742-2.419c2.283-1.413,4.518-2.913,6.682-4.502c0.479-0.351,0.92-1.348,0.748-1.818 c-0.164-0.452-1.136-0.828-1.768-0.853c-1.677-0.065-3.371-0.016-5.041,0.154c-3.257,0.33-3.263,0.374-4.028,3.572 C127.495,14.262,127.104,16.069,126.591,18.329z"/><path d="M35.61,7.394c2.665-0.47,5.451-0.999,8.251-1.429 c0.736-0.113,1.586-0.078,2.259,0.194c0.441,0.18,0.658,0.909,0.976,1.393c-0.44,0.268-0.849,0.677-1.325,0.781 c-3.281,0.724-6.581,1.357-9.863,2.076c-1.34,0.293-2.118,1.187-2.414,2.557c-0.26,1.203-0.638,2.382-1.045,3.867 c1.539-0.425,2.758-0.778,3.986-1.096c1.819-0.47,3.64-0.933,5.469-1.358c0.557-0.129,1.205-0.306,1.7-0.136 c0.54,0.185,0.951,0.746,1.418,1.144c-0.411,0.378-0.76,0.952-1.242,1.102c-3.356,1.041-6.71,2.115-10.125,2.925 c-1.862,0.441-2.158,1.558-2.146,3.107c0.012,1.518,0.567,2.299,2.067,2.09c2.074-0.289,4.111-0.896,6.135-1.47 c0.869-0.247,1.631-0.877,2.502-1.101c0.479-0.123,1.333,0.072,1.557,0.42c0.238,0.37,0.024,1.126-0.173,1.645 c-0.114,0.299-0.556,0.552-0.904,0.672c-2.808,0.973-5.572,2.179-8.46,2.788c-3.644,0.769-6.164-1.483-5.563-5.139 c0.793-4.823,2.118-9.563,3.33-14.308c0.151-0.593,0.94-1.272,1.553-1.422C34.109,6.562,34.826,7.1,35.61,7.394z"/><path d="M109.328,7.453c3.009-0.532,5.791-1.049,8.583-1.501 c0.653-0.105,1.438-0.197,1.986,0.068c0.59,0.284,0.973,0.996,1.445,1.522c-0.527,0.28-1.024,0.701-1.585,0.819 c-3.052,0.642-6.127,1.169-9.177,1.815c-1.744,0.371-2.857,1.437-3.182,3.28c-0.187,1.059-0.536,2.089-0.863,3.326 c2.985-0.785,5.662-1.521,8.355-2.183c0.927-0.229,1.915-0.433,2.843-0.339c0.493,0.05,0.919,0.762,1.375,1.174 c-0.389,0.342-0.724,0.855-1.175,0.996c-3.673,1.148-7.372,2.211-11.052,3.336c-1.109,0.338-1.481,1.494-1.243,3.403 c0.147,1.188,1.003,1.606,1.953,1.439c2.068-0.362,4.118-0.868,6.143-1.431c0.867-0.242,1.661-0.757,2.477-1.172 c0.753-0.384,1.563-0.386,1.808,0.442c0.156,0.532-0.104,1.579-0.516,1.823c-3.176,1.878-6.564,3.323-10.312,3.386 c-2.932,0.048-4.734-2.054-4.409-5.198c0.285-2.764,0.861-5.509,1.47-8.226c0.473-2.107,1.082-4.2,1.837-6.222 C106.771,6.188,108.283,6.077,109.328,7.453z"/><path d="M87.137,17.21c3.134-0.485,5.988-0.89,8.82-1.412 c0.337-0.063,0.698-0.732,0.806-1.179c0.54-2.247,0.995-4.514,1.49-6.771c0.113-0.517,0.237-1.033,0.401-1.534 c0.366-1.12,1.22-1.334,2.195-0.979c0.941,0.343,1.028,1.047,0.754,2.003c-0.765,2.668-1.412,5.369-2.027,7.753 c0.728,0.66,1.172,1.063,1.616,1.467c-0.472,0.404-0.96,0.792-1.41,1.219c-0.318,0.302-0.783,0.625-0.844,0.994 c-0.423,2.582-1.393,5.119-0.571,7.824c0.124,0.408-0.375,1.267-0.812,1.509c-0.409,0.226-1.371,0.115-1.64-0.214 c-0.476-0.582-0.873-1.457-0.835-2.185c0.106-2.011,0.453-4.009,0.705-6.013c0.041-0.322,0.083-0.646,0.166-1.291 c-3.114,0.646-6.063,1.234-8.992,1.902c-0.281,0.064-0.601,0.614-0.641,0.968c-0.208,1.841-0.229,3.708-0.547,5.525 c-0.095,0.538-0.896,1.261-1.454,1.343c-0.988,0.145-1.841-0.439-1.716-1.612c0.152-1.433,0.483-2.846,0.701-4.273 c0.052-0.346,0.106-0.879-0.084-1.043c-1.263-1.085-0.382-1.939,0.202-2.863c0.361-0.573,0.824-1.151,0.959-1.788 c0.602-2.825,1.13-5.667,1.621-8.514c0.179-1.038,0.614-1.639,1.716-1.405c1.065,0.227,1.354,1.035,1.162,1.991 c-0.461,2.313-0.981,4.616-1.47,6.925C87.314,16.014,87.256,16.479,87.137,17.21z"/><path d="M59.188,7.013c2.275,2.074,2.008,4.98,2.495,7.628 c0.195,1.06-0.071,2.208,1.64,2.295c0.795,0.041,0.784,1.396-0.134,1.719c-0.975,0.342-0.94,0.922-0.856,1.662 c0.206,1.817,0.399,3.636,0.625,5.451c0.115,0.919-0.063,1.833-1.071,1.81c-0.515-0.012-1.349-0.829-1.452-1.39 c-0.396-2.164-0.556-4.37-0.833-6.819c-2.279,0.649-4.447,1.426-6.682,1.859c-2.233,0.434-3.518,1.634-4.171,3.74 c-0.326,1.052-0.725,2.117-1.307,3.04c-0.304,0.481-1.126,0.994-1.625,0.917c-0.9-0.14-1.307-0.968-0.992-1.897 c0.37-1.091,0.74-2.2,1.281-3.209c2.181-4.068,4.391-8.122,6.664-12.139c1.265-2.236,2.68-4.387,4.017-6.583 c0.586-0.963,1.236-1.875,2.505-1.084c1.237,0.771,0.657,1.709,0.069,2.596C59.283,6.724,59.249,6.866,59.188,7.013z M57.671,9.776 c-0.187,0-0.374,0-0.561,0c-1.677,2.799-3.354,5.597-5.026,8.387c0.279,0.179,0.324,0.233,0.359,0.227 c1.276-0.227,2.547-0.484,3.827-0.687c3.012-0.472,3.074-0.471,2.573-3.441C58.586,12.744,58.07,11.271,57.671,9.776z"/><path d="M78.417,6.242c-0.179,1.172-0.291,2.067-0.456,2.952 c-0.81,4.357-1.674,8.705-2.424,13.072c-0.175,1.017,0.157,2.117,0.006,3.143c-0.125,0.848-0.494,1.738-1.014,2.408 c-0.192,0.248-1.409,0.14-1.658-0.188c-0.463-0.607-0.869-1.544-0.758-2.259c0.908-5.852,1.941-11.685,2.933-17.524 c0.04-0.235,0.043-0.477,0.081-0.927c-0.463,0.063-0.878,0.05-1.243,0.181c-2.49,0.895-4.977,1.801-7.447,2.751 c-0.633,0.243-1.226,0.742-1.769-0.053c-0.55-0.804-0.622-1.699,0.137-2.362c0.601-0.525,1.356-0.935,2.109-1.219 c6.859-2.584,14.009-3.458,21.287-3.519c1.113-0.01,1.916,0.538,1.868,1.726c-0.044,1.104-0.861,1.295-1.855,1.313 c-2.795,0.053-5.588,0.192-8.381,0.316C79.313,6.077,78.797,6.189,78.417,6.242z"/></g><g><path d="M147.869,5.977c0,0.828,0,1.504,0,2.299c-0.793,0-1.514,0-2.362,0 c0-0.699,0-1.421,0-2.299C146.204,5.977,146.97,5.977,147.869,5.977z"/><path d="M151.616,5.973c0,0.761,0,1.472,0,2.299c-0.791,0-1.498,0-2.36,0 c-0.034-0.743-0.067-1.455-0.107-2.299C150.026,5.973,150.786,5.973,151.616,5.973z"/><path d="M155.288,5.99c0,0.733,0,1.398,0,2.291c-0.691,0.039-1.399,0.077-2.222,0.125 c0-0.862,0-1.579,0-2.416C153.773,5.99,154.479,5.99,155.288,5.99z"/><path d="M159.11,8.287c-0.847,0-1.514,0-2.309,0c0-0.781,0-1.486,0-2.333 c0.767-0.033,1.478-0.063,2.309-0.103C159.11,6.71,159.11,7.421,159.11,8.287z"/><path d="M223.285,15.829c0-0.811,0-1.477,0-2.26c0.774,0,1.485,0,2.338,0 c0,0.716,0,1.421,0,2.26C224.9,15.829,224.192,15.829,223.285,15.829z"/><path d="M167.444,8.235c0-0.751,0-1.46,0-2.281c0.77,0,1.477,0,2.315,0 c0,0.697,0,1.409,0,2.281C169.04,8.235,168.292,8.235,167.444,8.235z"/><path d="M179.501,5.909c0.813,0,1.482,0,2.295,0c0,0.765,0,1.479,0,2.326 c-0.737,0-1.448,0-2.295,0C179.501,7.526,179.501,6.811,179.501,5.909z"/><path d="M175.341,17.279c0.813,0,1.486,0,2.313,0c0,0.761,0,1.523,0,2.39 c-0.747,0-1.468,0-2.313,0C175.341,18.912,175.341,18.197,175.341,17.279z"/><path d="M190.5,8.195c0-0.828,0-1.496,0-2.261c0.807,0,1.522,0,2.347,0 c0,0.777,0,1.486,0,2.261C191.993,8.195,191.244,8.195,190.5,8.195z"/><path d="M194.319,5.929c0.831,0,1.504,0,2.268,0c0,0.805,0,1.527,0,2.368 c-0.726,0-1.437,0-2.268,0C194.319,7.452,194.319,6.691,194.319,5.929z"/><path d="M214.65,17.316c0.04,0.758,0.077,1.475,0.123,2.319c-0.872,0-1.584,0-2.382,0 c0-0.809,0-1.524,0-2.319C213.16,17.316,213.822,17.316,214.65,17.316z"/><path d="M216.118,8.235c0-0.772,0-1.484,0-2.289c0.805,0,1.521,0,2.36,0 c0,0.729,0,1.438,0,2.289C217.765,8.235,217.054,8.235,216.118,8.235z"/><path d="M228.999,8.303c-0.741,0-1.409,0-2.237,0c0-0.747,0-1.506,0-2.384 c0.678,0,1.391,0,2.237,0C228.999,6.651,228.999,7.369,228.999,8.303z"/><path d="M216.124,19.596c0-0.83,0-1.498,0-2.249c0.807,0,1.522,0,2.354,0 c0,0.783,0,1.49,0,2.249C217.628,19.596,216.871,19.596,216.124,19.596z"/><path d="M223.283,19.569c0-0.757,0-1.42,0-2.248c0.757-0.044,1.468-0.084,2.324-0.134 c0,0.818,0,1.526,0,2.382C224.906,19.569,224.202,19.569,223.283,19.569z"/><path d="M181.823,27.261c-0.823,0-1.494,0-2.309,0c0-0.785,0-1.542,0-2.385 c0.759,0,1.472,0,2.309,0C181.823,25.657,181.823,26.366,181.823,27.261z"/><path d="M153.048,27.179c0-0.798,0-1.514,0-2.316c0.803,0,1.52,0,2.362,0 c0,0.764,0,1.477,0,2.316C154.699,27.179,153.984,27.179,153.048,27.179z"/><path d="M167.424,24.849c0.793,0,1.512,0,2.402,0c0.035,0.753,0.069,1.475,0.111,2.356 c-0.854,0-1.622,0-2.514,0C167.424,26.458,167.424,25.697,167.424,24.849z"/><path d="M240.325,27.269c-0.813,0-1.48,0-2.265,0c0-0.785,0-1.504,0-2.349 c0.713,0,1.424,0,2.265,0C240.325,25.63,240.325,26.343,240.325,27.269z"/><path d="M203.649,12.102c-0.784,0-1.404,0-2.174,0c0-0.735,0-1.448,0-2.318 c0.668-0.036,1.383-0.075,2.174-0.117C203.649,10.54,203.649,11.297,203.649,12.102z"/><path d="M207.49,12.088c-0.816,0-1.484,0-2.345,0c-0.042-0.747-0.081-1.465-0.129-2.353 c0.838,0,1.597,0,2.474,0C207.49,10.444,207.49,11.164,207.49,12.088z"/><path d="M190.596,24.864c0.786,0,1.452,0,2.288,0c0.038,0.759,0.072,1.479,0.111,2.335 c-0.832,0-1.547,0-2.399,0C190.596,26.506,190.596,25.79,190.596,24.864z"/><path d="M225.668,9.747c0,0.807,0,1.473,0,2.263c-0.789,0-1.502,0-2.343,0 c0-0.715,0-1.43,0-2.263C224.019,9.747,224.735,9.747,225.668,9.747z"/><path d="M194.359,24.839c0.765,0,1.427,0,2.243,0c0,0.745,0,1.504,0,2.378 c-0.693,0-1.402,0-2.243,0C194.359,26.44,194.359,25.679,194.359,24.839z"/><path d="M167.442,13.473c0.843,0,1.511,0,2.293,0c0,0.765,0,1.47,0,2.318 c-0.763,0-1.47,0-2.293,0C167.442,15.067,167.442,14.358,167.442,13.473z"/><path d="M179.528,13.456c0.751,0,1.36,0,2.207,0c0.034,0.77,0.067,1.515,0.105,2.379 c-0.841,0-1.496,0-2.313,0C179.528,15.063,179.528,14.265,179.528,13.456z"/><path d="M167.331,9.785c0.749,0,1.359,0,2.206,0c0.035,0.769,0.067,1.514,0.107,2.378 c-0.843,0-1.498,0-2.313,0C167.331,11.393,167.331,10.594,167.331,9.785z"/><path d="M203.741,13.548c0,0.811,0,1.479,0,2.271c-0.775,0-1.484,0-2.303,0 c0-0.721,0-1.436,0-2.271C202.159,13.548,202.871,13.548,203.741,13.548z"/><path d="M208.658,13.446c0.838,0,1.512,0,2.285,0c0,0.795,0,1.517,0,2.368 c-0.803,0-1.521,0-2.285,0C208.658,15.006,208.658,14.247,208.658,13.446z"/><path d="M160.385,5.915c0.954,0,1.681,0,2.479,0c0.036,0.776,0.071,1.51,0.111,2.356 c-0.814,0-1.54,0-2.476,0C160.466,7.58,160.431,6.858,160.385,5.915z"/><path d="M189.094,5.931c0,0.791,0,1.512,0,2.354c-0.816,0-1.586,0-2.389,0 c0-0.765,0-1.5,0-2.354C187.443,5.931,188.156,5.931,189.094,5.931z"/><path d="M203.661,8.289c-0.834,0-1.444,0-2.245,0c-0.039-0.745-0.075-1.456-0.117-2.299 c0.821,0,1.53,0,2.362,0C203.661,6.686,203.661,7.389,203.661,8.289z"/><path d="M203.766,27.238c-0.789,0-1.514,0-2.382,0c-0.036-0.73-0.071-1.454-0.111-2.298 c0.858,0,1.625,0,2.493,0C203.766,25.693,203.766,26.416,203.766,27.238z"/><path d="M153.026,19.596c0-0.811,0-1.48,0-2.231c0.787,0,1.502,0,2.356,0 c0,0.735,0,1.435,0,2.231C154.627,19.596,153.915,19.596,153.026,19.596z"/><path d="M186.706,27.225c0-0.801,0-1.581,0-2.436c0.795,0,1.524,0,2.385,0 c0,0.776,0,1.546,0,2.436C188.311,27.225,187.541,27.225,186.706,27.225z"/><path d="M190.584,21.109c0.786,0,1.448,0,2.236,0c0,0.773,0,1.475,0,2.273 c-0.745,0-1.406,0-2.236,0C190.584,22.709,190.584,22.01,190.584,21.109z"/><path d="M190.546,12.185c0-0.903,0-1.567,0-2.39c0.721-0.042,1.379-0.081,2.195-0.131 c0,0.797,0,1.512,0,2.382C192.114,12.086,191.449,12.127,190.546,12.185z"/><path d="M201.473,17.343c0.785,0,1.509,0,2.303,0c0,0.741,0,1.41,0,2.217 c-0.727,0-1.438,0-2.303,0C201.473,18.924,201.473,18.219,201.473,17.343z"/><path d="M169.739,19.604c-0.342,0.054-0.58,0.125-0.818,0.123 c-0.429-0.004-0.858-0.05-1.427-0.089c0-0.749,0-1.457,0-2.281c0.707,0,1.415,0,2.245,0 C169.739,18.113,169.739,18.77,169.739,19.604z"/><path d="M155.418,15.809c-0.342,0.054-0.58,0.125-0.816,0.123 c-0.432-0.004-0.86-0.049-1.429-0.087c0-0.751,0-1.458,0-2.283c0.707,0,1.414,0,2.245,0 C155.418,14.318,155.418,14.977,155.418,15.809z"/><path d="M190.541,13.49c0.878,0,1.498,0,2.257,0c0,0.755,0,1.469,0,2.318 c-0.718,0-1.427,0-2.257,0C190.541,15.058,190.541,14.347,190.541,13.49z"/><path d="M155.422,21.1c0,0.797,0,1.454,0,2.295c-0.791,0.035-1.498,0.067-2.36,0.107 c-0.052-0.771-0.098-1.423-0.159-2.285C153.761,21.177,154.556,21.142,155.422,21.1z"/><path d="M214.671,23.627c-0.745,0-1.456,0-2.291,0c0-0.737,0-1.438,0-2.257 c0.741,0,1.455,0,2.291,0C214.671,22.087,214.671,22.79,214.671,23.627z"/><path d="M218.385,15.795c-0.747,0-1.457,0-2.291,0c0-0.737,0-1.438,0-2.259 c0.739,0,1.452,0,2.291,0C218.385,14.255,218.385,14.959,218.385,15.795z"/><path d="M218.385,12c-0.747,0-1.457,0-2.291,0c0-0.737,0-1.438,0-2.257 c0.739,0,1.452,0,2.291,0C218.385,10.461,218.385,11.164,218.385,12z"/><path d="M192.799,19.619c-0.772,0-1.429,0-2.209,0c0-0.788,0-1.494,0-2.288 c0.753,0,1.41,0,2.209,0C192.799,18.026,192.799,18.733,192.799,19.619z"/><path d="M173.625,19.619c-0.771,0-1.429,0-2.21,0c0-0.788,0-1.494,0-2.288 c0.755,0,1.411,0,2.21,0C173.625,18.026,173.625,18.733,173.625,19.619z"/><path d="M181.662,19.619c-0.771,0-1.429,0-2.209,0c0-0.788,0-1.494,0-2.288 c0.755,0,1.412,0,2.209,0C181.662,18.026,181.662,18.733,181.662,19.619z"/><path d="M216.086,27.209c0-0.769,0-1.494,0-2.36c0.818,0.036,1.55,0.069,2.407,0.107 c0.038,0.776,0.07,1.446,0.107,2.253C217.735,27.209,216.96,27.209,216.086,27.209z"/><path d="M232.677,5.813c0,0.97,0,1.692,0,2.499c-0.786,0-1.446,0-2.261,0 c-0.046-0.788-0.083-1.508-0.131-2.39C231.142,5.883,231.859,5.852,232.677,5.813z"/><path d="M234.039,17.216c0.749,0,1.427,0,2.253,0c0,0.792,0,1.569,0,2.463 c-0.743,0-1.454,0-2.253,0C234.039,18.885,234.039,18.155,234.039,17.216z"/><path d="M228.875,27.263c-0.736,0-1.402,0-2.201,0c0-0.789,0-1.558,0-2.426 c0.724,0,1.389,0,2.201,0C228.875,25.619,228.875,26.393,228.875,27.263z"/><path d="M181.798,9.854c0,0.691,0,1.354,0,2.138c-0.774,0-1.486,0-2.307,0 c-0.041-0.725-0.079-1.391-0.121-2.138C180.209,9.854,180.955,9.854,181.798,9.854z"/><path d="M223.294,21.227c0.776,0,1.502,0,2.334,0c0,0.718,0,1.371,0,2.261 c-0.721,0.036-1.476,0.076-2.334,0.117C223.294,22.719,223.294,22.008,223.294,21.227z"/><path d="M234.257,5.907c0.751,0,1.414,0,2.163,0c0,0.801,0,1.527,0,2.372 c-0.719,0-1.372,0-2.163,0C234.257,7.536,234.257,6.814,234.257,5.907z"/><path d="M201.285,21.282c0.95,0,1.667,0,2.523,0c-0.044,0.735-0.08,1.381-0.121,2.112 c-0.785,0-1.44,0-2.279,0C201.373,22.745,201.333,22.099,201.285,21.282z"/><path d="M179.498,23.374c0-0.727,0-1.37,0-2.098c0.735-0.031,1.403-0.062,2.331-0.102 c-0.034,0.771-0.063,1.448-0.098,2.199C180.911,23.374,180.261,23.374,179.498,23.374z"/><path d="M218.451,23.408c-0.785,0-1.502,0-2.325,0c0-0.667,0-1.266,0-1.999 c0.751,0,1.469,0,2.325,0C218.451,22.018,218.451,22.661,218.451,23.408z"/><path d="M240.162,19.638c-0.793,0-1.4,0-2.201,0c-0.036-0.762-0.067-1.469-0.105-2.293 c0.829,0,1.488,0,2.307,0C240.162,18.05,240.162,18.755,240.162,19.638z"/><path d="M153.122,10.012c0.809,0,1.473,0,2.249,0c0.028,0.667,0.056,1.266,0.088,2.021 c-0.795,0-1.502,0-2.337,0C153.122,11.396,153.122,10.711,153.122,10.012z"/><path d="M237.997,8.239c0-0.783,0-1.494,0-2.313c0.734,0,1.381,0,2.151,0 c0,0.743,0,1.452,0,2.313C239.504,8.239,238.861,8.239,237.997,8.239z"/><path d="M169.683,23.428c-0.772,0-1.442,0-2.243,0c0-0.713,0-1.36,0-2.117 c0.741-0.032,1.413-0.063,2.243-0.102C169.683,21.938,169.683,22.58,169.683,23.428z"/><path d="M232.62,24.856c0,0.851,0,1.563,0,2.372c-0.736,0-1.389,0-2.191,0 c0-0.757,0-1.51,0-2.372C231.098,24.856,231.746,24.856,232.62,24.856z"/><path d="M236.472,27.259c-0.868,0-1.472,0-2.239,0c0-0.787,0-1.544,0-2.402 c0.67,0,1.317,0,2.116,0C236.387,25.623,236.424,26.341,236.472,27.259z"/><path d="M238.014,23.349c0-0.701,0-1.287,0-1.984c0.739-0.04,1.395-0.076,2.199-0.119 c0,0.723,0,1.356,0,2.104C239.548,23.349,238.894,23.349,238.014,23.349z"/></g></svg>
+<div class="status-bar" style="margin-top:12px">
 <div class="status-item"><span class="status-dot )";
 
     html += g_isApMode ? "ap" : "online";
@@ -132,28 +140,50 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
     }
     
     html += R"(</div></div>
-<div class="container">
-<div class="grid">)";
+<div class="container">)";
 
     // Card names and icons for 16 cards (11 original + 5 social)
-    const char* cardNames[] = {"Weather", "Clock", "BTC", "Stocks", "Network", "Audio", "Sparkle", "Aurora", "Games", "MQTT", "RSS", "YouTube", "Twitch", "Twitter", "Insta", "TikTok"};
+    const char* cardNames[] = {"<span class='weather-title'>Weather</span>", "Clock", "BTC", "Stocks", "Network", "Audio", "Sparkle", "Aurora", "Games", "MQTT", "RSS", "YouTube", "Twitch", "Twitter", "Insta", "TikTok"};
     const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;", "&#x1F4F0;", "&#x25B6;", "&#x1F4AC;", "&#x2716;", "&#x1F4F7;", "&#x1F3B5;"};
     
+    // ========== WiFi FIRST when in AP mode ==========
+    if (g_isApMode) {
+        html += "<div class=\"card\" style=\"margin-bottom:30px;background:#fffacd\">";
+        html += "<div class=\"card-header\"><span class=\"card-icon\">&#x26A0;</span><span class=\"card-title\">WiFi Setup Required</span></div>";
+        html += "<p style=\"margin-bottom:15px;font-weight:bold\">Connect to your home WiFi to use the weather display!</p>";
+        html += "<form method=\"POST\" action=\"/wifi\">";
+        html += "<div class=\"form-group\"><label>Network Name (SSID)</label><input name=\"ssid\" value=\"" + g_ssid + "\" placeholder=\"Enter WiFi network name\"></div>";
+        html += "<div class=\"form-group\"><label>Password</label><input name=\"pass\" type=\"password\" placeholder=\"Enter WiFi password\"></div>";
+        html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save WiFi Settings</button>";
+        html += "</form></div>";
+        sendChunk();
+    }
+
     // ========== CARD GALLERY - Full width section ==========
-    html += "</div>"; // Close grid temporarily
     html += "<div class=\"card\" style=\"margin-bottom:30px\">";
     html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F3AC;</span><span class=\"card-title\">Card Gallery</span></div>";
     
     // Auto-cycle controls
     html += "<form method=\"POST\" action=\"/cards_config\" id=\"cardForm\">";
-    html += "<div style=\"display:flex;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:20px;padding:15px;background:#f8f8f8;border:3px solid #000\">";
+    html += "<div style=\"display:flex;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:15px;background:#f8f8f8;border:3px solid #000\">";
     html += "<label style=\"font-weight:bold;display:flex;align-items:center;gap:8px\"><input type=\"checkbox\" name=\"cycleOn\" value=\"1\"" + String(cfg.cycleEnabled ? " checked" : "") + " style=\"width:20px;height:20px\"> Auto-Cycle</label>";
     html += "<div style=\"display:flex;align-items:center;gap:8px\"><span style=\"font-weight:bold\">Every</span><input type=\"number\" name=\"cycleDur\" value=\"" + String(cfg.cycleDuration) + "\" min=\"3\" max=\"3600\" style=\"width:80px\"><span style=\"font-weight:bold\">sec</span></div>";
     html += "<button type=\"submit\" class=\"btn btn-primary\" onclick=\"saveOrder()\" style=\"margin-left:auto\">&#x1F4BE; Save Config</button>";
     html += "</div>";
     
+    // Transition & Demo Mode controls
+    html += "<div style=\"display:flex;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:20px;padding:15px;background:#e8f4e8;border:3px solid #000\">";
+    html += "<span style=\"font-weight:bold\">&#x1F3AC; Transitions:</span>";
+    html += "<label style=\"display:flex;align-items:center;gap:6px\"><input type=\"checkbox\" name=\"trTitle\" value=\"1\"" + String(cfg.showTransitionTitle ? " checked" : "") + " style=\"width:18px;height:18px\"> Titles</label>";
+    html += "<label style=\"display:flex;align-items:center;gap:6px\"><input type=\"checkbox\" name=\"trAnim\" value=\"1\"" + String(cfg.showTransitionAnim ? " checked" : "") + " style=\"width:18px;height:18px\"> Animations</label>";
+    html += "<span style=\"border-left:2px solid #999;height:24px;margin:0 8px\"></span>";
+    html += "<span style=\"font-weight:bold;color:#d00\">&#x1F3A5; Demo:</span>";
+    html += "<label style=\"display:flex;align-items:center;gap:6px\"><input type=\"checkbox\" name=\"demoOn\" value=\"1\"" + String(cfg.demoMode ? " checked" : "") + " style=\"width:18px;height:18px\"> Enable</label>";
+    html += "<div style=\"display:flex;align-items:center;gap:6px\"><input type=\"number\" name=\"demoSecs\" value=\"" + String(cfg.demoDurationSecs) + "\" min=\"3\" max=\"30\" style=\"width:50px\"><span>sec/preset</span></div>";
+    html += "</div>";
+    
     // Card gallery grid
-    html += "<p style=\"font-size:0.85em;margin-bottom:15px;color:#666\">&#x2630; Drag cards to reorder. Click preset to show on display. Toggle checkbox to include in auto-cycle.</p>";
+    html += "<p style=\"font-size:1em;margin-bottom:15px;padding:12px;background:#fffacd;border:3px solid #000;font-weight:bold\">&#x2630; Drag cards to reorder &bull; Click preset to show on display &bull; &#x1F503; Toggle to include in auto-cycle</p>";
     html += "<div id=\"cardGallery\" style=\"display:flex;flex-direction:column;gap:15px\">";
     
     // Generate cards in order (skip Sparkle=6, Aurora=7, and non-functional social cards 12-15)
@@ -169,26 +199,31 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
         
         html += "<div class=\"gallery-card\" draggable=\"true\" data-idx=\"" + String(cardIdx) + "\" style=\"background:#fff;border:4px solid #000;padding:12px;cursor:grab;opacity:" + String(enabled ? "1" : "0.5") + "\">";
         
-        // Header with icon, name, and auto-rotate checkbox
-        html += "<div style=\"display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:2px solid #000\">";
+        // Header with icon, name, show button, and auto-rotate checkbox
+        html += "<div style=\"display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:2px solid #000\" class=\"card-hdr\">";
         html += "<span style=\"font-size:1.5em;cursor:grab\" class=\"drag-handle\">&#x2630;</span>";
         html += "<span style=\"font-size:1.4em\">" + String(cardIcons[cardIdx]) + "</span>";
         html += "<span style=\"font-weight:900;font-size:1.1em;text-transform:uppercase;flex:1\">" + String(cardNames[cardIdx]) + "</span>";
+        // Show button (visible when collapsed)
+        html += "<button type=\"button\" class=\"show-btn\" onclick=\"showFirstPreset(this," + String(cardIdx) + ")\" style=\"background:#4ade80;border:2px solid #000;padding:4px 10px;font-weight:bold;cursor:pointer;display:none\">&#x25B6; Show</button>";
         // Prominent auto-rotate checkbox
         html += "<label style=\"display:flex;align-items:center;gap:4px;background:" + String(enabled ? "#4ade80" : "#ff6b6b") + ";padding:3px 8px;border:2px solid #000;font-size:0.7em;font-weight:bold;cursor:pointer\">";
         html += "<input type=\"checkbox\" name=\"en_" + String(cardIdx) + "\" value=\"1\"" + String(enabled ? " checked" : "") + " style=\"width:16px;height:16px\" onchange=\"this.closest('.gallery-card').style.opacity=this.checked?1:0.5;this.parentElement.style.background=this.checked?'#4ade80':'#ff6b6b'\">";
         html += "&#x1F503;</label>";
+        // Collapse toggle
+        html += "<button type=\"button\" class=\"collapse-btn\" onclick=\"toggleCollapse(this)\" style=\"background:#000;color:#fff;border:2px solid #000;padding:4px 8px;font-weight:bold;cursor:pointer\">&#x25BC;</button>";
         html += "</div>";
         
-        
+        // Collapsible content wrapper
+        html += "<div class=\"card-body\" style=\"margin-top:10px\">";
         // Preset buttons with checkboxes for rotation inclusion
-        html += "<div style=\"display:flex;flex-wrap:wrap;gap:8px;margin-top:8px\">";
+        html += "<div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
         
         // Helper lambda to generate preset button with checkbox
         auto presetBtn = [&](uint8_t card, uint8_t preset, const char* label) {
             bool checked = (cfg.presetEnabled[card] & (1UL << preset)) != 0;
-            html += "<div class=\"preset-btn\" style=\"display:flex;align-items:center;gap:10px;background:#fffacd;border:4px solid #000;padding:16px 24px;font-size:1.2em;font-weight:bold;box-shadow:4px 4px 0 #000;transition:all 0.2s;cursor:pointer\" data-card=\"" + String(card) + "\" data-preset=\"" + String(preset) + "\">";
-            html += "<input type=\"checkbox\" name=\"p" + String(card) + "_" + String(preset) + "\"" + String(checked ? " checked" : "") + " style=\"width:24px;height:24px;margin:0;cursor:pointer\">";
+            html += "<div class=\"preset-btn\" onclick=\"showCard(" + String(card) + "," + String(preset) + ",this)\" style=\"display:flex;align-items:center;gap:10px;background:#fffacd;border:4px solid #000;padding:16px 24px;font-size:1.2em;font-weight:bold;box-shadow:4px 4px 0 #000;transition:all 0.2s;cursor:pointer\">";
+            html += "<input type=\"checkbox\" name=\"p" + String(card) + "_" + String(preset) + "\"" + String(checked ? " checked" : "") + " style=\"width:24px;height:24px;margin:0;cursor:pointer\" onclick=\"event.stopPropagation()\">";
             html += "<span>" + String(label) + "</span>";
             html += "</div>";
         };
@@ -199,7 +234,11 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                 presetBtn(0, 4, "Minimal"); presetBtn(0, 5, "Day/Nite"); presetBtn(0, 6, "Term");
                 presetBtn(0, 8, "Forecast"); presetBtn(0, 9, "Pixel"); presetBtn(0, 10, "LCD");
                 presetBtn(0, 11, "Mood"); presetBtn(0, 12, "Type"); presetBtn(0, 13, "Waves");
-                presetBtn(0, 14, "Split"); presetBtn(0, 15, "Count"); presetBtn(0, 16, "Stack");
+                presetBtn(0, 14, "Split"); presetBtn(0, 15, "Count"); presetBtn(0, 16, "Thermo");
+                presetBtn(0, 17, "Icon"); presetBtn(0, 18, "Rain"); presetBtn(0, 19, "Cyber");
+                presetBtn(0, 20, "Particle"); presetBtn(0, 21, "Wave"); presetBtn(0, 22, "TempBar");
+                presetBtn(0, 23, "Aurora"); presetBtn(0, 24, "Radar"); presetBtn(0, 25, "Glitch");
+                presetBtn(0, 26, "Horizon"); presetBtn(0, 27, "Frost");
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">"; // Close preset buttons, open settings
                 
                 // Location settings
@@ -229,6 +268,8 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                 html += "<option value=\"24\""; if (cfg.forecastHours == 24) html += " selected"; html += ">24h</option>";
                 html += "<option value=\"48\""; if (cfg.forecastHours == 48) html += " selected"; html += ">48h</option>";
                 html += "</select></div></details>";
+                // Save button for Weather settings
+                html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='margin-top:10px;padding:8px 16px'>&#x1F4BE; Save Weather Settings</button>";
                 
                 // Simulator
                 html += "<details style=\"margin-top:8px\"><summary style=\"cursor:pointer;font-weight:bold\">&#x1F9EA; Simulator</summary>";
@@ -244,8 +285,7 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                 html += "<div style=\"display:flex;align-items:center;gap:8px\">";
                 html += "<label>Temp:</label><input id=\"simTemp\" type=\"number\" value=\"22\" min=\"-50\" max=\"50\" style=\"width:60px;padding:6px\"><span>&deg;C</span>";
                 html += "</div></div></details>";
-                break;
-            }
+                } break;
             case 1: // Clock presets + timezone
                 presetBtn(1, 0, "Digital"); presetBtn(1, 1, "Binary"); presetBtn(1, 2, "Minimal");
                 presetBtn(1, 3, "Bars"); presetBtn(1, 4, "Nixie"); presetBtn(1, 5, "Glitch");
@@ -261,14 +301,17 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                     if (cfg.tzOffset == tz) html += " selected";
                     html += ">UTC" + String(tz >= 0 ? "+" : "") + String(tz) + "</option>";
                 }
-                html += "</select></div>";
+                html += "</select>";
+                html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='padding:6px 12px'>&#x1F4BE; Save</button>";
+                html += "</div>"; // Close flex container
                 break;
-            case 2: // BTC
+            case 2: // BTC / Crypto
                 presetBtn(2, 0, "SHOW");
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
-                html += "<p style=\"font-size:0.8em;color:#666;margin-bottom:8px\">&#x1F4A1; Uses free CoinGecko API - no key needed!</p>";
-                html += "<div style=\"display:flex;align-items:center;gap:10px\">";
-                html += "<label style=\"font-weight:bold\">Update every:</label>";
+                html += "<p style=\"font-size:0.8em;color:#666;margin-bottom:8px\">&#x1F4A1; Uses free CoinGecko API - no key needed! Leave crypto empty for BTC.</p>";
+                html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px\">";
+                html += "<input name=\"crypto\" type=\"text\" maxlength=\"10\" placeholder=\"BTC\" value=\"" + String(cfg.cryptoSymbol) + "\" style=\"width:80px;text-transform:uppercase;padding:6px\">";
+                html += "<label style=\"font-weight:bold\">Update:</label>";
                 html += "<select name=\"btcMins\" style=\"padding:6px\">";
                 { const uint8_t intervals[] = {1, 2, 5, 10, 15, 30, 60};
                 for (uint8_t i = 0; i < 7; ++i) {
@@ -276,7 +319,9 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                     if (cfg.btcUpdateMins == intervals[i]) html += " selected";
                     html += ">" + String(intervals[i]) + " min</option>";
                 }}
-                html += "</select></div>";
+                html += "</select>";
+                html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='padding:6px 12px'>&#x1F4BE; Save</button>";
+                html += "</div>"; // Close flex container
                 break;
             case 3: // Stocks
                 presetBtn(3, 0, "SHOW");
@@ -292,19 +337,29 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                     if (cfg.stockUpdateMins == intervals[i]) html += " selected";
                     html += ">" + String(intervals[i]) + " min</option>";
                 }}
-                html += "</select></div>";
+                html += "</select>";
+                html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='padding:6px 12px'>&#x1F4BE; Save</button>";
+                html += "</div>"; // Close flex container
                 break;
             case 5: // Audio VU presets
                 presetBtn(5, 0, "Spectrum"); presetBtn(5, 1, "Wave"); presetBtn(5, 2, "Fire");
                 presetBtn(5, 3, "Pulse"); presetBtn(5, 4, "Waterfall"); presetBtn(5, 5, "Strobe");
+                sendChunk();
                 presetBtn(5, 6, "Plasma"); presetBtn(5, 7, "Balls"); presetBtn(5, 8, "Matrix");
+                sendChunk(); // Flush buffer
                 presetBtn(5, 9, "Rainbow"); presetBtn(5, 10, "Mirror"); presetBtn(5, 11, "Laser");
                 presetBtn(5, 12, "Dancer"); presetBtn(5, 13, "Heart"); presetBtn(5, 14, "Traffic");
+                sendChunk();
                 presetBtn(5, 15, "Pacman"); presetBtn(5, 16, "Vortex"); presetBtn(5, 17, "EQ");
+                sendChunk(); // Flush buffer
                 presetBtn(5, 18, "Disco"); presetBtn(5, 19, "Firework"); presetBtn(5, 20, "Rain");
+                sendChunk();
                 presetBtn(5, 21, "Nyan"); presetBtn(5, 22, "Ocean"); presetBtn(5, 23, "Tetris");
+                sendChunk();
                 presetBtn(5, 24, "Stars"); presetBtn(5, 25, "Lava"); presetBtn(5, 26, "Geo");
-                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "</div>"; // Close preset buttons wrapper
+                sendChunk(); // Flush buffer after massive list of presets
+                html += "<div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
                 html += "<div style=\"display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px\">";
                 html += "<label style=\"font-weight:bold\">Palette:</label>";
                 html += "<select name=\"palette\" style=\"padding:6px\">";
@@ -331,6 +386,17 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                     html += ">" + String(i) + "</option>";
                 }
                 html += "</select>";
+                html += "<label style=\"font-weight:bold\">Boost:</label>";
+                html += "<select name=\"micBoost\" style=\"padding:6px\">";
+                for (uint8_t i = 0; i <= 10; ++i) {
+                    html += "<option value=\"" + String(i) + "\"";
+                    if (cfg.micBoost == i) html += " selected";
+                    html += ">" + String(i) + (i == 0 ? " (off)" : i == 10 ? " (max)" : "") + "</option>";
+                }
+                html += "</select>";
+                html += "<label style=\"display:flex;align-items:center;gap:4px;font-weight:bold;cursor:pointer\"><input type=\"checkbox\" name=\"agcOn\" value=\"1\"";
+                if (cfg.agcEnabled) html += " checked";
+                html += " style=\"width:16px;height:16px\">AGC</label>";
                 html += "<label style=\"font-weight:bold\">Gate:</label>";
                 html += "<select name=\"noiseGate\" style=\"padding:6px\">";
                 { const char* gates[] = {"Off", "Low", "Med", "High"};
@@ -341,10 +407,21 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                     html += ">" + String(gates[i]) + "</option>";
                 }}
                 html += "</select>";
+                html += "<label style=\"font-weight:bold\">Silence:</label>";
+                html += "<select name=\"silenceMs\" style=\"padding:6px\">";
+                { const char* silNames[] = {"Off", "250ms", "500ms", "1s", "2s"};
+                  const uint16_t silVals[] = {0, 250, 500, 1000, 2000};
+                  for (uint8_t i = 0; i < 5; ++i) {
+                    html += "<option value=\"" + String(silVals[i]) + "\"";
+                    if (cfg.vuSilenceMs == silVals[i]) html += " selected";
+                    html += ">" + String(silNames[i]) + "</option>";
+                }}
+                html += "</select>";
                 html += "<label style=\"display:flex;align-items:center;gap:6px;font-weight:bold;cursor:pointer\"><input type=\"checkbox\" name=\"micInvert\" value=\"1\"";
                 if (cfg.vuInvert) html += " checked";
                 html += " style=\"width:18px;height:18px\">Invert</label>";
                 html += "</div>";
+                html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='margin-top:10px;padding:8px 16px'>&#x1F4BE; Save Audio Settings</button>";
                 break;
             case 8: // Game presets + controls
                 presetBtn(8, 0, "Flappy"); presetBtn(8, 1, "Snake"); presetBtn(8, 2, "Breakout"); presetBtn(8, 3, "Pong");
@@ -368,6 +445,7 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                 html += "<input name=\"mqttUser\" placeholder=\"user (optional)\" value=\"" + String(cfg.mqttUser) + "\" style=\"flex:1;padding:6px\">";
                 html += "<input name=\"mqttPass\" type=\"password\" placeholder=\"pass\" value=\"" + String(cfg.mqttPass) + "\" style=\"flex:1;padding:6px\">";
                 html += "</div>";
+                html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='margin-top:10px;padding:8px 16px'>&#x1F4BE; Save MQTT Settings</button>";
                 break;
             case 10: // RSS
                 presetBtn(10, 0, "SHOW");
@@ -389,7 +467,25 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                     if (cfg.rssSpeed == i) html += " selected";
                     html += ">" + String(i) + "</option>";
                 }
-                html += "</select></div>";
+                html += "</select>";
+                
+                html += "<label>Palette:</label><select name=\"rssPal\" style=\"padding:6px\">";
+                for (uint8_t i = 0; i < PALETTE_COUNT; ++i) {
+                    html += "<option value=\"" + String(i) + "\"";
+                    if (cfg.rssPalette == i) html += " selected";
+                    html += ">" + String(settings_palette_name(i)) + "</option>";
+                }
+                html += "</select>";
+                
+                html += "<label>Items:</label><input type=\"number\" name=\"rssCnt\" min=\"1\" max=\"10\" value=\"" + String(cfg.rssItemCount) + "\" style=\"width:60px;padding:6px\">";
+                
+                html += "<label>Show:</label><select name=\"rssFmt\" style=\"padding:6px\">";
+                html += "<option value=\"0\"" + String(cfg.rssFormat == 0 ? " selected" : "") + ">Titles Only</option>";
+                html += "<option value=\"1\"" + String(cfg.rssFormat == 1 ? " selected" : "") + ">Title + Text</option>";
+                html += "</select>";
+
+                html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='padding:6px 12px'>&#x1F4BE; Save</button>";
+                html += "</div>"; // Close flex container
                 break;
             case 11: // YouTube
                 presetBtn(11, 0, "SHOW");
@@ -405,14 +501,18 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
                     if (cfg.socialUpdateMins == intervals[i]) html += " selected";
                     html += ">" + String(intervals[i]) + "m</option>";
                 }}
-                html += "</select></div>";
+                html += "</select>";
+                html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='padding:6px 12px'>&#x1F4BE; Save</button>";
+                html += "</div>"; // Close flex container
                 break;
             default: // Single preset cards (Network, etc)
                 presetBtn(cardIdx, 0, "SHOW");
                 break;
         }
-        html += "</div>";
-        html += "</div>";
+        html += "</div>"; // Close preset buttons
+        html += "</div>"; // Close card-body
+        html += "</div>"; // Close gallery-card
+        sendChunk(); // Flush buffer after each card to prevent overflow
     }
     
     html += "</div>"; // End gallery grid
@@ -490,34 +590,21 @@ function saveOrder() {
     document.getElementById('orderInput').value = order.join(',');
 }
 
-function showCard(el, card, preset) {
-    console.log('showCard called:', card, preset);
-    el.style.background='#ffa500';
-    fetch('/api/card?card='+card+'&preset='+preset)
-    .then(r=>{console.log('Response:', r.status); return r.json();})
-    .then(d=>{console.log('Result:', d); el.style.background='#4ade80';setTimeout(()=>el.style.background='',300)})
-    .catch(e=>{console.error('Error:', e); el.style.background='#ff0000';});
+// Collapse/expand cards
+function toggleCollapse(btn) {
+    const card = btn.closest('.gallery-card');
+    const body = card.querySelector('.card-body');
+    const showBtn = card.querySelector('.show-btn');
+    if (body.style.display === 'none') {
+        body.style.display = '';
+        btn.innerHTML = '&#x25BC;';
+        showBtn.style.display = 'none';
+    } else {
+        body.style.display = 'none';
+        btn.innerHTML = '&#x25B6;';
+        showBtn.style.display = '';
+    }
 }
-
-// Event delegation for preset buttons
-document.addEventListener('click', function(e) {
-    const btn = e.target.closest('.preset-btn');
-    if (!btn) return;
-    if (e.target.type === 'checkbox') return; // Let checkbox handle itself
-    const card = parseInt(btn.dataset.card);
-    const preset = parseInt(btn.dataset.preset);
-    showCard(btn, card, preset);
-});
-
-// Hover effects for preset buttons
-document.addEventListener('mouseover', function(e) {
-    const btn = e.target.closest('.preset-btn');
-    if (btn) { btn.style.transform='translate(-2px,-2px)'; btn.style.boxShadow='6px 6px 0 #000'; }
-});
-document.addEventListener('mouseout', function(e) {
-    const btn = e.target.closest('.preset-btn');
-    if (btn) { btn.style.transform=''; btn.style.boxShadow='4px 4px 0 #000'; }
-});
 
 </script>)";
     
@@ -560,11 +647,11 @@ document.addEventListener('mouseout', function(e) {
     html += ">Manual (fixed)</option>";
     html += "</select></div>";
     html += "<div class=\"form-group\"><label>Manual Brightness (" + String(cfg.brightManual) + ")</label>";
-    html += "<input type=\"range\" name=\"brightManual\" min=\"1\" max=\"80\" value=\"" + String(cfg.brightManual) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightManual\" min=\"5\" max=\"255\" value=\"" + String(cfg.brightManual) + "\"></div>";
     html += "<div class=\"form-group\"><label>Auto Min (dark room): " + String(cfg.brightMin) + "</label>";
-    html += "<input type=\"range\" name=\"brightMin\" min=\"1\" max=\"40\" value=\"" + String(cfg.brightMin) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightMin\" min=\"5\" max=\"40\" value=\"" + String(cfg.brightMin) + "\"></div>";
     html += "<div class=\"form-group\"><label>Auto Max (bright room): " + String(cfg.brightMax) + "</label>";
-    html += "<input type=\"range\" name=\"brightMax\" min=\"10\" max=\"80\" value=\"" + String(cfg.brightMax) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightMax\" min=\"20\" max=\"255\" value=\"" + String(cfg.brightMax) + "\"></div>";
     html += "<div class=\"form-group\"><label><input type=\"checkbox\" name=\"brightBlank\" value=\"1\"";
     if (cfg.brightBlanking) html += " checked";
     html += "> Use blanking for cleaner readings</label></div>";
@@ -908,8 +995,19 @@ static void handleSettingsPost()
         cfg.vuNoiseGate = (uint8_t)server.arg("noiseGate").toInt();
     }
     
-    // Mic inversion setting (checkbox - true if present)
+    if (server.hasArg("micBoost")) {
+        cfg.micBoost = (uint8_t)server.arg("micBoost").toInt();
+        if (cfg.micBoost > 10) cfg.micBoost = 10;
+    }
+    
+    if (server.hasArg("silenceMs")) {
+        cfg.vuSilenceMs = (uint16_t)server.arg("silenceMs").toInt();
+        if (cfg.vuSilenceMs > 2000) cfg.vuSilenceMs = 2000;
+    }
+    
+    // Checkbox settings (true if present in form)
     cfg.vuInvert = server.hasArg("micInvert");
+    cfg.agcEnabled = server.hasArg("agcOn");
 
     if (server.hasArg("tempPalette")) {
         cfg.tempPalette = (uint8_t)server.arg("tempPalette").toInt();
@@ -961,7 +1059,7 @@ static void handleSettingsPost()
     if (server.hasArg("brightManual")) {
         cfg.brightManual = (uint8_t)server.arg("brightManual").toInt();
         if (cfg.brightManual < 1) cfg.brightManual = 1;
-        if (cfg.brightManual > 80) cfg.brightManual = 80;
+        if (cfg.brightManual > 255) cfg.brightManual = 255;
     }
     if (server.hasArg("brightMin")) {
         cfg.brightMin = (uint8_t)server.arg("brightMin").toInt();
@@ -971,7 +1069,7 @@ static void handleSettingsPost()
     if (server.hasArg("brightMax")) {
         cfg.brightMax = (uint8_t)server.arg("brightMax").toInt();
         if (cfg.brightMax < 10) cfg.brightMax = 10;
-        if (cfg.brightMax > 80) cfg.brightMax = 80;
+        if (cfg.brightMax > 255) cfg.brightMax = 255;
     }
     // Checkbox: if not present, it means unchecked
     cfg.brightBlanking = server.hasArg("brightBlank");
@@ -1044,6 +1142,13 @@ static void handleSettingsPost()
     if (server.hasArg("rssPal")) {
         cfg.rssPalette = (uint8_t)server.arg("rssPal").toInt();
         if (cfg.rssPalette >= PALETTE_COUNT) cfg.rssPalette = 0;
+    }
+    if (server.hasArg("rssCnt")) {
+        uint8_t cnt = (uint8_t)server.arg("rssCnt").toInt();
+        if (cnt >= 1 && cnt <= 10) cfg.rssItemCount = cnt;
+    }
+    if (server.hasArg("rssFmt")) {
+        cfg.rssFormat = (uint8_t)server.arg("rssFmt").toInt();
     }
     
     // YouTube settings (only functional social media card)
@@ -1187,7 +1292,20 @@ static void handleCardsConfigPost()
         cfg.cycleDuration = dur;
     }
     
-    // 4. Audio settings (from Audio card in gallery)
+    // 4. Transition Settings
+    cfg.showTransitionTitle = server.hasArg("trTitle");
+    cfg.showTransitionAnim = server.hasArg("trAnim");
+    
+    // 5. Demo Mode Settings
+    cfg.demoMode = server.hasArg("demoOn");
+    if (server.hasArg("demoSecs")) {
+        uint8_t secs = (uint8_t)server.arg("demoSecs").toInt();
+        if (secs < 3) secs = 3;
+        if (secs > 30) secs = 30;
+        cfg.demoDurationSecs = secs;
+    }
+    
+    // 6. Audio settings (from Audio card in gallery)
     if (server.hasArg("palette")) {
         cfg.vuPalette = (uint8_t)server.arg("palette").toInt();
     }
@@ -1215,7 +1333,113 @@ static void handleCardsConfigPost()
         cfg.forecastHours = (uint8_t)server.arg("forecastHours").toInt();
     }
     
+    // 6. Clock settings
+    if (server.hasArg("tz")) {
+        int8_t tz = (int8_t)server.arg("tz").toInt();
+        if (tz >= -12 && tz <= 14) cfg.tzOffset = tz;
+    }
+    
+    // 7. BTC/Crypto settings
+    if (server.hasArg("crypto")) {
+        String sym = server.arg("crypto");
+        sym.trim();
+        sym.toUpperCase();
+        strncpy(cfg.cryptoSymbol, sym.c_str(), sizeof(cfg.cryptoSymbol) - 1);
+        cfg.cryptoSymbol[sizeof(cfg.cryptoSymbol) - 1] = '\0';
+    }
+    if (server.hasArg("btcMins")) {
+        uint8_t mins = (uint8_t)server.arg("btcMins").toInt();
+        if (mins >= 1 && mins <= 60) cfg.btcUpdateMins = mins;
+    }
+    
+    // 8. Stock settings
+    if (server.hasArg("stock")) {
+        String sym = server.arg("stock");
+        sym.trim();
+        sym.toUpperCase();
+        strncpy(cfg.stockSymbol, sym.c_str(), sizeof(cfg.stockSymbol) - 1);
+        cfg.stockSymbol[sizeof(cfg.stockSymbol) - 1] = '\0';
+        cfg.stockEnabled = sym.length() > 0;
+    }
+    if (server.hasArg("stockMins")) {
+        uint8_t mins = (uint8_t)server.arg("stockMins").toInt();
+        if (mins >= 1 && mins <= 60) cfg.stockUpdateMins = mins;
+    }
+    
+    // 9. MQTT settings
+    bool mqttChanged = false;
+    if (server.hasArg("mqttServer")) {
+        String srv = server.arg("mqttServer");
+        srv.trim();
+        if (strcmp(cfg.mqttServer, srv.c_str()) != 0) {
+            strncpy(cfg.mqttServer, srv.c_str(), sizeof(cfg.mqttServer) - 1);
+            cfg.mqttServer[sizeof(cfg.mqttServer) - 1] = '\0';
+            mqttChanged = true;
+        }
+    }
+    if (server.hasArg("mqttPort")) {
+        uint16_t port = (uint16_t)server.arg("mqttPort").toInt();
+        if (port > 0 && port < 65535) {
+            if (cfg.mqttPort != port) { cfg.mqttPort = port; mqttChanged = true; }
+        }
+    }
+    if (server.hasArg("mqttUser")) {
+        String usr = server.arg("mqttUser");
+        usr.trim();
+        strncpy(cfg.mqttUser, usr.c_str(), sizeof(cfg.mqttUser) - 1);
+        cfg.mqttUser[sizeof(cfg.mqttUser) - 1] = '\0';
+    }
+    if (server.hasArg("mqttPass")) {
+        String pwd = server.arg("mqttPass");
+        if (pwd.length() > 0) {
+            strncpy(cfg.mqttPass, pwd.c_str(), sizeof(cfg.mqttPass) - 1);
+            cfg.mqttPass[sizeof(cfg.mqttPass) - 1] = '\0';
+        }
+    }
+    cfg.mqttEnabled = (cfg.mqttServer[0] != '\0');
+    
+    // 10. RSS settings
+    if (server.hasArg("rssUrl")) {
+        String url = server.arg("rssUrl");
+        url.trim();
+        strncpy(cfg.rssUrl, url.c_str(), sizeof(cfg.rssUrl) - 1);
+        cfg.rssUrl[sizeof(cfg.rssUrl) - 1] = '\0';
+    }
+    if (server.hasArg("rssMins")) {
+        uint8_t mins = (uint8_t)server.arg("rssMins").toInt();
+        if (mins >= 1 && mins <= 240) cfg.rssUpdateMins = mins;
+    }
+    if (server.hasArg("rssSpd")) {
+        cfg.rssSpeed = (uint8_t)server.arg("rssSpd").toInt();
+        if (cfg.rssSpeed < 1) cfg.rssSpeed = 1;
+        if (cfg.rssSpeed > 10) cfg.rssSpeed = 10;
+    }
+    
+    // 11. YouTube settings
+    if (server.hasArg("ytChan")) {
+        String ch = server.arg("ytChan");
+        ch.trim();
+        strncpy(cfg.ytChannelId, ch.c_str(), sizeof(cfg.ytChannelId) - 1);
+        cfg.ytChannelId[sizeof(cfg.ytChannelId) - 1] = '\0';
+    }
+    if (server.hasArg("ytKey")) {
+        String key = server.arg("ytKey");
+        if (key.length() > 0) {
+            strncpy(cfg.ytApiKey, key.c_str(), sizeof(cfg.ytApiKey) - 1);
+            cfg.ytApiKey[sizeof(cfg.ytApiKey) - 1] = '\0';
+        }
+    }
+    if (server.hasArg("socMins")) {
+        uint8_t mins = (uint8_t)server.arg("socMins").toInt();
+        if (mins >= 1 && mins <= 60) cfg.socialUpdateMins = mins;
+    }
+    
     settings_save();
+    
+    // Reinitialize MQTT if settings changed
+    if (mqttChanged && cfg.mqttEnabled) {
+        mqtt_begin();
+    }
     
     server.sendHeader("Location", "/");
     server.send(303);

@@ -16,13 +16,31 @@ static void fixGpioMatrix(uint8_t pin) {
 static Adafruit_NeoPixel matrixStrip(WT_MATRIX_PIXELS, WT_MATRIX_PIN, NEO_GRB + NEO_KHZ800);
 static Adafruit_NeoPixel timelineStrip(WT_TIMELINE_PIXELS, WT_TIMELINE_PIN, NEO_GRB + NEO_KHZ800);
 
-// Software buffer for pixel data (RGB format)
-static uint8_t matrixBuffer[WT_MATRIX_PIXELS * 3];
-static uint8_t timelineBuffer[WT_TIMELINE_PIXELS * 3];
-
 uint32_t wt_color(uint8_t r, uint8_t g, uint8_t b)
 {
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
+// HSV to RGB conversion (h=0-255, s=0-255, v=0-255)
+uint32_t wt_color_hsv(uint8_t h, uint8_t s, uint8_t v)
+{
+    if (s == 0) return wt_color(v, v, v);
+    
+    uint8_t region = h / 43;
+    uint8_t remainder = (h - (region * 43)) * 6;
+    
+    uint8_t p = (v * (255 - s)) >> 8;
+    uint8_t q = (v * (255 - ((s * remainder) >> 8))) >> 8;
+    uint8_t t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
+    
+    switch (region) {
+        case 0:  return wt_color(v, t, p);
+        case 1:  return wt_color(q, v, p);
+        case 2:  return wt_color(p, v, t);
+        case 3:  return wt_color(p, q, v);
+        case 4:  return wt_color(t, p, v);
+        default: return wt_color(v, p, q);
+    }
 }
 
 static const uint32_t WT_BUTTON_DEBOUNCE_MS = 30;
