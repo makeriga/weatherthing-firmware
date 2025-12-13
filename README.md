@@ -10,8 +10,8 @@ ESP32-C3 firmware for the WeatherThing LED matrix display.
 |------|-------------|---------|
 | **Weather** | Current conditions, forecast timeline | 35 presets including Classic, Animated, Terminal, Cyber, Radar/Grid Maps, Heat Map, Compass, Gauge, Starfield, Seasons |
 | **Clock** | Time display with effects | 19 presets: Digital, Binary, Minimal, Bars, Nixie, Glitch, Pong, Word, Bounce, Matrix, Radar, Flip, Cyber, Analog, Countdown, DotMatrix, Gradient, Segment, Orbit |
-| **Bitcoin** | Live BTC/crypto price with 24h trend | Supports any CoinGecko crypto symbol |
-| **Stocks** | Stock ticker with price tracking | Any Finnhub stock symbol |
+| **Bitcoin** | Live BTC price with trend since last update | CoinGecko (BTC/USD) |
+| **Stocks** | Stock ticker with price tracking | Yahoo Finance symbol (no API key) |
 | **Network** | WiFi status, IP address display | - |
 | **Audio VU** | Microphone-reactive visualizer | 34 presets including Spectrum, Fire, Plasma, Matrix, Disco, Fireworks, Nyan, Ocean, Aurora, Lightning, Ripple, DNA, Kaleidoscope, Snake |
 | **Sparkle** | Audio-reactive particle effects | Sound-reactive mode |
@@ -20,10 +20,10 @@ ESP32-C3 firmware for the WeatherThing LED matrix display.
 | **MQTT** | Home Assistant notifications | - |
 | **RSS** | RSS feed ticker | - |
 | **YouTube** | Subscriber count display | Requires API key |
-| **Twitch** | Live status display | - |
-| **Twitter/X** | Follower count | Requires API key |
-| **Instagram** | Follower count | Requires API key |
-| **TikTok** | Follower count | - |
+| **Twitch** | Follower/live status | Placeholder (API auth not implemented) |
+| **Twitter/X** | Follower count | Placeholder (API auth not implemented) |
+| **Instagram** | Follower count | Placeholder (API auth not implemented) |
+| **TikTok** | Follower count | Placeholder (API auth not implemented) |
 
 ### Hardware
 
@@ -38,7 +38,8 @@ ESP32-C3 firmware for the WeatherThing LED matrix display.
 
 - **FET rating**: 2A continuous, 3A burst
 - **Max theoretical draw**: ~5.5A (all white at 255) - don't do this
-- **Default limit**: Brightness 1-127 (safe for enclosed use)
+- **Defaults**: Auto-brightness, `brightMin=8`, `brightMax=80`
+- **Safe cap (normal mode)**: Brightness up to 127
 - **High Power Mode**: Unlocks 128-255 (requires checkbox, bare PCB only - causes heat!)
 - **Auto-brightness**: Adjusts based on ambient light sensor
 - **Manual mode**: Full user control within limit
@@ -49,10 +50,10 @@ Requires [PlatformIO](https://platformio.org/).
 
 ```bash
 # Build
-pio run
+pio run -e esp32c3
 
 # Upload
-pio run --target upload
+pio run -e esp32c3 --target upload
 
 # Serial monitor
 pio device monitor
@@ -60,19 +61,23 @@ pio device monitor
 
 ## Configuration
 
-1. First boot creates WiFi hotspot `WeatherThing-XXXX`
-2. Connect and go to `http://192.168.4.1`
+1. First boot (or if WiFi connection fails) starts an access point `WEATHERTHING_XXXX` (password: `weatherthing`)
+2. Connect and go to `http://192.168.1.4`
 3. Enter WiFi credentials
 4. Device restarts and connects to your network
-5. Access web UI at `http://weatherthing.local` or device IP
+5. Access web UI at `http://weatherthing.local` or the device IP
+
+Factory reset: hold **Button 1 (KEY1)** during boot to clear stored WiFi credentials.
 
 ## Controls
 
 | Input | Action |
 |-------|--------|
-| **Button 1** | Next card / Next preset (hold) |
-| **Button 2** | Previous card / Previous preset (hold) |
-| **Touch** | Game action / Confirm |
+| **Button 1** | Next preset (Weather/Clock/Audio/Games mode), then next enabled card |
+| **Button 2** | Previous preset, then previous enabled card |
+| **Touch** | Game action; toggles mode on some cards (e.g. MQTT) |
+
+In the Games card: hold **Button 1 + Button 2** for ~1 second to exit.
 
 ## Audio Settings
 
@@ -106,6 +111,9 @@ weatherthing/{device_id}/notify  - Send notifications
 weatherthing/{device_id}/cmd     - Commands (card, brightness)
 weatherthing/{device_id}/data    - Sensor data display
 weatherthing/{device_id}/state   - Device state (published)
+weatherthing/{device_id}/available - LWT availability (online/offline)
+weatherthing/{device_id}/button/1  - Button 1 events (pressed/released)
+weatherthing/{device_id}/button/2  - Button 2 events (pressed/released)
 ```
 
 ### Notification Format
@@ -118,6 +126,8 @@ weatherthing/{device_id}/state   - Device state (published)
 }
 ```
 **Icons:** 0=none, 1=bell, 2=home, 3=alert, 4=info, 5=check
+
+Additional icons supported by the firmware: 6=temp, 7=humidity, 8=power, 9=mail
 
 ### Example
 ```yaml
@@ -275,7 +285,7 @@ static void mycard_update(uint32_t now, uint32_t dt) {
 | Weather | [Open-Meteo](https://open-meteo.com/) | None (free) |
 | Weather (fallback) | [MET Norway](https://api.met.no/) | None (free) |
 | Crypto | [CoinGecko](https://www.coingecko.com/) | None (free) |
-| Stocks | [Finnhub](https://finnhub.io/) | API key |
+| Stocks | [Yahoo Finance](https://finance.yahoo.com/) | None (public endpoint) |
 | Radar map | [RainViewer](https://www.rainviewer.com/api.html) | None (free) |
 
 ## File Structure
@@ -288,11 +298,15 @@ static void mycard_update(uint32_t now, uint32_t dt) {
 │   ├── net.cpp           # Web server, WiFi, API
 │   ├── settings.cpp      # Persistent settings
 │   ├── mqtt.cpp          # MQTT/Home Assistant
+│   ├── sprites.cpp       # Custom sprite storage (LittleFS)
 │   └── weatherthing_hw.cpp  # Hardware abstraction
 ├── include/
 │   ├── cards.h           # Card system interface
+│   ├── mqtt.h            # MQTT interface
+│   ├── net.h             # Networking interface
 │   ├── weather.h         # Weather types/functions
 │   ├── settings.h        # Settings struct
+│   ├── sprites.h         # Sprite API
 │   └── weatherthing_hw.h # Hardware interface
 └── platformio.ini        # Build configuration
 ```
@@ -305,3 +319,4 @@ MIT License - See LICENSE file
 
 - [WeatherThing.com](https://weatherthing.com)
 - [Makeriga](https://github.com/makeriga)
+
