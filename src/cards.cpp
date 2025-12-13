@@ -1354,9 +1354,9 @@ static void renderTitle(uint32_t now) {
 
 // Preset counts - IMPORTANT: Update these when adding new presets!
 // Also update the presetBtn() calls in net.cpp for the UI buttons
-static const uint8_t WEATHER_PRESET_COUNT = 30;  // Weather presets 0-29 (update in weather_render switch + net.cpp UI)
-static const uint8_t CLOCK_PRESET_COUNT = 14;    // Clock presets 0-13 (update in clock_render switch + net.cpp UI)
-static const uint8_t VU_PRESET_COUNT = 29;       // VU presets 0-28 (update in vu_render switch + net.cpp UI)
+static const uint8_t WEATHER_PRESET_COUNT = 35;  // Weather presets 0-34 (update in weather_render switch + net.cpp UI)
+static const uint8_t CLOCK_PRESET_COUNT = 19;    // Clock presets 0-18 (update in clock_render switch + net.cpp UI)
+static const uint8_t VU_PRESET_COUNT = 34;       // VU presets 0-33 (update in vu_render switch + net.cpp UI)
 
 // Demo mode state
 static bool g_demoActive = false;
@@ -1619,24 +1619,24 @@ static void sampleAudio(uint32_t now)
 
     uint16_t amp = maxVal - minVal;
     
-    // Apply mic gain (1-10) with EXTREME boost for high sensitivity
-    // Range: ~1x (min) to ~100x (max) - exponential curve
+    // Apply mic gain (1-10) with strong exponential curve for wide range
+    // Gain 1 = ~2x, Gain 5 = ~32x, Gain 10 = ~500x
     float gainVal = (float)cfg.micGain;
-    float gainMult = powf(2.5f, gainVal * 0.5f);  // Exponential: 2.5^(gain/2)
+    float gainMult = powf(3.0f, gainVal * 0.6f);  // Exponential: 3^(gain*0.6)
     
-    // Apply additional boost (0-10) for extra amplification
-    // boost 0=1x, 5=~10x, 10=~50x additional
+    // Apply additional boost (0-10) for extra amplification on quiet sources
+    // boost 0=1x, 5=~25x, 10=~100x additional multiplier
     if (cfg.micBoost > 0) {
-        float boostMult = 1.0f + (float)cfg.micBoost * (float)cfg.micBoost * 0.5f;
+        float boostMult = powf(2.0f, (float)cfg.micBoost * 0.66f);
         gainMult *= boostMult;
     }
     
     amp = (uint16_t)((float)amp * gainMult);
     if (amp > 65000) amp = 65000;  // Prevent overflow
     
-    // Dynamic noise floor based on vuNoiseGate setting (0-255 -> 10-200)
-    // Very low baseline for maximum sensitivity
-    uint16_t noiseFloor = 10 + (cfg.vuNoiseGate * 3 / 4);
+    // Dynamic noise floor based on vuNoiseGate setting (0-255 -> 5-150)
+    // Lower baseline for better sensitivity with quiet audio
+    uint16_t noiseFloor = 5 + (cfg.vuNoiseGate / 2);
     
     // Adaptive gain control (AGC) - can be disabled via settings
     if (cfg.agcEnabled) {
@@ -3019,6 +3019,149 @@ static void clock_render_analog() {
     wt_display_set_pixel_xy(cx, cy, wt_color(255, 255, 255));
 }
 
+// Clock Preset 14: Countdown (counts down to next hour)
+static void clock_render_countdown() {
+    wt_display_clear();
+    uint32_t now = millis();
+    int hour; uint8_t minute, second;
+    getClockTime(hour, minute, second);
+    
+    // Minutes until next hour
+    uint8_t minsLeft = 59 - minute;
+    uint8_t secsLeft = 59 - second;
+    
+    // Pulsing urgency color
+    float urgency = 1.0f - (minsLeft / 60.0f);
+    uint8_t r = (uint8_t)(100 + 155 * urgency);
+    uint8_t g = (uint8_t)(255 * (1 - urgency));
+    uint8_t b = 50;
+    uint32_t col = wt_color(r, g, b);
+    
+    // Draw minutes:seconds countdown
+    uint8_t x = 2;
+    drawDigit(x, 0, minsLeft / 10, col); x += 4;
+    drawDigit(x, 0, minsLeft % 10, col); x += 4;
+    // Colon
+    uint8_t blink = (now / 500) % 2;
+    if (blink) { wt_display_set_pixel_xy(x, 2, col); wt_display_set_pixel_xy(x, 4, col); }
+    x += 2;
+    drawDigit(x, 0, secsLeft / 10, col); x += 4;
+    drawDigit(x, 0, secsLeft % 10, col);
+}
+
+// Clock Preset 15: Dot Matrix (LED sign style scrolling)
+static void clock_render_dotmatrix() {
+    wt_display_clear();
+    uint32_t now = millis();
+    int hour; uint8_t minute, second;
+    getClockTime(hour, minute, second);
+    
+    // Scrolling dot effect in background
+    for (int x = 0; x < 20; x++) {
+        for (int y = 0; y < 7; y++) {
+            if (((x + y + (int)(now/200)) % 4) == 0) {
+                wt_display_set_pixel_xy(x, y, wt_color(20, 20, 30));
+            }
+        }
+    }
+    
+    // Time in center
+    uint32_t col = wt_color(255, 200, 50);
+    uint8_t x = 2;
+    drawDigit(x, 0, hour / 10, col); x += 4;
+    drawDigit(x, 0, hour % 10, col); x += 5;
+    drawDigit(x, 0, minute / 10, col); x += 4;
+    drawDigit(x, 0, minute % 10, col);
+}
+
+// Clock Preset 16: Gradient (smooth color gradient time)
+static void clock_render_gradient() {
+    wt_display_clear();
+    uint32_t now = millis();
+    int hour; uint8_t minute, second;
+    getClockTime(hour, minute, second);
+    
+    // Background gradient
+    for (int x = 0; x < 20; x++) {
+        float t = x / 19.0f;
+        uint8_t r = (uint8_t)(50 + 50 * t);
+        uint8_t g = (uint8_t)(30 + 30 * sinf(now * 0.001f + t * 3));
+        uint8_t b = (uint8_t)(80 + 40 * t);
+        for (int y = 0; y < 7; y++) {
+            wt_display_set_pixel_xy(x, y, wt_color(r/3, g/3, b/3));
+        }
+    }
+    
+    // Gradient colored digits
+    uint8_t h1 = (now / 50) % 256;
+    uint32_t col1 = wt_color_hsv(h1, 200, 255);
+    uint32_t col2 = wt_color_hsv(h1 + 60, 200, 255);
+    
+    uint8_t x = 2;
+    drawDigit(x, 0, hour / 10, col1); x += 4;
+    drawDigit(x, 0, hour % 10, col1); x += 5;
+    drawDigit(x, 0, minute / 10, col2); x += 4;
+    drawDigit(x, 0, minute % 10, col2);
+}
+
+// Clock Preset 17: Segments (7-segment display style)
+static void clock_render_segments() {
+    wt_display_clear();
+    uint32_t now = millis();
+    int hour; uint8_t minute, second;
+    getClockTime(hour, minute, second);
+    
+    // Dark red "off" segments background
+    uint32_t offCol = wt_color(30, 5, 5);
+    uint32_t onCol = wt_color(255, 50, 30);
+    
+    // Simple segment style using digits
+    uint8_t x = 2;
+    drawDigit(x, 0, hour / 10, onCol); x += 4;
+    drawDigit(x, 0, hour % 10, onCol); x += 4;
+    // Colon
+    wt_display_set_pixel_xy(x, 2, (now/500)%2 ? onCol : offCol);
+    wt_display_set_pixel_xy(x, 4, (now/500)%2 ? onCol : offCol);
+    x += 2;
+    drawDigit(x, 0, minute / 10, onCol); x += 4;
+    drawDigit(x, 0, minute % 10, onCol);
+}
+
+// Clock Preset 18: Orbit (planets orbiting)
+static void clock_render_orbit() {
+    wt_display_clear();
+    uint32_t now = millis();
+    int hour; uint8_t minute, second;
+    getClockTime(hour, minute, second);
+    
+    // Center sun
+    wt_display_set_pixel_xy(10, 3, wt_color(255, 200, 50));
+    
+    // Hour planet (slow orbit)
+    float hAngle = hour * 3.14159f / 6.0f + now * 0.0001f;
+    int hx = 10 + (int)(cosf(hAngle) * 6);
+    int hy = 3 + (int)(sinf(hAngle) * 2.5f);
+    if (hx >= 0 && hx < 20 && hy >= 0 && hy < 7) {
+        wt_display_set_pixel_xy(hx, hy, wt_color(100, 150, 255));
+    }
+    
+    // Minute planet (faster orbit)
+    float mAngle = minute * 3.14159f / 30.0f + now * 0.001f;
+    int mx = 10 + (int)(cosf(mAngle) * 4);
+    int my = 3 + (int)(sinf(mAngle) * 1.5f);
+    if (mx >= 0 && mx < 20 && my >= 0 && my < 7) {
+        wt_display_set_pixel_xy(mx, my, wt_color(255, 100, 100));
+    }
+    
+    // Second moon (fastest)
+    float sAngle = second * 3.14159f / 30.0f;
+    int sx = mx + (int)(cosf(sAngle) * 1.5f);
+    int sy = my + (int)(sinf(sAngle) * 0.8f);
+    if (sx >= 0 && sx < 20 && sy >= 0 && sy < 7) {
+        wt_display_set_pixel_xy(sx, sy, wt_color(200, 200, 200));
+    }
+}
+
 static void clock_render()
 {
     wt_display_clear();
@@ -3050,6 +3193,11 @@ static void clock_render()
         case 11: clock_render_flip(); break;
         case 12: clock_render_cyber(); break;
         case 13: clock_render_analog(); break;
+        case 14: clock_render_countdown(); break;
+        case 15: clock_render_dotmatrix(); break;
+        case 16: clock_render_gradient(); break;
+        case 17: clock_render_segments(); break;
+        case 18: clock_render_orbit(); break;
         default: clock_render_digital(); break;
     }
 }
@@ -5564,6 +5712,214 @@ static void weather_render_map_grid() {
     wt_display_set_pixel_xy(10, 3, wt_color(markerR, markerG, markerB));
 }
 
+// Weather Preset 30: Heat Map (temperature gradient fill)
+static void weather_render_heatmap() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    int8_t t = current.temp;
+    uint32_t now = millis();
+    
+    // Create heat gradient based on temperature
+    for (int x = 0; x < 20; x++) {
+        for (int y = 0; y < 7; y++) {
+            // Perlin-like noise for organic look
+            float noise = sinf(x * 0.4f + now * 0.001f) * cosf(y * 0.6f + now * 0.0015f);
+            float tempVar = t + noise * 5.0f;
+            
+            uint8_t r, g, b;
+            if (tempVar < 0) {
+                float cold = (-tempVar) / 20.0f;
+                if (cold > 1.0f) cold = 1.0f;
+                r = (uint8_t)(50 * (1-cold));
+                g = (uint8_t)(100 + 100 * (1-cold));
+                b = (uint8_t)(200 + 55 * cold);
+            } else if (tempVar < 15) {
+                float cool = tempVar / 15.0f;
+                r = (uint8_t)(50 + 100 * cool);
+                g = (uint8_t)(200 - 50 * cool);
+                b = (uint8_t)(200 - 150 * cool);
+            } else if (tempVar < 25) {
+                float warm = (tempVar - 15) / 10.0f;
+                r = (uint8_t)(150 + 105 * warm);
+                g = (uint8_t)(150 - 50 * warm);
+                b = (uint8_t)(50 * (1-warm));
+            } else {
+                float hot = (tempVar - 25) / 15.0f;
+                if (hot > 1.0f) hot = 1.0f;
+                r = 255;
+                g = (uint8_t)(100 * (1-hot));
+                b = (uint8_t)(50 * hot);
+            }
+            wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
+        }
+    }
+    
+    // Temperature display centered
+    uint32_t tCol = wt_color(255, 255, 255);
+    uint8_t absT = (t < 0) ? -t : t;
+    uint8_t x = 8;
+    if (t < 0) { wt_display_set_pixel_xy(x, 3, tCol); x += 2; }
+    if (absT >= 10) { drawDigit(x, 0, absT/10, tCol); x += 4; }
+    drawDigit(x, 0, absT%10, tCol);
+}
+
+// Weather Preset 31: Wind Direction (compass with wind indicator)
+static void weather_render_compass() {
+    wt_display_clear();
+    uint32_t now = millis();
+    WeatherData current = weather_get_current();
+    
+    // Draw compass circle
+    uint32_t ringCol = wt_color(60, 80, 100);
+    for (float a = 0; a < 6.28f; a += 0.4f) {
+        int rx = 10 + (int)(cosf(a) * 5);
+        int ry = 3 + (int)(sinf(a) * 2.5f);
+        if (rx >= 0 && rx < 20 && ry >= 0 && ry < 7) {
+            wt_display_set_pixel_xy(rx, ry, ringCol);
+        }
+    }
+    
+    // Cardinal points
+    wt_display_set_pixel_xy(10, 0, wt_color(255, 100, 100)); // N - red
+    wt_display_set_pixel_xy(15, 3, wt_color(150, 150, 150)); // E
+    wt_display_set_pixel_xy(10, 6, wt_color(150, 150, 150)); // S
+    wt_display_set_pixel_xy(5, 3, wt_color(150, 150, 150));  // W
+    
+    // Animated wind direction arrow (rotates based on weather type)
+    float windAngle = now * 0.002f + current.type * 0.5f;
+    for (int r = 1; r <= 3; r++) {
+        int ax = 10 + (int)(cosf(windAngle) * r);
+        int ay = 3 + (int)(sinf(windAngle) * r * 0.5f);
+        if (ax >= 0 && ax < 20 && ay >= 0 && ay < 7) {
+            uint8_t br = (uint8_t)(200 - r * 40);
+            wt_display_set_pixel_xy(ax, ay, wt_color(100, br, 255));
+        }
+    }
+    
+    // Center dot
+    wt_display_set_pixel_xy(10, 3, wt_color(255, 255, 255));
+}
+
+// Weather Preset 32: Pressure Gauge (barometer style)
+static void weather_render_gauge() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Gauge arc
+    for (int x = 2; x < 18; x++) {
+        float t = (x - 2) / 15.0f;
+        int y = (int)(3 - 2.5f * sinf(t * 3.14f));
+        uint8_t r = (uint8_t)(50 + 150 * t);
+        uint8_t g = (uint8_t)(150 - 100 * t);
+        uint8_t b = (uint8_t)(50 * (1-t));
+        wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
+    }
+    
+    // Needle position based on temp (simulating pressure)
+    float needle = (current.temp + 20) / 60.0f;
+    if (needle < 0) needle = 0;
+    if (needle > 1) needle = 1;
+    int needleX = 2 + (int)(needle * 15);
+    
+    // Animated needle with trail
+    float wobble = sinf(now * 0.005f) * 0.5f;
+    needleX += (int)wobble;
+    if (needleX < 2) needleX = 2;
+    if (needleX > 17) needleX = 17;
+    
+    for (int y = 3; y < 7; y++) {
+        uint8_t br = (uint8_t)(255 - (y-3) * 50);
+        wt_display_set_pixel_xy(needleX, y, wt_color(br, br, br));
+    }
+    
+    // Temperature at bottom
+    uint32_t tCol = wt_color(200, 200, 255);
+    int8_t t = current.temp;
+    uint8_t absT = (t < 0) ? -t : t;
+    drawDigit(0, 0, absT % 10, tCol);
+    if (absT >= 10) drawDigit(4, 0, absT / 10, tCol);
+}
+
+// Weather Preset 33: Starfield (night sky with weather influence)
+static void weather_render_starfield() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    
+    // Stars - less visible with clouds
+    uint8_t cloudDim = (current.type == 1 || current.type == 2) ? 3 : 1;
+    for (int i = 0; i < 15; i++) {
+        int sx = (i * 7 + (int)(now / 200)) % 20;
+        int sy = (i * 3) % 7;
+        float twinkle = 0.5f + 0.5f * sinf(now * 0.01f + i * 1.5f);
+        uint8_t br = (uint8_t)(80 + 120 * twinkle) / cloudDim;
+        wt_display_set_pixel_xy(sx, sy, wt_color(br, br, br + 20));
+    }
+    
+    // Moon (if night/clear)
+    if (current.type == 0 || current.type == 1) {
+        wt_display_set_pixel_xy(3, 1, wt_color(200, 200, 180));
+        wt_display_set_pixel_xy(4, 1, wt_color(220, 220, 190));
+        wt_display_set_pixel_xy(3, 2, wt_color(180, 180, 160));
+    }
+    
+    // Temp in corner
+    int8_t t = current.temp;
+    uint8_t absT = (t < 0) ? -t : t;
+    uint32_t tCol = wt_color(100, 150, 200);
+    drawDigit(16, 0, absT % 10, tCol);
+}
+
+// Weather Preset 34: Seasons (seasonal color theme)
+static void weather_render_seasons() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    uint32_t now = millis();
+    int8_t t = current.temp;
+    
+    // Determine season based on temperature
+    uint8_t r1, g1, b1, r2, g2, b2;
+    if (t < 5) {
+        // Winter - white/blue
+        r1 = 200; g1 = 220; b1 = 255;
+        r2 = 100; g2 = 150; b2 = 200;
+    } else if (t < 15) {
+        // Spring - green/pink
+        r1 = 150; g1 = 220; b1 = 150;
+        r2 = 255; g2 = 180; b2 = 200;
+    } else if (t < 25) {
+        // Summer - yellow/green
+        r1 = 255; g1 = 240; b1 = 100;
+        r2 = 100; g2 = 200; b2 = 80;
+    } else {
+        // Autumn - orange/brown
+        r1 = 255; g1 = 150; b1 = 50;
+        r2 = 180; g2 = 100; b2 = 50;
+    }
+    
+    // Gradient fill with animation
+    for (int x = 0; x < 20; x++) {
+        float wave = 0.5f + 0.5f * sinf(x * 0.3f + now * 0.002f);
+        for (int y = 0; y < 7; y++) {
+            float blend = (float)y / 6.0f;
+            blend = blend * (0.7f + 0.3f * wave);
+            uint8_t r = (uint8_t)(r1 + (r2-r1) * blend);
+            uint8_t g = (uint8_t)(g1 + (g2-g1) * blend);
+            uint8_t b = (uint8_t)(b1 + (b2-b1) * blend);
+            wt_display_set_pixel_xy(x, y, wt_color(r/2, g/2, b/2));
+        }
+    }
+    
+    // Temperature overlay
+    uint32_t tCol = wt_color(255, 255, 255);
+    uint8_t absT = (t < 0) ? -t : t;
+    uint8_t x = 8;
+    if (t < 0) { wt_display_set_pixel_xy(x, 3, tCol); x += 2; }
+    if (absT >= 10) { drawDigit(x, 0, absT/10, tCol); x += 4; }
+    drawDigit(x, 0, absT%10, tCol);
+}
+
 static void weather_render()
 {
     WeatherData current = weather_get_current();
@@ -5610,6 +5966,11 @@ static void weather_render()
         case 27: weather_render_frost(); break;        // Frost
         case 28: weather_render_map_radar(); break;    // RainViewer Radar Map
         case 29: weather_render_map_grid(); break;     // Open-Meteo Grid Map
+        case 30: weather_render_heatmap(); break;      // Heat Map
+        case 31: weather_render_compass(); break;      // Wind Compass
+        case 32: weather_render_gauge(); break;        // Pressure Gauge
+        case 33: weather_render_starfield(); break;    // Starfield
+        case 34: weather_render_seasons(); break;      // Seasons
         default: weather_render_classic(); break;
     }
 
@@ -6990,6 +7351,161 @@ static void vu_render_aurora() {
     }
 }
 
+// VU Preset 29: Lightning (random audio-triggered flashes)
+static void vu_render_lightning() {
+    static uint8_t flashX = 10;
+    static uint8_t flashBright = 0;
+    uint32_t now = millis();
+    
+    // Dark stormy background
+    for (int x = 0; x < 20; x++) {
+        for (int y = 0; y < 7; y++) {
+            wt_display_set_pixel_xy(x, y, wt_color(10, 10, 20));
+        }
+    }
+    
+    // Trigger flash on audio peak
+    if (g_audioLevel > 180 && flashBright < 50) {
+        flashX = random(20);
+        flashBright = 255;
+    }
+    
+    // Draw lightning bolt
+    if (flashBright > 30) {
+        for (int y = 0; y < 7; y++) {
+            int x = flashX + (random(3) - 1);
+            if (x >= 0 && x < 20) {
+                wt_display_set_pixel_xy(x, y, wt_color(flashBright, flashBright, flashBright + 50));
+            }
+        }
+        flashBright = flashBright * 7 / 8;
+    }
+}
+
+// VU Preset 30: Ripple (circular waves from center)
+static void vu_render_ripple() {
+    static float ripplePhase = 0;
+    uint32_t now = millis();
+    Settings& cfg = settings_get();
+    
+    ripplePhase += g_audioLevel * 0.001f;
+    
+    for (int x = 0; x < 20; x++) {
+        for (int y = 0; y < 7; y++) {
+            float dx = x - 10;
+            float dy = (y - 3) * 2;
+            float dist = sqrtf(dx*dx + dy*dy);
+            float wave = sinf(dist * 0.5f - ripplePhase);
+            uint8_t br = (uint8_t)(80 + 80 * wave);
+            br = (uint8_t)(br * g_audioLevel / 255);
+            uint8_t hue = (uint8_t)(dist * 20 + now / 50);
+            wt_display_set_pixel_xy(x, y, wt_color_hsv(hue, 255, br));
+        }
+    }
+}
+
+// VU Preset 31: DNA (double helix animation)
+static void vu_render_dna() {
+    uint32_t now = millis();
+    float speed = 0.003f + g_audioLevel * 0.00005f;
+    
+    wt_display_clear();
+    
+    for (int x = 0; x < 20; x++) {
+        float phase = x * 0.5f + now * speed;
+        int y1 = 3 + (int)(2.5f * sinf(phase));
+        int y2 = 3 + (int)(2.5f * sinf(phase + 3.14f));
+        
+        uint8_t br = 100 + g_audioLevel / 2;
+        if (y1 >= 0 && y1 < 7) wt_display_set_pixel_xy(x, y1, wt_color(br, 50, 50));
+        if (y2 >= 0 && y2 < 7) wt_display_set_pixel_xy(x, y2, wt_color(50, 50, br));
+        
+        // Connection bars on some columns
+        if (x % 4 == 0 && abs(y1 - y2) <= 3) {
+            int minY = y1 < y2 ? y1 : y2;
+            int maxY = y1 > y2 ? y1 : y2;
+            for (int y = minY; y <= maxY; y++) {
+                wt_display_set_pixel_xy(x, y, wt_color(100, 100, 50));
+            }
+        }
+    }
+}
+
+// VU Preset 32: Kaleidoscope (symmetrical patterns)
+static void vu_render_kaleidoscope() {
+    uint32_t now = millis();
+    float angle = now * 0.002f;
+    
+    for (int x = 0; x < 10; x++) {
+        for (int y = 0; y < 4; y++) {
+            float fx = x - 5;
+            float fy = y - 1.5f;
+            float r = sqrtf(fx*fx + fy*fy);
+            float a = atan2f(fy, fx) + angle;
+            
+            uint8_t hue = (uint8_t)((a * 40 + r * 30 + g_audioLevel) * 0.5f);
+            uint8_t br = (uint8_t)(50 + g_audioLevel * 0.6f + 30 * sinf(r + now * 0.005f));
+            uint32_t col = wt_color_hsv(hue, 255, br);
+            
+            // Mirror to all quadrants
+            wt_display_set_pixel_xy(10 + x, 3 + y, col);
+            wt_display_set_pixel_xy(9 - x, 3 + y, col);
+            wt_display_set_pixel_xy(10 + x, 3 - y, col);
+            wt_display_set_pixel_xy(9 - x, 3 - y, col);
+        }
+    }
+}
+
+// VU Preset 33: Snake (growing snake based on audio)
+static void vu_render_snake_vu() {
+    static int8_t snakeX[20];
+    static int8_t snakeY[20];
+    static uint8_t snakeLen = 5;
+    static uint8_t dir = 0;
+    static uint32_t lastMove = 0;
+    uint32_t now = millis();
+    
+    // Move speed based on audio
+    uint32_t moveDelay = 200 - g_audioLevel / 2;
+    if (moveDelay < 50) moveDelay = 50;
+    
+    if (now - lastMove > moveDelay) {
+        lastMove = now;
+        
+        // Shift body
+        for (int i = 19; i > 0; i--) {
+            snakeX[i] = snakeX[i-1];
+            snakeY[i] = snakeY[i-1];
+        }
+        
+        // Move head
+        if (dir == 0) snakeX[0]++;
+        else if (dir == 1) snakeY[0]++;
+        else if (dir == 2) snakeX[0]--;
+        else snakeY[0]--;
+        
+        // Wrap
+        if (snakeX[0] >= 20) snakeX[0] = 0;
+        if (snakeX[0] < 0) snakeX[0] = 19;
+        if (snakeY[0] >= 7) snakeY[0] = 0;
+        if (snakeY[0] < 0) snakeY[0] = 6;
+        
+        // Random turn on loud audio
+        if (g_audioLevel > 150) dir = random(4);
+        
+        // Length based on audio
+        snakeLen = 5 + g_audioLevel / 30;
+        if (snakeLen > 20) snakeLen = 20;
+    }
+    
+    wt_display_clear();
+    for (int i = 0; i < snakeLen; i++) {
+        uint8_t br = 255 - i * 10;
+        uint8_t hue = (now / 50 + i * 10) % 256;
+        wt_display_set_pixel_xy(snakeX[i], snakeY[i], wt_color_hsv(hue, 255, br));
+    }
+}
+
 static void vu_render()
 {
     wt_display_clear();
@@ -7027,6 +7543,11 @@ static void vu_render()
         case 26: vu_render_geometry(); break;
         case 27: vu_render_sparkle(); break;
         case 28: vu_render_aurora(); break;
+        case 29: vu_render_lightning(); break;
+        case 30: vu_render_ripple(); break;
+        case 31: vu_render_dna(); break;
+        case 32: vu_render_kaleidoscope(); break;
+        case 33: vu_render_snake_vu(); break;
         default: vu_render_spectrum(); break;
     }
 }

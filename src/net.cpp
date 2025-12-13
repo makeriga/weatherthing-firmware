@@ -278,9 +278,14 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
                 wxPreset(19, "Cyber", "Neon glow");
                 wxPreset(25, "Glitch", "Digital noise");
                 
-                html += "</div><div style=\"width:100%;margin:12px 0 6px;padding:4px 8px;background:#e8e8e8;border-left:3px solid #10b981;font-weight:bold;font-size:0.85em;color:#444\">&#x1F5FA; Maps</div><div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
+                html += "</div><div style=\"width:100%;margin:12px 0 6px;padding:4px 8px;background:#e8e8e8;border-left:3px solid #10b981;font-weight:bold;font-size:0.85em;color:#444\">&#x1F5FA; Maps &amp; Viz</div><div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
                 wxPreset(28, "Radar", "RainViewer");
                 wxPreset(29, "Grid", "Precip grid");
+                wxPreset(30, "Heat", "Temp gradient");
+                wxPreset(31, "Compass", "Wind dir");
+                wxPreset(32, "Gauge", "Barometer");
+                wxPreset(33, "Stars", "Night sky");
+                wxPreset(34, "Seasons", "Color theme");
                 
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">"; // Close preset buttons, open settings
                 
@@ -352,7 +357,9 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
                 presetBtn(1, 3, "Bars"); presetBtn(1, 4, "Nixie"); presetBtn(1, 5, "Glitch");
                 presetBtn(1, 6, "Pong"); presetBtn(1, 7, "Word"); presetBtn(1, 8, "Bounce");
                 presetBtn(1, 9, "Matrix"); presetBtn(1, 10, "Radar"); presetBtn(1, 11, "Flip");
-                presetBtn(1, 12, "Cyber"); presetBtn(1, 13, "Analog");
+                presetBtn(1, 12, "Cyber"); presetBtn(1, 13, "Analog"); presetBtn(1, 14, "Countdown");
+                presetBtn(1, 15, "DotMtx"); presetBtn(1, 16, "Gradient"); presetBtn(1, 17, "Segment");
+                presetBtn(1, 18, "Orbit");
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
                 html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap\">";
                 html += "<label style=\"font-weight:bold\">Timezone:</label>";
@@ -419,6 +426,9 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
                 sendChunk();
                 presetBtn(5, 24, "Stars"); presetBtn(5, 25, "Lava"); presetBtn(5, 26, "Geo");
                 presetBtn(5, 27, "Sparkle"); presetBtn(5, 28, "Aurora");
+                sendChunk();
+                presetBtn(5, 29, "Lightning"); presetBtn(5, 30, "Ripple"); presetBtn(5, 31, "DNA");
+                presetBtn(5, 32, "Kaleid"); presetBtn(5, 33, "Snake");
                 html += "</div>"; // Close preset buttons wrapper
                 sendChunk(); // Flush buffer after massive list of presets
                 html += "<div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
@@ -708,15 +718,21 @@ function toggleCollapse(btn) {
     if (cfg.brightMode == 1) html += " selected";
     html += ">Manual (fixed)</option>";
     html += "</select></div>";
+    uint8_t maxBright = cfg.highPowerMode ? 255 : 127;
     html += "<div class=\"form-group\"><label>Manual Brightness (" + String(cfg.brightManual) + ")</label>";
-    html += "<input type=\"range\" name=\"brightManual\" min=\"5\" max=\"255\" value=\"" + String(cfg.brightManual) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightManual\" min=\"5\" max=\"" + String(maxBright) + "\" value=\"" + String(cfg.brightManual) + "\"></div>";
     html += "<div class=\"form-group\"><label>Auto Min (dark room): " + String(cfg.brightMin) + "</label>";
     html += "<input type=\"range\" name=\"brightMin\" min=\"5\" max=\"40\" value=\"" + String(cfg.brightMin) + "\"></div>";
     html += "<div class=\"form-group\"><label>Auto Max (bright room): " + String(cfg.brightMax) + "</label>";
-    html += "<input type=\"range\" name=\"brightMax\" min=\"20\" max=\"255\" value=\"" + String(cfg.brightMax) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightMax\" min=\"20\" max=\"" + String(maxBright) + "\" value=\"" + String(cfg.brightMax) + "\"></div>";
     html += "<div class=\"form-group\"><label><input type=\"checkbox\" name=\"brightBlank\" value=\"1\"";
     if (cfg.brightBlanking) html += " checked";
     html += "> Use blanking for cleaner readings</label></div>";
+    html += "<div class=\"form-group\" style=\"margin-top:12px;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px\">";
+    html += "<label style=\"color:#856404\"><input type=\"checkbox\" name=\"highPower\" value=\"1\"";
+    if (cfg.highPowerMode) html += " checked";
+    html += "> &#x26A0; High Power Mode (128-255)</label>";
+    html += "<p style=\"font-size:0.75em;color:#856404;margin:6px 0 0\"><b>WARNING:</b> High brightness causes heat! Use only with bare PCB, no plastic enclosure. May trip USB power protection.</p></div>";
     html += "<div class=\"form-group\"><label>Blanking Interval: " + String(cfg.brightBlankSecs) + " sec</label>";
     html += "<input type=\"range\" name=\"blankSec\" min=\"10\" max=\"120\" step=\"10\" value=\"" + String(cfg.brightBlankSecs) + "\"></div>";
     html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save Brightness</button>";
@@ -1128,10 +1144,18 @@ static void handleSettingsPost()
         if (cfg.brightMin < 1) cfg.brightMin = 1;
         if (cfg.brightMin > 40) cfg.brightMin = 40;
     }
+    // High power mode checkbox (must be checked before brightness limits)
+    cfg.highPowerMode = server.hasArg("highPower");
+    uint8_t maxAllowed = cfg.highPowerMode ? 255 : 127;
     if (server.hasArg("brightMax")) {
         cfg.brightMax = (uint8_t)server.arg("brightMax").toInt();
         if (cfg.brightMax < 10) cfg.brightMax = 10;
-        if (cfg.brightMax > 255) cfg.brightMax = 255;
+        if (cfg.brightMax > maxAllowed) cfg.brightMax = maxAllowed;
+    }
+    if (server.hasArg("brightManual")) {
+        cfg.brightManual = (uint8_t)server.arg("brightManual").toInt();
+        if (cfg.brightManual < 5) cfg.brightManual = 5;
+        if (cfg.brightManual > maxAllowed) cfg.brightManual = maxAllowed;
     }
     // Checkbox: if not present, it means unchecked
     cfg.brightBlanking = server.hasArg("brightBlank");

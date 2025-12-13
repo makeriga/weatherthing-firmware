@@ -70,12 +70,13 @@ void settings_begin()
     g_settings.tzOffset = 0;  // UTC by default
     g_settings.btcUpdateMins = 5;    // 5 minute default
     g_settings.stockUpdateMins = 5;  // 5 minute default
-    g_settings.brightMin = 5;        // Dark room brightness
-    g_settings.brightMax = 150;      // Light room brightness (max 255)
+    g_settings.brightMin = 8;        // Dark room brightness
+    g_settings.brightMax = 80;       // Light room brightness (max 127 safe, 255 with highPower)
     g_settings.brightMode = 0;       // Auto by default
     g_settings.brightManual = 50;    // Manual brightness level
     g_settings.brightBlanking = true; // Use blanking for cleaner readings
     g_settings.brightBlankSecs = 30;  // 30 second blanking interval
+    g_settings.highPowerMode = false; // Safe mode by default
     g_settings.forecastHours = 12;   // 12 hour forecast default
     g_settings.simTimeoutSecs = 30;  // 30 second simulation timeout
     
@@ -154,12 +155,13 @@ void settings_begin()
         g_settings.cryptoSymbol[sizeof(g_settings.cryptoSymbol) - 1] = '\0';
         
         // Brightness settings
-        g_settings.brightMin = g_prefs.getUChar("brightMin", 5);
+        g_settings.brightMin = g_prefs.getUChar("brightMin", 8);
         g_settings.brightMax = g_prefs.getUChar("brightMax", 80);
         g_settings.brightMode = g_prefs.getUChar("brightMode", 0);
         g_settings.brightManual = g_prefs.getUChar("brightMan", 50);
         g_settings.brightBlanking = g_prefs.getBool("brightBlk", true);
         g_settings.brightBlankSecs = g_prefs.getUChar("blankSec", 30);
+        g_settings.highPowerMode = g_prefs.getBool("hiPower", false);
         g_settings.forecastHours = g_prefs.getUChar("fcstHours", 12);
         g_settings.simTimeoutSecs = g_prefs.getUShort("simTimeout", 30);
         
@@ -265,10 +267,12 @@ void settings_begin()
     if (g_settings.stockUpdateMins > 60) g_settings.stockUpdateMins = 60;
     if (g_settings.brightMin < 5) g_settings.brightMin = 5;
     if (g_settings.brightMin > 40) g_settings.brightMin = 40;
+    // Brightness limits depend on high power mode
+    uint8_t maxAllowed = g_settings.highPowerMode ? 255 : 127;
     if (g_settings.brightMax < 20) g_settings.brightMax = 20;
-    if (g_settings.brightMax > 255) g_settings.brightMax = 255;
+    if (g_settings.brightMax > maxAllowed) g_settings.brightMax = maxAllowed;
     if (g_settings.brightManual < 5) g_settings.brightManual = 5;
-    if (g_settings.brightManual > 255) g_settings.brightManual = 255;
+    if (g_settings.brightManual > maxAllowed) g_settings.brightManual = maxAllowed;
     if (g_settings.weatherProvider > 2) g_settings.weatherProvider = 0;
     if (g_settings.forecastHours != 12 && g_settings.forecastHours != 24 && g_settings.forecastHours != 48) {
         g_settings.forecastHours = 12;
@@ -310,6 +314,7 @@ void settings_save()
         g_prefs.putUChar("brightMan", g_settings.brightManual);
         g_prefs.putBool("brightBlk", g_settings.brightBlanking);
         g_prefs.putUChar("blankSec", g_settings.brightBlankSecs);
+        g_prefs.putBool("hiPower", g_settings.highPowerMode);
         g_prefs.putUChar("fcstHours", g_settings.forecastHours);
         g_prefs.putUShort("simTimeout", g_settings.simTimeoutSecs);
         

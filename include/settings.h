@@ -56,11 +56,12 @@ struct Settings
     
     // Brightness control
     uint8_t brightMin;       // Minimum brightness (dark room) 5-40, default 8
-    uint8_t brightMax;       // Maximum brightness (light room) 20-80, default 50
+    uint8_t brightMax;       // Maximum brightness (light room) 20-127, default 80
     uint8_t brightMode;      // 0=auto, 1=manual fixed
-    uint8_t brightManual;    // Manual brightness level 1-80
+    uint8_t brightManual;    // Manual brightness level 1-127 (or 255 if highPower)
     bool brightBlanking;     // Use blanking frame for light measurement
     uint8_t brightBlankSecs; // Blanking interval in seconds (10-120)
+    bool highPowerMode;      // Allow brightness >127 (WARNING: heat risk, bare PCB only)
     
     // Timeline settings
     uint8_t forecastHours;   // 12, 24, or 48 hours forecast

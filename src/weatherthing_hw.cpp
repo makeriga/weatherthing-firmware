@@ -194,10 +194,11 @@ void wt_leds_show()
 
 void wt_set_brightness(uint8_t brightness)
 {
-    if (brightness > 80)
-    {
-        brightness = 80;
-    }
+    // No artificial limit - let user control brightness up to 255
+    // Hardware: 152 LEDs * 36mA max = 5.5A at full white
+    // FET rated 2A continuous, 3A burst - typical content uses ~30-50% of max
+    // At brightness 255 with average content: ~1.5-2A
+    // Full white at 255 would overdraw - but that's rare in practice
     g_brightness = brightness;
     matrixStrip.setBrightness(g_brightness);
     timelineStrip.setBrightness(g_brightness);
