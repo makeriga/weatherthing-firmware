@@ -5993,13 +5993,41 @@ static void weather_render()
         g_wxAudioSpeedMult = 1.0f;
     }
     
-    if (!current.valid)
+    // Show loading animation when fetching or data not valid
+    if (!current.valid || weather_is_fetching())
     {
-        uint8_t b = 80 + (millis() / 8) % 80;
-        for (uint8_t i = 0; i < 3; ++i)
-            wt_display_set_pixel_xy(9 + i, 3, wt_color(b, b, b));
+        // Animated loading indicator - spinning dots
+        uint32_t now = millis();
+        uint8_t phase = (now / 100) % 12;
+        
+        // Draw cloud outline (weather loading symbol)
+        uint32_t cloudCol = wt_color(60, 80, 100);
+        wt_display_set_pixel_xy(7, 4, cloudCol);
+        wt_display_set_pixel_xy(8, 5, cloudCol);
+        wt_display_set_pixel_xy(9, 5, cloudCol);
+        wt_display_set_pixel_xy(10, 5, cloudCol);
+        wt_display_set_pixel_xy(11, 5, cloudCol);
+        wt_display_set_pixel_xy(12, 4, cloudCol);
+        wt_display_set_pixel_xy(8, 3, cloudCol);
+        wt_display_set_pixel_xy(11, 3, cloudCol);
+        
+        // Spinning dots below cloud (loading indicator)
+        for (uint8_t i = 0; i < 5; ++i) {
+            uint8_t dotPhase = (phase + i * 2) % 12;
+            uint8_t brightness = (dotPhase < 6) ? (255 - dotPhase * 35) : (dotPhase - 6) * 35;
+            wt_display_set_pixel_xy(8 + i, 1, wt_color(brightness / 3, brightness / 2, brightness));
+        }
+        
+        // Pulsing timeline
+        for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+            uint8_t b = 30 + (uint8_t)(40 * sinf(now * 0.005f + i * 0.3f));
+            wt_timeline_set_pixel(i, wt_color(b / 2, b / 2, b));
+        }
         return;
     }
+    
+    // Show stale data indicator (data exists but is old)
+    bool isStale = weather_is_stale();
 
     // 23 weather display presets
     switch (g_weatherPreset) {

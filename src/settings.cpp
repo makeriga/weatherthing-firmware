@@ -69,7 +69,7 @@ void settings_begin()
     g_settings.stockSymbol[0] = '\0';
     g_settings.stockEnabled = false;
     g_settings.cryptoSymbol[0] = '\0'; // Empty = BTC default
-    g_settings.tzOffset = 0;  // UTC by default
+    g_settings.tzOffset = 2;  // GMT+2 (Riga, Latvia) by default
     g_settings.btcUpdateMins = 5;    // 5 minute default
     g_settings.stockUpdateMins = 5;  // 5 minute default
     g_settings.brightMin = 8;        // Dark room brightness

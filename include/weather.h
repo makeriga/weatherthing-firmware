@@ -61,6 +61,15 @@ void weather_simulate(uint8_t type, int8_t temp);
 // Stop simulation mode and resume fetching
 void weather_stop_simulation();
 
+// Check if weather data is currently being fetched
+bool weather_is_fetching();
+
+// Check if weather data is stale (hasn't been updated in a while)
+bool weather_is_stale();
+
+// Get age of weather data in seconds (0 if never fetched)
+uint32_t weather_data_age_secs();
+
 // Get weather type name
 const char* weather_type_name(WeatherType type);
 

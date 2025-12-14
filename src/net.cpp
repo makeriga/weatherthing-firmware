@@ -184,6 +184,66 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
         sendChunk();
     }
 
+    // ========== QUICK SETUP - Location, WiFi, Timezone at TOP ==========
+    html += "<div class=\"card\" style=\"margin-bottom:30px;background:#e8f4fc;border:5px solid #0088cc\">";
+    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x2699;</span><span class=\"card-title\">Quick Setup</span></div>";
+    html += "<p style=\"margin-bottom:15px;font-weight:bold;color:#333\">&#x1F4A1; Configure these essential settings first for best experience!</p>";
+    
+    html += "<form method=\"POST\" action=\"/cards_config\" style=\"display:grid;gap:20px\">";
+    
+    // Location Section
+    html += "<div style=\"background:#fff;border:3px solid #000;padding:15px\">";
+    html += "<div style=\"font-weight:900;font-size:1.1em;margin-bottom:10px\">&#x1F4CD; Location</div>";
+    float lat, lon;
+    weather_get_location(&lat, &lon);
+    html += "<p style=\"font-size:0.85em;color:#666;margin-bottom:8px\">Current: <b>" + String(lat, 4) + ", " + String(lon, 4) + "</b> (Default: Riga, Latvia)</p>";
+    html += "<div style=\"display:flex;gap:10px;flex-wrap:wrap;align-items:center\">";
+    html += "<input name=\"city\" placeholder=\"Enter city name\" style=\"flex:1;min-width:150px;padding:10px\">";
+    html += "<span style=\"font-weight:bold\">OR</span>";
+    html += "<input name=\"lat\" type=\"number\" step=\"0.0001\" placeholder=\"Latitude\" value=\"" + String(lat, 4) + "\" style=\"width:100px;padding:10px\">";
+    html += "<input name=\"lon\" type=\"number\" step=\"0.0001\" placeholder=\"Longitude\" value=\"" + String(lon, 4) + "\" style=\"width:100px;padding:10px\">";
+    html += "</div></div>";
+    
+    // WiFi Section (if not in AP mode)
+    if (!g_isApMode) {
+        html += "<div style=\"background:#fff;border:3px solid #000;padding:15px\">";
+        html += "<div style=\"font-weight:900;font-size:1.1em;margin-bottom:10px\">&#x1F4F6; WiFi</div>";
+        if (g_hasCreds) {
+            html += "<p style=\"font-size:0.85em;color:#666;margin-bottom:8px\">Connected to: <b>" + g_ssid + "</b> (IP: " + WiFi.localIP().toString() + ")</p>";
+        }
+        html += "<div style=\"display:flex;gap:10px;flex-wrap:wrap\">";
+        html += "<input name=\"ssid\" placeholder=\"Network name (SSID)\" value=\"" + g_ssid + "\" style=\"flex:1;min-width:150px;padding:10px\">";
+        html += "<input name=\"pass\" type=\"password\" placeholder=\"Password\" style=\"flex:1;min-width:150px;padding:10px\">";
+        html += "</div></div>";
+    }
+    
+    // Timezone Section
+    html += "<div style=\"background:#fff;border:3px solid #000;padding:15px\">";
+    html += "<div style=\"font-weight:900;font-size:1.1em;margin-bottom:10px\">&#x1F570; Timezone</div>";
+    html += "<p style=\"font-size:0.85em;color:#666;margin-bottom:8px\">Current: <b>GMT" + String(cfg.tzOffset >= 0 ? "+" : "") + String(cfg.tzOffset) + "</b> (Default: GMT+2 Riga)</p>";
+    html += "<div style=\"display:flex;gap:10px;align-items:center\">";
+    html += "<select name=\"tz\" style=\"padding:10px;min-width:200px\">";
+    for (int8_t tz = -12; tz <= 14; ++tz) {
+        html += "<option value=\"" + String(tz) + "\"";
+        if (cfg.tzOffset == tz) html += " selected";
+        html += ">GMT" + String(tz >= 0 ? "+" : "") + String(tz);
+        // Add common city labels
+        if (tz == -8) html += " (Los Angeles)";
+        else if (tz == -5) html += " (New York)";
+        else if (tz == 0) html += " (London)";
+        else if (tz == 1) html += " (Paris, Berlin)";
+        else if (tz == 2) html += " (Riga, Helsinki)";
+        else if (tz == 3) html += " (Moscow)";
+        else if (tz == 8) html += " (Singapore)";
+        else if (tz == 9) html += " (Tokyo)";
+        html += "</option>";
+    }
+    html += "</select></div></div>";
+    
+    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\" onclick=\"saveOrder()\" style=\"font-size:1.1em;padding:15px\">&#x1F4BE; Save Quick Setup</button>";
+    html += "</form></div>";
+    sendChunk();
+
     // ========== CARD GALLERY - Full width section ==========
     html += "<div class=\"card\" style=\"margin-bottom:30px\">";
     html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F3AC;</span><span class=\"card-title\">Card Gallery</span></div>";

@@ -44,6 +44,16 @@ ESP32-C3 firmware for the WeatherThing LED matrix display.
 - **Auto-brightness**: Adjusts based on ambient light sensor
 - **Manual mode**: Full user control within limit
 
+## Flashing / Updating Firmware
+
+Use the GitHub Pages web flasher (Chrome/Edge desktop with WebSerial) to install or update firmware over USB:
+
+https://makeriga.github.io/weatherthing-firmware/
+
+Notes:
+- Requires HTTPS (GitHub Pages is fine)
+- Connect the device via USB, click **Install**, and choose the correct serial port
+
 ## Building
 
 Requires [PlatformIO](https://platformio.org/).
@@ -68,6 +78,23 @@ pio device monitor
 5. Access web UI at `http://weatherthing.local` or the device IP
 
 Factory reset: hold **Button 1 (KEY1)** during boot to clear stored WiFi credentials.
+
+## Factory Test Mode
+
+On first boot (or after erasing flash/NVS), the firmware enters **Factory Test Mode** instead of normal operation.
+
+What it tests:
+- **LEDs**: full-screen color fills (RGB/white) + rainbow sweep
+- **Buttons**: prompts you to press **Button 1**, then **Button 2**
+- **Cap touch**: prompts you to touch the capacitive sensor
+- **Microphone**: shows a simple VU-style level indicator
+
+Completion behavior:
+- When the test finishes, it stores a flag in NVS and restarts into normal mode.
+- The completion flag is stored under Preferences namespace `fttest`, key `done`.
+
+Re-running the test:
+- Hold **Button 2** during boot to force Factory Test Mode again.
 
 ## Controls
 
@@ -318,5 +345,6 @@ MIT License - See LICENSE file
 ## Links
 
 - [WeatherThing.com](https://weatherthing.com)
+- [Firmware Web Flasher](https://makeriga.github.io/weatherthing-firmware/)
 - [Makeriga](https://github.com/makeriga)
 

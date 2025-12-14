@@ -6,6 +6,9 @@
 #include "sprites.h"
 #include "settings.h"
 #include "mqtt.h"
+#include "factory_test.h"
+
+static bool g_factoryTestMode = false;
 
 void setup()
 {
@@ -17,6 +20,23 @@ void setup()
     wt_hw_begin();
     sprites_begin();
     settings_begin();
+
+    // Check if factory test needs to run (first boot)
+    if (!factory_test_completed())
+    {
+        Serial.println("Factory test not completed - entering test mode");
+        g_factoryTestMode = true;
+        return; // Skip normal init, factory test will handle display
+    }
+
+    // Hold BTN2 at boot to force factory test re-run
+    if (wt_button2_is_down())
+    {
+        Serial.println("BTN2 held at boot - forcing factory test");
+        factory_test_reset();
+        g_factoryTestMode = true;
+        return;
+    }
 
     if (wt_button1_pressed())
     {
@@ -31,6 +51,19 @@ void setup()
 
 void loop()
 {
+    // Factory test mode - run test sequence
+    if (g_factoryTestMode)
+    {
+        if (factory_test_run())
+        {
+            // Test complete, restart to normal mode
+            Serial.println("Factory test complete - restarting...");
+            delay(1000);
+            ESP.restart();
+        }
+        return;
+    }
+
     net_loop();
     mqtt_loop();
     weather_update();

@@ -16,8 +16,10 @@ static uint32_t g_lastAttempt = 0;
 static uint32_t g_lastSuccess = 0;
 static const uint32_t FETCH_INTERVAL = 600000; // 10 minutes
 static const uint32_t RETRY_INTERVAL = 30000; // 30 seconds
+static const uint32_t STALE_THRESHOLD = 1800000; // 30 minutes - data considered stale
 static bool g_simulating = false;  // True when simulating weather (don't fetch)
 static uint32_t g_simStartMs = 0;  // When simulation started
+static bool g_isFetching = false;  // True while actively fetching data
 
 static Preferences g_weatherPrefs;
 
@@ -471,6 +473,7 @@ void weather_update()
         return;
     }
     g_lastAttempt = now;
+    g_isFetching = true;  // Mark as fetching for UI feedback
 
     WeatherData nextCurrent;
     ForecastSlot nextForecast[12];
@@ -492,6 +495,8 @@ void weather_update()
             ok = fetch_met_no(&nextCurrent, nextForecast);
         }
     }
+    
+    g_isFetching = false;  // Done fetching
 
     if (ok)
     {
@@ -572,6 +577,24 @@ void weather_stop_simulation()
     g_lastAttempt = 0;
     g_lastSuccess = 0;  // Force refresh on next update
     Serial.println("Weather simulation stopped");
+}
+
+bool weather_is_fetching()
+{
+    return g_isFetching;
+}
+
+bool weather_is_stale()
+{
+    if (!g_current.valid) return true;
+    if (g_lastSuccess == 0) return true;
+    return (millis() - g_lastSuccess) > STALE_THRESHOLD;
+}
+
+uint32_t weather_data_age_secs()
+{
+    if (g_lastSuccess == 0) return 0;
+    return (millis() - g_lastSuccess) / 1000;
 }
 
 bool weather_set_city(const char* city)
