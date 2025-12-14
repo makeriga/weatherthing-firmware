@@ -77,7 +77,11 @@ pio device monitor
 4. Device restarts and connects to your network
 5. Access web UI at `http://weatherthing.local` or the device IP
 
-Factory reset: hold **Button 1 (KEY1)** during boot to clear stored WiFi credentials.
+Factory reset (clear WiFi credentials):
+1. Power off / unplug the device
+2. Hold **Button 1 (KEY1 / GPIO6)**
+3. Power on while still holding the button
+4. Release after boot; saved WiFi credentials are cleared and the device will start the setup AP again
 
 ## Factory Test Mode
 

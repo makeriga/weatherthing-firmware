@@ -38,9 +38,9 @@ void setup()
         return;
     }
 
-    if (wt_button1_pressed())
+    if (wt_button1_is_down())
     {
-        Serial.println("Factory reset requested (KEY1 held at boot) - clearing network config");
+        Serial.println("Factory reset requested (KEY1 held at boot) - clearing WiFi credentials");
         net_factory_reset();
     }
 

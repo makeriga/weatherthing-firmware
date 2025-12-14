@@ -116,7 +116,7 @@ void settings_begin()
         // Enable cards 0-7 by default, disable Games(8), MQTT(9), RSS(10), and social(11-15)
         g_settings.cardEnabled[i] = (i < 8);
         g_settings.cardOrder[i] = i;
-        g_settings.presetEnabled[i] = 0xFFFFFFFF; // All presets enabled by default
+        g_settings.presetEnabled[i] = 0xFFFFFFFFFFFFFFFFULL; // All presets enabled by default
     }
     
     // Social media defaults (disabled by default)
@@ -231,8 +231,38 @@ void settings_begin()
         else if (g_prefs.isKey("cardEn")) g_prefs.getBytes("cardEn", g_settings.cardEnabled, 12);
         if (g_prefs.isKey("cardOrd16")) g_prefs.getBytes("cardOrd16", g_settings.cardOrder, 16);
         else if (g_prefs.isKey("cardOrd")) g_prefs.getBytes("cardOrd", g_settings.cardOrder, 12);
-        if (g_prefs.isKey("presetEn16")) g_prefs.getBytes("presetEn16", g_settings.presetEnabled, 64); // 16 * 4 bytes
-        else if (g_prefs.isKey("presetEn")) g_prefs.getBytes("presetEn", g_settings.presetEnabled, 48);
+        // presetEnabled migration:
+        // - Old firmwares stored 16x uint32 (64 bytes) under presetEn16 (or 12x uint32 under presetEn)
+        // - New firmwares store 16x uint64 (128 bytes) under presetEn16
+        if (g_prefs.isKey("presetEn16")) {
+            uint8_t buf[128];
+            size_t n = g_prefs.getBytes("presetEn16", buf, sizeof(buf));
+            if (n == 64) {
+                uint32_t tmp32[16];
+                memcpy(tmp32, buf, 64);
+                for (int i = 0; i < 16; ++i) {
+                    // Preserve old selection for presets 0-31, enable new presets 32-63 by default.
+                    g_settings.presetEnabled[i] = (0xFFFFFFFF00000000ULL) | (uint64_t)tmp32[i];
+                }
+            } else if (n == 128) {
+                uint64_t tmp64[16];
+                memcpy(tmp64, buf, 128);
+                for (int i = 0; i < 16; ++i) {
+                    g_settings.presetEnabled[i] = tmp64[i];
+                }
+            }
+        }
+        else if (g_prefs.isKey("presetEn")) {
+            uint8_t buf[48];
+            size_t n = g_prefs.getBytes("presetEn", buf, sizeof(buf));
+            if (n == 48) {
+                uint32_t tmp32[12];
+                memcpy(tmp32, buf, 48);
+                for (int i = 0; i < 12; ++i) {
+                    g_settings.presetEnabled[i] = (0xFFFFFFFF00000000ULL) | (uint64_t)tmp32[i];
+                }
+            }
+        }
         
         // Social media settings
         String ytCh = g_prefs.getString("ytChan", "");
@@ -396,7 +426,7 @@ void settings_save()
         // Card Cycle settings
         g_prefs.putBytes("cardEn16", g_settings.cardEnabled, 16);
         g_prefs.putBytes("cardOrd16", g_settings.cardOrder, 16);
-        g_prefs.putBytes("presetEn16", g_settings.presetEnabled, 64); // 16 * 4 bytes
+        g_prefs.putBytes("presetEn16", g_settings.presetEnabled, 128); // 16 * 8 bytes
         
         // Social media settings
         g_prefs.putString("ytChan", g_settings.ytChannelId);

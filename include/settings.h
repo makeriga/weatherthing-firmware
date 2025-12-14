@@ -109,7 +109,7 @@ struct Settings
     bool cycleEnabled;        // Enable auto cycling
     
     // Per-preset rotation settings (bitmask per card type, bit=1 means included in rotation)
-    uint32_t presetEnabled[16]; // Up to 32 presets per card type (expanded for social cards)
+    uint64_t presetEnabled[16]; // Up to 64 presets per card type (expanded for social cards)
     
     // Social Media Settings
     char ytChannelId[32];        // YouTube Channel ID

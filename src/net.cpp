@@ -306,7 +306,7 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
         
         // Helper lambda to generate preset button with checkbox
         auto presetBtn = [&](uint8_t card, uint8_t preset, const char* label) {
-            bool checked = (cfg.presetEnabled[card] & (1UL << preset)) != 0;
+            bool checked = (cfg.presetEnabled[card] & (1ULL << preset)) != 0;
             html += "<div class=\"preset-btn\" onclick=\"showCard(" + String(card) + "," + String(preset) + ",this)\" style=\"display:flex;align-items:center;gap:10px;background:#fffacd;border:4px solid #000;padding:16px 24px;font-size:1.2em;font-weight:bold;box-shadow:4px 4px 0 #000;transition:all 0.2s;cursor:pointer\">";
             html += "<input type=\"checkbox\" name=\"p" + String(card) + "_" + String(preset) + "\"" + String(checked ? " checked" : "") + " style=\"width:24px;height:24px;margin:0;cursor:pointer\" onclick=\"event.stopPropagation()\">";
             html += "<span>" + String(label) + "</span>";
@@ -315,7 +315,7 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
         
         // Weather preset button with subtitle
         auto wxPreset = [&](uint8_t preset, const char* label, const char* sub) {
-            bool checked = (cfg.presetEnabled[0] & (1UL << preset)) != 0;
+            bool checked = (cfg.presetEnabled[0] & (1ULL << preset)) != 0;
             html += "<div class=\"preset-btn\" onclick=\"showCard(0," + String(preset) + ",this)\" style=\"display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:#fffacd;border:3px solid #000;padding:10px 14px;box-shadow:3px 3px 0 #000;transition:all 0.2s;cursor:pointer;min-width:90px\">";
             html += "<div style=\"display:flex;align-items:center;gap:6px;width:100%\">";
             html += "<input type=\"checkbox\" name=\"p0_" + String(preset) + "\"" + String(checked ? " checked" : "") + " style=\"width:18px;height:18px;margin:0;cursor:pointer\" onclick=\"event.stopPropagation()\">";
@@ -371,6 +371,11 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 wxPreset(32, "Gauge", "Barometer");
                 wxPreset(33, "Stars", "Night sky");
                 wxPreset(34, "Seasons", "Color theme");
+                wxPreset(35, "Half", "Dot shade");
+                wxPreset(36, "Edge", "Outline");
+                wxPreset(37, "PCB", "Circuit");
+                wxPreset(38, "Stripe", "Stripes");
+                wxPreset(39, "Scan", "Scanline");
                 
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">"; // Close preset buttons, open settings
                 
@@ -460,6 +465,8 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 presetBtn(1, 12, "Cyber"); presetBtn(1, 13, "Analog"); presetBtn(1, 14, "Countdown");
                 presetBtn(1, 15, "DotMtx"); presetBtn(1, 16, "Gradient"); presetBtn(1, 17, "Segment");
                 presetBtn(1, 18, "Orbit");
+                presetBtn(1, 19, "Tally"); presetBtn(1, 20, "Cutout"); presetBtn(1, 21, "Scan");
+                presetBtn(1, 22, "Duo"); presetBtn(1, 23, "Frame");
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
                 html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap\">";
                 html += "<label style=\"font-weight:bold\">Timezone:</label>";
@@ -529,6 +536,8 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 sendChunk();
                 presetBtn(5, 29, "Lightning"); presetBtn(5, 30, "Ripple"); presetBtn(5, 31, "DNA");
                 presetBtn(5, 32, "Kaleid"); presetBtn(5, 33, "Snake");
+                presetBtn(5, 34, "Liss2"); presetBtn(5, 35, "Code"); presetBtn(5, 36, "Orbit");
+                presetBtn(5, 37, "Check"); presetBtn(5, 38, "Shard");
                 html += "</div>"; // Close preset buttons wrapper
                 sendChunk(); // Flush buffer after massive list of presets
                 html += "<div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
@@ -1495,8 +1504,8 @@ static void handleCardsConfigPost()
             int underscore = name.indexOf('_');
             int card = name.substring(1, underscore).toInt();
             int preset = name.substring(underscore + 1).toInt();
-            if (card >= 0 && card < 16 && preset >= 0 && preset < 32) {
-                cfg.presetEnabled[card] |= (1UL << preset);
+            if (card >= 0 && card < 16 && preset >= 0 && preset < 64) {
+                cfg.presetEnabled[card] |= (1ULL << preset);
             }
         }
     }

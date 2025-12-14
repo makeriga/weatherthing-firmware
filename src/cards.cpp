@@ -1359,9 +1359,9 @@ static void renderTitle(uint32_t now) {
 
 // Preset counts - IMPORTANT: Update these when adding new presets!
 // Also update the presetBtn() calls in net.cpp for the UI buttons
-static const uint8_t WEATHER_PRESET_COUNT = 35;  // Weather presets 0-34 (update in weather_render switch + net.cpp UI)
-static const uint8_t CLOCK_PRESET_COUNT = 19;    // Clock presets 0-18 (update in clock_render switch + net.cpp UI)
-static const uint8_t VU_PRESET_COUNT = 34;       // VU presets 0-33 (update in vu_render switch + net.cpp UI)
+static const uint8_t WEATHER_PRESET_COUNT = 40;  // Weather presets 0-39 (update in weather_render switch + net.cpp UI)
+static const uint8_t CLOCK_PRESET_COUNT = 24;    // Clock presets 0-23 (update in clock_render switch + net.cpp UI)
+static const uint8_t VU_PRESET_COUNT = 39;       // VU presets 0-38 (update in vu_render switch + net.cpp UI)
 
 // Demo mode state
 static bool g_demoActive = false;
@@ -1371,13 +1371,13 @@ static uint8_t g_demoTransitionPhase = 0;  // 0=showing preset, 1=flashy transit
 // Get random enabled preset for a card type
 static uint8_t getRandomEnabledPreset(uint8_t card, uint8_t maxPresets) {
     Settings& cfg = settings_get();
-    uint32_t enabled = cfg.presetEnabled[card];
+    uint64_t enabled = cfg.presetEnabled[card];
     
     // Count enabled presets
-    uint8_t enabledList[32];
+    uint8_t enabledList[64];
     uint8_t count = 0;
-    for (uint8_t i = 0; i < maxPresets && i < 32; ++i) {
-        if (enabled & (1UL << i)) {
+    for (uint8_t i = 0; i < maxPresets && i < 64; ++i) {
+        if (enabled & (1ULL << i)) {
             enabledList[count++] = i;
         }
     }
@@ -3191,6 +3191,167 @@ static void clock_render_orbit() {
     }
 }
 
+ static void clock_render_tally() {
+     wt_display_clear();
+     wt_timeline_clear();
+     uint32_t now = millis();
+     int hour; uint8_t minute, second;
+     getClockTime(hour, minute, second);
+
+     uint8_t d[4] = {(uint8_t)(hour / 10), (uint8_t)(hour % 10), (uint8_t)(minute / 10), (uint8_t)(minute % 10)};
+     uint8_t x0[4] = {1, 5, 11, 15};
+
+     for (uint8_t i = 0; i < 4; ++i) {
+         uint8_t h = (uint8_t)((d[i] * 7) / 9);
+         if (h > 7) h = 7;
+         uint32_t col = (i < 2) ? wt_color(255, 160, 60) : wt_color(60, 200, 255);
+         for (uint8_t dx = 0; dx < 3; ++dx) {
+             for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+                 if (y < h) wt_display_set_pixel_xy(x0[i] + dx, y, col);
+             }
+         }
+     }
+
+     uint32_t dig = wt_color(255, 255, 255);
+     uint8_t x = 2;
+     drawDigit(x, 0, hour / 10, dig); x += 4;
+     drawDigit(x, 0, hour % 10, dig); x += 4;
+     if (((now / 500) & 1) == 0) { wt_display_set_pixel_xy(x, 2, dig); wt_display_set_pixel_xy(x, 4, dig); }
+     x += 2;
+     drawDigit(x, 0, minute / 10, dig); x += 4;
+     drawDigit(x, 0, minute % 10, dig);
+
+     uint8_t secFill = (second * WT_TIMELINE_PIXELS) / 60;
+     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+         if (i < secFill) wt_timeline_set_pixel(i, wt_color(80, 80, 80));
+     }
+ }
+
+ static void clock_render_cutout() {
+     wt_display_clear();
+     wt_timeline_clear();
+     uint32_t now = millis();
+     int hour; uint8_t minute, second;
+     getClockTime(hour, minute, second);
+
+     for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+         for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+             uint8_t hue = (uint8_t)(x * 10 + y * 25 + (now / 15));
+             uint8_t br = (uint8_t)(60 + (((x + y + (now / 80)) & 1) ? 60 : 0));
+             wt_display_set_pixel_xy(x, y, wt_color_hsv(hue, 220, br));
+         }
+     }
+
+     uint8_t x = 2;
+     drawDigit(x, 0, hour / 10, 0); x += 4;
+     drawDigit(x, 0, hour % 10, 0); x += 4;
+     wt_display_set_pixel_xy(x, 2, 0);
+     wt_display_set_pixel_xy(x, 4, 0);
+     x += 2;
+     drawDigit(x, 0, minute / 10, 0); x += 4;
+     drawDigit(x, 0, minute % 10, 0);
+
+     uint8_t secFill = (second * WT_TIMELINE_PIXELS) / 60;
+     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+         if (i < secFill) wt_timeline_set_pixel(i, wt_color(0, 0, 0));
+     }
+ }
+
+ static void clock_render_scan() {
+     wt_display_clear();
+     wt_timeline_clear();
+     uint32_t now = millis();
+     int hour; uint8_t minute, second;
+     getClockTime(hour, minute, second);
+
+     for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+         for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+             if ((y & 1) == 0) wt_display_set_pixel_xy(x, y, wt_color(0, 0, 8));
+         }
+     }
+
+     uint32_t col = wt_color(255, 255, 255);
+     uint8_t x = 2;
+     drawDigit(x, 0, hour / 10, col); x += 4;
+     drawDigit(x, 0, hour % 10, col); x += 4;
+     if (((now / 500) & 1) == 0) { wt_display_set_pixel_xy(x, 2, col); wt_display_set_pixel_xy(x, 4, col); }
+     x += 2;
+     drawDigit(x, 0, minute / 10, col); x += 4;
+     drawDigit(x, 0, minute % 10, col);
+
+     uint8_t sx = (uint8_t)((now / 80) % WT_MATRIX_WIDTH);
+     uint32_t sCol = wt_color_hsv((uint8_t)(now / 10), 255, 200);
+     for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) wt_display_set_pixel_xy(sx, y, sCol);
+
+     uint8_t secFill = (second * WT_TIMELINE_PIXELS) / 60;
+     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+         if (i <= secFill) wt_timeline_set_pixel(i, sCol);
+     }
+ }
+
+ static void clock_render_duo() {
+     wt_display_clear();
+     wt_timeline_clear();
+     uint32_t now = millis();
+     int hour; uint8_t minute, second;
+     getClockTime(hour, minute, second);
+
+     uint32_t colH = wt_color_hsv((uint8_t)(now / 18), 220, 255);
+     uint32_t colM = wt_color_hsv((uint8_t)(now / 18 + 90), 220, 255);
+     uint32_t dim = wt_color(0, 0, 0);
+     for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+         wt_display_set_pixel_xy(0, y, dim);
+         wt_display_set_pixel_xy(19, y, dim);
+     }
+
+     uint8_t x = 2;
+     drawDigit(x, 0, hour / 10, colH); x += 4;
+     drawDigit(x, 0, hour % 10, colH); x += 4;
+     if (((now / 500) & 1) == 0) { wt_display_set_pixel_xy(x, 2, colM); wt_display_set_pixel_xy(x, 4, colM); }
+     x += 2;
+     drawDigit(x, 0, minute / 10, colM); x += 4;
+     drawDigit(x, 0, minute % 10, colM);
+
+     uint8_t secFill = (second * WT_TIMELINE_PIXELS) / 60;
+     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+         if (i < secFill) wt_timeline_set_pixel(i, wt_color(50, 50, 50));
+     }
+ }
+
+ static void clock_render_frame() {
+     wt_display_clear();
+     wt_timeline_clear();
+     uint32_t now = millis();
+     int hour; uint8_t minute, second;
+     getClockTime(hour, minute, second);
+
+     uint8_t hue = (uint8_t)(second * 4);
+     uint32_t frameCol = wt_color_hsv(hue, 255, 180);
+
+     for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+         wt_display_set_pixel_xy(x, 0, frameCol);
+         wt_display_set_pixel_xy(x, 6, frameCol);
+     }
+     for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+         wt_display_set_pixel_xy(0, y, frameCol);
+         wt_display_set_pixel_xy(19, y, frameCol);
+     }
+
+     uint32_t col = wt_color(255, 255, 255);
+     uint8_t x = 2;
+     drawDigit(x, 0, hour / 10, col); x += 4;
+     drawDigit(x, 0, hour % 10, col); x += 4;
+     if (((now / 500) & 1) == 0) { wt_display_set_pixel_xy(x, 2, col); wt_display_set_pixel_xy(x, 4, col); }
+     x += 2;
+     drawDigit(x, 0, minute / 10, col); x += 4;
+     drawDigit(x, 0, minute % 10, col);
+
+     uint8_t secFill = (second * WT_TIMELINE_PIXELS) / 60;
+     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+         if (i <= secFill) wt_timeline_set_pixel(i, frameCol);
+     }
+ }
+
 static void clock_render()
 {
     wt_display_clear();
@@ -3227,6 +3388,11 @@ static void clock_render()
         case 16: clock_render_gradient(); break;
         case 17: clock_render_segments(); break;
         case 18: clock_render_orbit(); break;
+        case 19: clock_render_tally(); break;
+        case 20: clock_render_cutout(); break;
+        case 21: clock_render_scan(); break;
+        case 22: clock_render_duo(); break;
+        case 23: clock_render_frame(); break;
         default: clock_render_digital(); break;
     }
 }
@@ -5977,6 +6143,195 @@ static void weather_render_seasons() {
     drawDigit(x, 0, absT%10, tCol);
 }
 
+static void weather_render_halftone() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    int8_t t = current.temp;
+    bool negative = t < 0;
+    buildTempMask(t, negative);
+
+    uint32_t base = weatherColor(current.type);
+    uint8_t r0 = (uint8_t)(((base >> 16) & 0xFF) / 8);
+    uint8_t g0 = (uint8_t)(((base >> 8) & 0xFF) / 8);
+    uint8_t b0 = (uint8_t)((base & 0xFF) / 8);
+
+    uint32_t now = millis();
+    uint8_t phase = (uint8_t)((now / 120) & 0xFF);
+
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            bool dot = (((x + y + phase) & 1) == 0);
+            uint8_t rr = (uint8_t)min(255, r0 + (dot ? r0 : 0));
+            uint8_t gg = (uint8_t)min(255, g0 + (dot ? g0 : 0));
+            uint8_t bb = (uint8_t)min(255, b0 + (dot ? b0 : 0));
+            wt_display_set_pixel_xy(x, y, wt_color(rr, gg, bb));
+        }
+    }
+
+    uint32_t tCol = tempToColor(current.temp);
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        uint8_t m = g_textMask[x];
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            if (m & (1 << y)) wt_display_set_pixel_xy(x, y, tCol);
+        }
+    }
+}
+
+static void weather_render_outline() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    int8_t t = current.temp;
+    bool negative = t < 0;
+    buildTempMask(t, negative);
+
+    uint32_t tCol = tempToColor(current.temp);
+    uint8_t tr = (tCol >> 16) & 0xFF;
+    uint8_t tg = (tCol >> 8) & 0xFF;
+    uint8_t tb = tCol & 0xFF;
+    uint32_t oCol = wt_color(tr / 4, tg / 4, tb / 4);
+
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        uint8_t m = g_textMask[x];
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            if (m & (1 << y)) continue;
+
+            bool near = false;
+            for (int8_t dx = -1; dx <= 1 && !near; ++dx) {
+                int16_t xx = (int16_t)x + dx;
+                if (xx < 0 || xx >= WT_MATRIX_WIDTH) continue;
+                uint8_t mm = g_textMask[xx];
+                for (int8_t dy = -1; dy <= 1; ++dy) {
+                    int16_t yy = (int16_t)y + dy;
+                    if (yy < 0 || yy >= WT_MATRIX_HEIGHT) continue;
+                    if (mm & (1 << yy)) { near = true; break; }
+                }
+            }
+
+            if (near) wt_display_set_pixel_xy(x, y, oCol);
+        }
+    }
+
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        uint8_t m = g_textMask[x];
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            if (m & (1 << y)) wt_display_set_pixel_xy(x, y, tCol);
+        }
+    }
+}
+
+static void weather_render_circuit() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    int8_t t = current.temp;
+    bool negative = t < 0;
+    buildTempMask(t, negative);
+
+    uint32_t now = millis();
+    uint8_t sweep = (uint8_t)((now / 70) % WT_MATRIX_WIDTH);
+    uint32_t bg = wt_color(0, 8, 4);
+    uint32_t trace = wt_color(0, 45, 20);
+
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            wt_display_set_pixel_xy(x, y, bg);
+        }
+    }
+
+    for (uint8_t y = 1; y < WT_MATRIX_HEIGHT; y += 2) {
+        for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            if (((x + y) % 3) != 0) wt_display_set_pixel_xy(x, y, trace);
+        }
+    }
+    for (uint8_t x = 2; x < WT_MATRIX_WIDTH; x += 4) {
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            if ((y % 2) == 0) wt_display_set_pixel_xy(x, y, trace);
+        }
+    }
+
+    uint8_t sy = (uint8_t)(1 + ((sweep / 5) % 3) * 2);
+    wt_display_set_pixel_xy(sweep, sy, wt_color(120, 255, 180));
+
+    uint32_t tCol = tempToColor(current.temp);
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        uint8_t m = g_textMask[x];
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            if (m & (1 << y)) wt_display_set_pixel_xy(x, y, tCol);
+        }
+    }
+}
+
+static void weather_render_stripes() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    int8_t t = current.temp;
+    bool negative = t < 0;
+    buildTempMask(t, negative);
+
+    int tt = current.temp;
+    if (tt < -20) tt = -20;
+    if (tt > 40) tt = 40;
+    uint8_t baseH = (uint8_t)(((tt + 20) * 7) / 60);
+    if (baseH > 7) baseH = 7;
+
+    uint32_t now = millis();
+    uint32_t c = weatherColor(current.type);
+    uint8_t cr = (c >> 16) & 0xFF;
+    uint8_t cg = (c >> 8) & 0xFF;
+    uint8_t cb = c & 0xFF;
+
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        float wob = sinf((float)x * 0.5f + (float)now * 0.004f);
+        int h = (int)baseH + (int)(wob * 2.0f);
+        if (h < 0) h = 0;
+        if (h > 7) h = 7;
+        uint8_t r = (uint8_t)((cr / 6) + (x * cr) / (WT_MATRIX_WIDTH * 3));
+        uint8_t g = (uint8_t)((cg / 6) + (x * cg) / (WT_MATRIX_WIDTH * 3));
+        uint8_t b = (uint8_t)((cb / 6) + (x * cb) / (WT_MATRIX_WIDTH * 3));
+        uint32_t col = wt_color(r, g, b);
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            if (y < (uint8_t)h && ((x + y) & 1) == 0) wt_display_set_pixel_xy(x, y, col);
+        }
+    }
+
+    uint32_t tCol = wt_color(255, 255, 255);
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        uint8_t m = g_textMask[x];
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            if (m & (1 << y)) wt_display_set_pixel_xy(x, y, tCol);
+        }
+    }
+}
+
+static void weather_render_scanline() {
+    wt_display_clear();
+    WeatherData current = weather_get_current();
+    int8_t t = current.temp;
+    bool negative = t < 0;
+    buildTempMask(t, negative);
+
+    uint32_t base = weatherColor(current.type);
+    uint8_t r0 = (uint8_t)(((base >> 16) & 0xFF) / 10);
+    uint8_t g0 = (uint8_t)(((base >> 8) & 0xFF) / 10);
+    uint8_t b0 = (uint8_t)((base & 0xFF) / 10);
+    uint32_t now = millis();
+    uint8_t scan = (uint8_t)((now / 120) % WT_MATRIX_HEIGHT);
+
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            uint8_t boost = (y == scan) ? 120 : ((y + 1 == scan) ? 60 : 0);
+            wt_display_set_pixel_xy(x, y, wt_color(min(255, r0 + boost), min(255, g0 + boost), min(255, b0 + boost)));
+        }
+    }
+
+    uint32_t tCol = tempToColor(current.temp);
+    for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+        uint8_t m = g_textMask[x];
+        for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+            if (m & (1 << y)) wt_display_set_pixel_xy(x, y, tCol);
+        }
+    }
+}
+
 static void weather_render()
 {
     WeatherData current = weather_get_current();
@@ -6079,6 +6434,11 @@ static void weather_render()
         case 32: weather_render_gauge(); break;        // Pressure Gauge
         case 33: weather_render_starfield(); break;    // Starfield
         case 34: weather_render_seasons(); break;      // Seasons
+        case 35: weather_render_halftone(); break;
+        case 36: weather_render_outline(); break;
+        case 37: weather_render_circuit(); break;
+        case 38: weather_render_stripes(); break;
+        case 39: weather_render_scanline(); break;
         default: weather_render_classic(); break;
     }
     
@@ -7655,6 +8015,111 @@ static void vu_render_snake_vu() {
     }
 }
 
+ static void vu_render_lissajous2() {
+     uint32_t now = millis();
+     wt_display_clear();
+ 
+     float t = (float)now * 0.004f;
+     float amp = 1.2f + (float)g_audioLevel / 90.0f;
+     if (amp > 3.2f) amp = 3.2f;
+ 
+     for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+         float fx = (float)x * 0.45f;
+         int y1 = 3 + (int)(sinf(fx + t) * amp);
+         int y2 = 3 + (int)(cosf(fx * 1.2f + t * 1.3f) * amp);
+         uint8_t hue = (uint8_t)((now / 10 + x * 8) & 0xFF);
+         uint8_t br = (uint8_t)(80 + g_audioLevel / 2);
+         if (y1 >= 0 && y1 < WT_MATRIX_HEIGHT) wt_display_set_pixel_xy(x, y1, wt_color_hsv(hue, 255, br));
+         if (y2 >= 0 && y2 < WT_MATRIX_HEIGHT) wt_display_set_pixel_xy(x, y2, wt_color_hsv(hue + 70, 255, br));
+     }
+ 
+     if (g_audioBeat > 0) {
+         wt_display_set_pixel_xy(10, 3, wt_color(255, 255, 255));
+     }
+ }
+
+ static void vu_render_barcode() {
+     uint32_t now = millis();
+     wt_display_clear();
+
+     uint8_t scan = (uint8_t)((now / 40) % WT_MATRIX_WIDTH);
+     for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+         uint8_t v = g_audioHistory[(g_audioHistoryIdx + x) % 20];
+         uint8_t br = (uint8_t)(40 + v * 20);
+         uint8_t hue = (uint8_t)(x * 12 + (now / 25));
+         uint32_t col = wt_color_hsv(hue, 255, br);
+         for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+             if (((x + y) & 1) == 0) wt_display_set_pixel_xy(x, y, col);
+         }
+     }
+     for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+         wt_display_set_pixel_xy(scan, y, wt_color(255, 255, 255));
+     }
+ }
+
+ static void vu_render_orbitals2() {
+     uint32_t now = millis();
+     wt_display_clear();
+
+     float baseR = 1.0f + (float)g_audioLevel / 80.0f;
+     if (baseR > 5.5f) baseR = 5.5f;
+
+     for (uint8_t i = 0; i < 3; ++i) {
+         float a = (float)now * (0.0012f + 0.0004f * i) + (float)i * 2.1f;
+         float r = baseR * (0.7f + 0.2f * i);
+         int x = 10 + (int)(cosf(a) * r);
+         int y = 3 + (int)(sinf(a) * r * 0.55f);
+         if (x >= 0 && x < WT_MATRIX_WIDTH && y >= 0 && y < WT_MATRIX_HEIGHT) {
+             uint8_t hue = (uint8_t)((now / 10) + i * 80);
+             uint8_t br = (uint8_t)(120 + g_audioLevel / 3);
+             wt_display_set_pixel_xy(x, y, wt_color_hsv(hue, 255, br));
+         }
+     }
+
+     if (g_audioBeat > 2) wt_display_set_pixel_xy(10, 3, wt_color(255, 255, 255));
+ }
+
+ static void vu_render_checker() {
+     uint32_t now = millis();
+     wt_display_clear();
+
+     uint8_t shift = (uint8_t)((now / 90) & 0xFF);
+     uint8_t base = (uint8_t)(30 + g_audioLevel / 2);
+     if (g_audioBeat > 0) base = (uint8_t)min(255, base + 80);
+
+     for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+         for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+             bool on = (((x + y + shift) & 1) == 0);
+             if (on) {
+                 uint8_t hue = (uint8_t)(x * 9 + y * 20 + (now / 15));
+                 wt_display_set_pixel_xy(x, y, wt_color_hsv(hue, 255, base));
+             }
+         }
+     }
+ }
+
+ static void vu_render_shards() {
+     uint32_t now = millis();
+     wt_display_clear();
+
+     static uint8_t dir = 0;
+     static uint16_t phase = 0;
+     if (g_audioBeat > 8) dir = random(2);
+     phase += (uint16_t)(1 + g_audioLevel / 40);
+
+     for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+         for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+             uint8_t v = dir ? (uint8_t)(x * 5 + y * 11 + phase) : (uint8_t)(x * 11 + y * 5 + phase);
+             uint8_t k = v % 12;
+             if (k < 2) {
+                 uint8_t hue = (uint8_t)(v + (now / 8));
+                 uint8_t br = (uint8_t)(90 + g_audioLevel / 2);
+                 wt_display_set_pixel_xy(x, y, wt_color_hsv(hue, 255, br));
+             }
+         }
+     }
+ }
+
 static void vu_render()
 {
     wt_display_clear();
@@ -7697,6 +8162,11 @@ static void vu_render()
         case 31: vu_render_dna(); break;
         case 32: vu_render_kaleidoscope(); break;
         case 33: vu_render_snake_vu(); break;
+        case 34: vu_render_lissajous2(); break;
+        case 35: vu_render_barcode(); break;
+        case 36: vu_render_orbitals2(); break;
+        case 37: vu_render_checker(); break;
+        case 38: vu_render_shards(); break;
         default: vu_render_spectrum(); break;
     }
 }
