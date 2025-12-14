@@ -128,7 +128,6 @@ void settings_begin()
     
     // Demo mode defaults
     g_settings.demoMode = false;            // Disabled by default
-    g_settings.demoDurationSecs = 5;        // 5 seconds per preset
     
     // Load from flash
     if (g_prefs.begin("wtsettings", true))
@@ -256,7 +255,6 @@ void settings_begin()
         
         // Demo mode settings
         g_settings.demoMode = g_prefs.getBool("demoOn", false);
-        g_settings.demoDurationSecs = g_prefs.getUChar("demoSecs", 5);
         
         g_prefs.end();
     }
@@ -375,7 +373,6 @@ void settings_save()
         
         // Demo mode settings
         g_prefs.putBool("demoOn", g_settings.demoMode);
-        g_prefs.putUChar("demoSecs", g_settings.demoDurationSecs);
         
         g_prefs.end();
     }

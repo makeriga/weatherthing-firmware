@@ -116,7 +116,6 @@ struct Settings
     
     // Demo Mode Settings
     bool demoMode;               // Enable demo mode for video capture
-    uint8_t demoDurationSecs;    // Seconds per preset in demo mode (3-30, default 5)
 };
 
 // Initialize settings (load from flash)

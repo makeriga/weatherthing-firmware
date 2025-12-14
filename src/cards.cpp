@@ -2116,7 +2116,7 @@ void cards_loop()
             g_demoTransitionPhase = 0;
         }
         
-        uint32_t demoDuration = (uint32_t)cfg.demoDurationSecs * 1000;
+        uint32_t demoDuration = (uint32_t)(cfg.cycleDuration ? cfg.cycleDuration : 5) * 1000;
         uint32_t elapsed = now - g_demoLastSwitch;
         
         // Flashy transition effect in last 500ms

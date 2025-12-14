@@ -143,6 +143,11 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
 <script>
 function showCard(c,p,el){if(el)el.style.background='#ffa500';fetch('/api/card?card='+c+'&preset='+p).then(function(r){return r.json();}).then(function(){if(el){el.style.background='#4ade80';setTimeout(function(){el.style.background='#fffacd';},500);}}).catch(function(){if(el)el.style.background='#f00';});}
 function showFirstPreset(btn,card){showCard(card,0,btn);}
+window.addEventListener('DOMContentLoaded', function(){
+const lg=document.querySelector('.logo-svg linearGradient');
+if(lg && !lg.getAttribute('id')) lg.setAttribute('id','rg');
+document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){el.style.fill='url(#rg)';});
+});
 </script>
 </head><body>
 <div class="header">
@@ -199,7 +204,7 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
     html += "<span style=\"border-left:2px solid #999;height:24px;margin:0 8px\"></span>";
     html += "<span style=\"font-weight:bold;color:#d00\">&#x1F3A5; Demo:</span>";
     html += "<label style=\"display:flex;align-items:center;gap:6px\"><input type=\"checkbox\" name=\"demoOn\" value=\"1\"" + String(cfg.demoMode ? " checked" : "") + " style=\"width:18px;height:18px\"> Enable</label>";
-    html += "<div style=\"display:flex;align-items:center;gap:6px\"><input type=\"number\" name=\"demoSecs\" value=\"" + String(cfg.demoDurationSecs) + "\" min=\"3\" max=\"30\" style=\"width:50px\"><span>sec/preset</span></div>";
+    html += "<span style=\"font-weight:bold\">Uses Auto-Cycle interval</span>";
     html += "</div>";
     
     // Card gallery grid
@@ -1415,12 +1420,6 @@ static void handleCardsConfigPost()
     
     // 5. Demo Mode Settings
     cfg.demoMode = server.hasArg("demoOn");
-    if (server.hasArg("demoSecs")) {
-        uint8_t secs = (uint8_t)server.arg("demoSecs").toInt();
-        if (secs < 3) secs = 3;
-        if (secs > 30) secs = 30;
-        cfg.demoDurationSecs = secs;
-    }
     
     // 6. Audio settings (from Audio card in gallery)
     if (server.hasArg("palette")) {
