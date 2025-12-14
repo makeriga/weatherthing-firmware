@@ -25,13 +25,20 @@ struct Settings
     
     // Audio/VU
     uint8_t vuPalette;       // ColorPalette enum
-    uint8_t vuSensitivity;   // 1-10
     uint8_t vuNoiseGate;     // 0-255 (noise floor level)
     uint8_t micGain;         // 1-10 (1=low, 5=normal, 10=high)
     uint8_t micBoost;        // 0-10 (extra amplification: 0=off, 10=max ~50x extra)
     bool vuInvert;           // Invert VU meter response
     bool agcEnabled;         // Enable automatic gain control
     uint16_t vuSilenceMs;    // Silence detection threshold in ms (0=disabled, 100-2000)
+    uint16_t agcMin;
+    uint16_t agcMax;
+    uint8_t agcAttack;
+    uint8_t agcDecay;
+    uint8_t envAttack;
+    uint8_t envDecay;
+    uint8_t beatThreshold;
+    uint8_t beatHold;
     
     // Weather display
     uint8_t weatherPreset;   // 0=classic, 1=fullscreen

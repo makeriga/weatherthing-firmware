@@ -549,6 +549,7 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                     html += ">" + String(i) + "</option>";
                 }
                 html += "</select></div>";
+                html += "<div style=\"font-size:0.8em;color:#666;margin:-4px 0 10px 0\">Palette = the colors. Speed = how fast the animation moves.</div>";
                 html += "<div style=\"display:flex;align-items:center;gap:8px;flex-wrap:wrap\">";
                 html += "<label style=\"font-weight:bold\">Gain:</label>";
                 html += "<select name=\"micGain\" style=\"padding:6px\">";
@@ -593,6 +594,27 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 if (cfg.vuInvert) html += " checked";
                 html += " style=\"width:18px;height:18px\">Invert</label>";
                 html += "</div>";
+                html += "<div style=\"font-size:0.8em;color:#666;margin:6px 0 0 0\">";
+                html += "Gain/Boost make the mic signal bigger (if nothing reacts, increase these). AGC auto-adjusts so quiet and loud music both look OK. Gate ignores tiny background noise. Silence turns the mic off after it stays quiet for a while. Invert flips the VU direction.</div>";
+                html += "<details style=\"margin-top:10px\"><summary style=\"cursor:pointer;font-weight:bold\">Advanced Audio</summary>";
+                html += "<div style=\"margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:center\">";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">AGC Min<input name=\"agcMin\" type=\"number\" min=\"20\" max=\"2000\" value=\"" + String(cfg.agcMin) + "\" style=\"width:90px;padding:6px\"></label>";
+                html += "<div style=\"grid-column:1 / -1;font-size:0.8em;color:#666;margin-top:-6px\">AGC Min = the minimum loudness the auto-gain will assume. Lower = more sensitive. Too low = more jitter/noise.</div>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">AGC Max<input name=\"agcMax\" type=\"number\" min=\"200\" max=\"65000\" value=\"" + String(cfg.agcMax) + "\" style=\"width:90px;padding:6px\"></label>";
+                html += "<div style=\"grid-column:1 / -1;font-size:0.8em;color:#666;margin-top:-6px\">AGC Max = the maximum loudness the auto-gain will expect. Lower = reacts more at normal volume. Too low = clips/always maxed.</div>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">AGC Attack<input name=\"agcAtk\" type=\"number\" min=\"1\" max=\"64\" value=\"" + String(cfg.agcAttack) + "\" style=\"width:90px;padding:6px\"></label>";
+                html += "<div style=\"grid-column:1 / -1;font-size:0.8em;color:#666;margin-top:-6px\">AGC Attack = how fast the auto-gain reacts when things suddenly get loud. Lower number = faster reaction.</div>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">AGC Decay<input name=\"agcDcy\" type=\"number\" min=\"2\" max=\"128\" value=\"" + String(cfg.agcDecay) + "\" style=\"width:90px;padding:6px\"></label>";
+                html += "<div style=\"grid-column:1 / -1;font-size:0.8em;color:#666;margin-top:-6px\">AGC Decay = how fast the auto-gain becomes sensitive again after it was loud. Lower number = becomes sensitive again sooner.</div>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Env Attack<input name=\"envAtk\" type=\"number\" min=\"1\" max=\"32\" value=\"" + String(cfg.envAttack) + "\" style=\"width:90px;padding:6px\"></label>";
+                html += "<div style=\"grid-column:1 / -1;font-size:0.8em;color:#666;margin-top:-6px\">Env Attack = how quickly the visuals jump up when sound gets louder. Lower = snappier.</div>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Env Decay<input name=\"envDcy\" type=\"number\" min=\"2\" max=\"128\" value=\"" + String(cfg.envDecay) + "\" style=\"width:90px;padding:6px\"></label>";
+                html += "<div style=\"grid-column:1 / -1;font-size:0.8em;color:#666;margin-top:-6px\">Env Decay = how quickly the visuals fall back down after a hit. Lower = more bouncy, higher = smoother.</div>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Beat Thresh<input name=\"beatThr\" type=\"number\" min=\"10\" max=\"250\" value=\"" + String(cfg.beatThreshold) + "\" style=\"width:90px;padding:6px\"></label>";
+                html += "<div style=\"grid-column:1 / -1;font-size:0.8em;color:#666;margin-top:-6px\">Beat Thresh = how loud it must be to count as a beat. Lower = more beats. Higher = only big hits.</div>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Beat Hold<input name=\"beatHld\" type=\"number\" min=\"1\" max=\"60\" value=\"" + String(cfg.beatHold) + "\" style=\"width:90px;padding:6px\"></label>";
+                html += "<div style=\"grid-column:1 / -1;font-size:0.8em;color:#666;margin-top:-6px\">Beat Hold = how long (in frames) the beat effect stays on. Higher = longer flash.</div>";
+                html += "</div></details>";
                 html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='margin-top:10px;padding:8px 16px'>&#x1F4BE; Save Audio Settings</button>";
                 break;
             case 8: // Game presets + controls
@@ -1182,6 +1204,15 @@ static void handleSettingsPost()
         cfg.vuSilenceMs = (uint16_t)server.arg("silenceMs").toInt();
         if (cfg.vuSilenceMs > 2000) cfg.vuSilenceMs = 2000;
     }
+
+    if (server.hasArg("agcMin")) cfg.agcMin = (uint16_t)server.arg("agcMin").toInt();
+    if (server.hasArg("agcMax")) cfg.agcMax = (uint16_t)server.arg("agcMax").toInt();
+    if (server.hasArg("agcAtk")) cfg.agcAttack = (uint8_t)server.arg("agcAtk").toInt();
+    if (server.hasArg("agcDcy")) cfg.agcDecay = (uint8_t)server.arg("agcDcy").toInt();
+    if (server.hasArg("envAtk")) cfg.envAttack = (uint8_t)server.arg("envAtk").toInt();
+    if (server.hasArg("envDcy")) cfg.envDecay = (uint8_t)server.arg("envDcy").toInt();
+    if (server.hasArg("beatThr")) cfg.beatThreshold = (uint8_t)server.arg("beatThr").toInt();
+    if (server.hasArg("beatHld")) cfg.beatHold = (uint8_t)server.arg("beatHld").toInt();
     
     // Checkbox settings (true if present in form)
     cfg.vuInvert = server.hasArg("micInvert");
@@ -1512,6 +1543,14 @@ static void handleCardsConfigPost()
         cfg.vuSilenceMs = (uint16_t)server.arg("silenceMs").toInt();
         if (cfg.vuSilenceMs > 2000) cfg.vuSilenceMs = 2000;
     }
+    if (server.hasArg("agcMin")) cfg.agcMin = (uint16_t)server.arg("agcMin").toInt();
+    if (server.hasArg("agcMax")) cfg.agcMax = (uint16_t)server.arg("agcMax").toInt();
+    if (server.hasArg("agcAtk")) cfg.agcAttack = (uint8_t)server.arg("agcAtk").toInt();
+    if (server.hasArg("agcDcy")) cfg.agcDecay = (uint8_t)server.arg("agcDcy").toInt();
+    if (server.hasArg("envAtk")) cfg.envAttack = (uint8_t)server.arg("envAtk").toInt();
+    if (server.hasArg("envDcy")) cfg.envDecay = (uint8_t)server.arg("envDcy").toInt();
+    if (server.hasArg("beatThr")) cfg.beatThreshold = (uint8_t)server.arg("beatThr").toInt();
+    if (server.hasArg("beatHld")) cfg.beatHold = (uint8_t)server.arg("beatHld").toInt();
     cfg.vuInvert = server.hasArg("micInvert");
     cfg.agcEnabled = server.hasArg("agcOn");
     

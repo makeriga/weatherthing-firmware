@@ -1636,6 +1636,16 @@ static void sampleAudio(uint32_t now)
     // Dynamic noise floor based on vuNoiseGate setting (0-255 -> 5-150)
     // Lower baseline for better sensitivity with quiet audio
     uint16_t noiseFloor = 5 + (cfg.vuNoiseGate / 2);
+    g_agcMin = cfg.agcMin;
+    uint16_t agcMax = cfg.agcMax;
+    uint8_t agcAttack = cfg.agcAttack ? cfg.agcAttack : 1;
+    uint8_t agcDecayBase = cfg.agcDecay;
+    if (agcDecayBase < 2) agcDecayBase = 2;
+
+    uint16_t agcFloor = g_agcMin;
+    uint16_t minFloor = noiseFloor + 10;
+    if (agcFloor < minFloor) agcFloor = minFloor;
+    if (agcMax < agcFloor) agcMax = agcFloor;
     
     // Unified adaptive gain control (AGC)
     if (cfg.agcEnabled) {
@@ -1644,25 +1654,23 @@ static void sampleAudio(uint32_t now)
             g_agcLastLoud = now;
         }
         
-        // Fast attack
+        // Attack (lower = faster)
         if (amp > g_agcPeak) {
-            g_agcPeak = (g_agcPeak + amp) / 2;  // Very fast rise
+            g_agcPeak = (uint16_t)(((uint32_t)g_agcPeak * (agcAttack - 1) + amp) / agcAttack);
         } else {
             // Adaptive decay - faster when no loud audio for a while
             uint32_t quietTime = now - g_agcLastLoud;
+            uint8_t agcDecay = agcDecayBase;
             if (quietTime > 3000) {
-                // Very quiet - decay faster to increase sensitivity
-                g_agcPeak = (g_agcPeak * 15 + g_agcMin) / 16;
+                agcDecay = (agcDecayBase > 3) ? (agcDecayBase / 2) : 2;
             } else if (quietTime > 1000) {
-                g_agcPeak = (g_agcPeak * 31 + g_agcMin) / 32;
-            } else {
-                g_agcPeak = (g_agcPeak * 63 + g_agcMin) / 64;
+                agcDecay = (agcDecayBase > 3) ? (uint8_t)((agcDecayBase * 2) / 3) : 2;
             }
+            g_agcPeak = (uint16_t)(((uint32_t)g_agcPeak * (agcDecay - 1) + agcFloor) / agcDecay);
         }
         
-        // Dynamic floor adjustment
-        if (g_agcPeak < g_agcMin) g_agcPeak = g_agcMin;
-        if (g_agcPeak > 8000) g_agcPeak = 8000;
+        if (g_agcPeak < agcFloor) g_agcPeak = agcFloor;
+        if (g_agcPeak > agcMax) g_agcPeak = agcMax;
     } else {
         g_agcPeak = 1000;  // Fixed reference when AGC disabled
     }
@@ -1689,19 +1697,24 @@ static void sampleAudio(uint32_t now)
     }
     
     // Normalize using AGC peak
-    uint16_t normalized = (amp * 255) / (g_agcPeak - noiseFloor + 1);
+    uint32_t denom = 1;
+    if (g_agcPeak > noiseFloor) denom = (uint32_t)g_agcPeak - (uint32_t)noiseFloor + 1;
+    uint16_t normalized = (uint16_t)(((uint32_t)amp * 255) / denom);
     if (normalized > 255) normalized = 255;
 
     uint8_t target = (uint8_t)normalized;
+    uint8_t envAttack = cfg.envAttack ? cfg.envAttack : 1;
+    uint8_t envDecay = cfg.envDecay;
+    if (envDecay < 2) envDecay = 2;
 
     if (target > g_audioLevel)
     {
-        g_audioLevel = (g_audioLevel * 3 + target) / 4 + 1; // quick attack
+        g_audioLevel = (uint8_t)(((uint16_t)g_audioLevel * (envAttack - 1) + target) / envAttack);
         if (g_audioLevel > 255) g_audioLevel = 255;
     }
     else
     {
-        g_audioLevel = (g_audioLevel * 31) / 32; // smooth decay
+        g_audioLevel = (uint8_t)(((uint16_t)g_audioLevel * (envDecay - 1)) / envDecay);
     }
 }
 
@@ -5977,8 +5990,8 @@ static void weather_render()
         
         // Beat detection using g_audioLevel (0-255) from sampleAudio
         // Trigger beat when audio crosses threshold and previous beat has decayed
-        if (g_audioLevel >= 100 && g_wxAudioBeat == 0) {
-            g_wxAudioBeat = 25;  // Beat pulse duration (frames)
+        if (g_audioLevel >= cfg.beatThreshold && g_wxAudioBeat == 0) {
+            g_wxAudioBeat = cfg.beatHold;
         }
         if (g_wxAudioBeat > 0) g_wxAudioBeat--;
         
@@ -6200,9 +6213,24 @@ static void audio_sample()
     // Use DMA-based peak-to-peak (20kHz continuous sampling)
     uint16_t amplitude = wt_mic_peak_to_peak();
     g_audioAmplitude = amplitude;
+    Settings& cfg = settings_get();
+
+    // Apply mic gain/boost so this path matches sampleAudio() AGC tracking
+    float gainVal = (float)cfg.micGain;
+    float gainMult = powf(3.0f, gainVal * 0.6f);
+    if (cfg.micBoost > 0) {
+        float boostMult = powf(2.0f, (float)cfg.micBoost * 0.66f);
+        gainMult *= boostMult;
+    }
+    amplitude = (uint16_t)((float)amplitude * gainMult);
+    if (amplitude > 65000) amplitude = 65000;
+    g_audioAmplitude = amplitude;
+
+    uint16_t noiseFloor = 5 + (cfg.vuNoiseGate / 2);
+    g_vuNoiseFloor = noiseFloor;
     
     // Noise gate - only suppress after sustained silence
-    if (amplitude < g_vuNoiseFloor)
+    if (amplitude < noiseFloor)
     {
         g_vuSilenceFrames++;
         if (g_vuSilenceFrames > 30) amplitude = 0;  // Longer threshold
@@ -6217,12 +6245,12 @@ static void audio_sample()
     
     // Normalize to 0-7 with safe division using shared AGC
     uint16_t range = g_agcPeak;
-    if (range < g_vuNoiseFloor + 50) range = g_vuNoiseFloor + 50;
+    if (range < noiseFloor + 50) range = noiseFloor + 50;
     
     uint8_t h = 0;
-    if (amplitude > g_vuNoiseFloor) {
-        uint32_t scaled = (uint32_t)(amplitude - g_vuNoiseFloor) * 8;
-        h = scaled / (range - g_vuNoiseFloor + 1);
+    if (amplitude > noiseFloor) {
+        uint32_t scaled = (uint32_t)(amplitude - noiseFloor) * 8;
+        h = scaled / (range - noiseFloor + 1);
     }
     if (h > 7) h = 7;
     
@@ -6230,7 +6258,7 @@ static void audio_sample()
     g_audioHeightRaw = h;
 
     // Invert if requested (display only)
-    if (settings_get().vuInvert) {
+    if (cfg.vuInvert) {
         h = 7 - h;
     }
 
@@ -6240,8 +6268,8 @@ static void audio_sample()
     g_audioHistory[g_audioHistoryIdx] = h;
     g_audioHistoryIdx = (g_audioHistoryIdx + 1) % 20;
     
-    // Beat detection uses RAW value so beats trigger on loud, not silence
-    if (g_audioHeightRaw >= 4 && g_audioBeat == 0) g_audioBeat = 12;
+    // Beat detection uses audio envelope so it stays consistent across visualizations
+    if (g_audioLevel >= cfg.beatThreshold && g_audioBeat == 0) g_audioBeat = cfg.beatHold;
     if (g_audioBeat > 0) g_audioBeat--;
 }
 

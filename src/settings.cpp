@@ -51,14 +51,21 @@ void settings_begin()
 {
     // Set defaults
     g_settings.animSpeed = 5;
-    g_settings.vuPalette = PALETTE_CLASSIC;
-    g_settings.vuSensitivity = 5;
+    g_settings.vuPalette = PALETTE_PARTY;
     g_settings.vuNoiseGate = 50;
-    g_settings.micGain = 5;  // Normal gain
-    g_settings.micBoost = 5; // Medium extra boost
+    g_settings.micGain = 3;  // More responsive at moderate volume
+    g_settings.micBoost = 0; // Off by default
     g_settings.vuInvert = false; // Normal direction by default
     g_settings.agcEnabled = true; // AGC enabled by default
     g_settings.vuSilenceMs = 500; // 500ms silence detection threshold
+    g_settings.agcMin = 152;
+    g_settings.agcMax = 11926;
+    g_settings.agcAttack = 2;
+    g_settings.agcDecay = 32;
+    g_settings.envAttack = 2;
+    g_settings.envDecay = 16;
+    g_settings.beatThreshold = 77;
+    g_settings.beatHold = 15;
     g_settings.weatherPreset = 0;
     g_settings.weatherProvider = 0;
     g_settings.tempPalette = 0;  // Default temperature colors
@@ -135,14 +142,21 @@ void settings_begin()
     if (g_prefs.begin("wtsettings", true))
     {
         g_settings.animSpeed = g_prefs.getUChar("animSpeed", 5);
-        g_settings.vuPalette = g_prefs.getUChar("vuPalette", 0);
-        g_settings.vuSensitivity = g_prefs.getUChar("vuSens", 5);
+        g_settings.vuPalette = g_prefs.getUChar("vuPalette", PALETTE_PARTY);
         g_settings.vuNoiseGate = g_prefs.getUChar("vuNoise", 50);
-        g_settings.micGain = g_prefs.getUChar("micGain", 5);
-        g_settings.micBoost = g_prefs.getUChar("micBoost", 5);
+        g_settings.micGain = g_prefs.getUChar("micGain", 3);
+        g_settings.micBoost = g_prefs.getUChar("micBoost", 0);
         g_settings.vuInvert = g_prefs.getBool("vuInv", false);
         g_settings.agcEnabled = g_prefs.getBool("agcOn", true);
         g_settings.vuSilenceMs = g_prefs.getUShort("vuSilMs", 500);
+        g_settings.agcMin = g_prefs.getUShort("agcMin", 152);
+        g_settings.agcMax = g_prefs.getUShort("agcMax", 11926);
+        g_settings.agcAttack = g_prefs.getUChar("agcAtk", 2);
+        g_settings.agcDecay = g_prefs.getUChar("agcDcy", 32);
+        g_settings.envAttack = g_prefs.getUChar("envAtk", 2);
+        g_settings.envDecay = g_prefs.getUChar("envDcy", 16);
+        g_settings.beatThreshold = g_prefs.getUChar("beatThr", 77);
+        g_settings.beatHold = g_prefs.getUChar("beatHld", 15);
         g_settings.weatherPreset = g_prefs.getUChar("wxPreset", 0);
         g_settings.weatherProvider = g_prefs.getUChar("wxProv", 0);
         g_settings.tempPalette = g_prefs.getUChar("tempPal", 0);
@@ -269,10 +283,26 @@ void settings_begin()
     if (g_settings.rssSpeed < 1) g_settings.rssSpeed = 1;
     if (g_settings.rssSpeed > 10) g_settings.rssSpeed = 10;
     if (g_settings.vuPalette >= PALETTE_COUNT) g_settings.vuPalette = 0;
-    if (g_settings.vuSensitivity < 1) g_settings.vuSensitivity = 1;
-    if (g_settings.vuSensitivity > 10) g_settings.vuSensitivity = 10;
     if (g_settings.micGain < 1) g_settings.micGain = 1;
     if (g_settings.micGain > 10) g_settings.micGain = 10;
+    if (g_settings.micBoost > 10) g_settings.micBoost = 10;
+    if (g_settings.vuSilenceMs > 2000) g_settings.vuSilenceMs = 2000;
+    if (g_settings.agcMin < 20) g_settings.agcMin = 20;
+    if (g_settings.agcMin > 2000) g_settings.agcMin = 2000;
+    if (g_settings.agcMax < g_settings.agcMin) g_settings.agcMax = g_settings.agcMin;
+    if (g_settings.agcMax > 65000) g_settings.agcMax = 65000;
+    if (g_settings.agcAttack < 1) g_settings.agcAttack = 1;
+    if (g_settings.agcAttack > 64) g_settings.agcAttack = 64;
+    if (g_settings.agcDecay < 2) g_settings.agcDecay = 2;
+    if (g_settings.agcDecay > 128) g_settings.agcDecay = 128;
+    if (g_settings.envAttack < 1) g_settings.envAttack = 1;
+    if (g_settings.envAttack > 32) g_settings.envAttack = 32;
+    if (g_settings.envDecay < 2) g_settings.envDecay = 2;
+    if (g_settings.envDecay > 128) g_settings.envDecay = 128;
+    if (g_settings.beatThreshold < 10) g_settings.beatThreshold = 10;
+    if (g_settings.beatThreshold > 250) g_settings.beatThreshold = 250;
+    if (g_settings.beatHold < 1) g_settings.beatHold = 1;
+    if (g_settings.beatHold > 60) g_settings.beatHold = 60;
     if (g_settings.tzOffset < -12) g_settings.tzOffset = -12;
     if (g_settings.tzOffset > 14) g_settings.tzOffset = 14;
     if (g_settings.btcUpdateMins < 1) g_settings.btcUpdateMins = 1;
@@ -304,13 +334,20 @@ void settings_save()
     {
         g_prefs.putUChar("animSpeed", g_settings.animSpeed);
         g_prefs.putUChar("vuPalette", g_settings.vuPalette);
-        g_prefs.putUChar("vuSens", g_settings.vuSensitivity);
         g_prefs.putUChar("vuNoise", g_settings.vuNoiseGate);
         g_prefs.putUChar("micGain", g_settings.micGain);
         g_prefs.putBool("vuInv", g_settings.vuInvert);
         g_prefs.putUChar("micBoost", g_settings.micBoost);
         g_prefs.putBool("agcOn", g_settings.agcEnabled);
         g_prefs.putUShort("vuSilMs", g_settings.vuSilenceMs);
+        g_prefs.putUShort("agcMin", g_settings.agcMin);
+        g_prefs.putUShort("agcMax", g_settings.agcMax);
+        g_prefs.putUChar("agcAtk", g_settings.agcAttack);
+        g_prefs.putUChar("agcDcy", g_settings.agcDecay);
+        g_prefs.putUChar("envAtk", g_settings.envAttack);
+        g_prefs.putUChar("envDcy", g_settings.envDecay);
+        g_prefs.putUChar("beatThr", g_settings.beatThreshold);
+        g_prefs.putUChar("beatHld", g_settings.beatHold);
         g_prefs.putUChar("wxPreset", g_settings.weatherPreset);
         g_prefs.putUChar("wxProv", g_settings.weatherProvider);
         g_prefs.putUChar("tempPal", g_settings.tempPalette);
