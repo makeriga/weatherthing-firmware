@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "d035efff169a9d655f3f7732ea74dd24b5668a90",
+      "sha_short": "d035eff",
+      "commit_message": "actions fix for gh pages dirty tree",
+      "commit_date": "2025-12-14 17:50:01 +0200",
+      "build_date": "2025-12-14T15:51:11Z",
+      "branch": "main",
+      "path": "d035eff"
+    },
+    {
       "sha": "2d0fdd37a7ead9fb0ec91bd2b260ac6382393c9a",
       "sha_short": "2d0fdd3",
       "commit_message": "audio responsiveness improvements, CI build workflow/updater",
