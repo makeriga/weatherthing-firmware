@@ -218,9 +218,10 @@ static int16_t g_vuSamples[VU_SAMPLES];
 static uint8_t g_vuBars[WT_MATRIX_WIDTH];
 static uint8_t g_vuPeaks[WT_MATRIX_WIDTH];
 static uint8_t g_vuPeakHold[WT_MATRIX_WIDTH];
-static uint16_t g_vuNoiseFloor = 250;  // High noise gate for modified circuit
-static uint16_t g_vuPeakLevel = 0;     // AGC peak tracker
+static uint16_t g_vuNoiseFloor = 10;   // Low noise floor for DMA sampling
+static uint16_t g_vuPeakLevel = 100;   // AGC peak tracker
 static uint8_t g_vuSilenceFrames = 0;
+static uint8_t g_audioHeightRaw = 0;   // Pre-invert height for beat detection
 
 // Ticker card state (BTC and Stock)
 static uint32_t g_tickerLastFetch = 0;
@@ -1609,16 +1610,8 @@ static void sampleAudio(uint32_t now)
 
     Settings& cfg = settings_get();
     
-    int16_t minVal = INT16_MAX;
-    int16_t maxVal = INT16_MIN;
-    for (uint8_t i = 0; i < 32; ++i)
-    {
-        int16_t raw = (int16_t)wt_mic_read_raw();
-        if (raw < minVal) minVal = raw;
-        if (raw > maxVal) maxVal = raw;
-    }
-
-    uint16_t amp = maxVal - minVal;
+    // Use DMA-based peak-to-peak (20kHz continuous sampling)
+    uint16_t amp = wt_mic_peak_to_peak();
     
     // Apply mic gain (1-10) with strong exponential curve for wide range
     // Gain 1 = ~2x, Gain 5 = ~32x, Gain 10 = ~500x
@@ -6103,42 +6096,45 @@ static uint8_t g_audioBeat = 0;        // Beat detection pulse
 
 static void audio_sample()
 {
-    // Sample audio and compute metrics
-    int16_t minS = 2048, maxS = 2048;
-    
-    for (uint8_t i = 0; i < VU_SAMPLES; ++i)
-    {
-        int16_t raw = (int16_t)wt_mic_read_raw();
-        if (raw < minS) minS = raw;
-        if (raw > maxS) maxS = raw;
-    }
-    
-    uint16_t amplitude = maxS - minS;
+    // Use DMA-based peak-to-peak (20kHz continuous sampling)
+    uint16_t amplitude = wt_mic_peak_to_peak();
     g_audioAmplitude = amplitude;
     
-    // Noise gate
+    // Noise gate - only suppress after sustained silence
     if (amplitude < g_vuNoiseFloor)
     {
         g_vuSilenceFrames++;
-        if (g_vuSilenceFrames > 5) amplitude = 0;
+        if (g_vuSilenceFrames > 30) amplitude = 0;  // Longer threshold
     }
     else
     {
         g_vuSilenceFrames = 0;
     }
     
-    // AGC
-    if (amplitude > g_vuPeakLevel) g_vuPeakLevel = amplitude;
-    else g_vuPeakLevel = (g_vuPeakLevel * 63) / 64;
+    // AGC - fast attack, moderate decay
+    if (amplitude > g_vuPeakLevel) {
+        g_vuPeakLevel = amplitude;  // Instant attack
+    } else {
+        g_vuPeakLevel = (g_vuPeakLevel * 31 + 50) / 32;  // ~3% decay per frame
+    }
+    if (g_vuPeakLevel < 50) g_vuPeakLevel = 50;
+    if (g_vuPeakLevel > 4000) g_vuPeakLevel = 4000;
     
-    // Normalize to 0-7
-    uint16_t range = (g_vuPeakLevel < 300) ? 300 : g_vuPeakLevel;
+    // Normalize to 0-7 with safe division
+    uint16_t range = g_vuPeakLevel;
+    if (range < g_vuNoiseFloor + 50) range = g_vuNoiseFloor + 50;
+    
     uint8_t h = 0;
-    if (amplitude > g_vuNoiseFloor)
-        h = (amplitude - g_vuNoiseFloor) * 8 / (range - g_vuNoiseFloor);
+    if (amplitude > g_vuNoiseFloor) {
+        uint32_t scaled = (uint32_t)(amplitude - g_vuNoiseFloor) * 8;
+        h = scaled / (range - g_vuNoiseFloor + 1);
+    }
     if (h > 7) h = 7;
+    
+    // Store raw height BEFORE invert for beat detection
+    g_audioHeightRaw = h;
 
-    // Invert if requested
+    // Invert if requested (display only)
     if (settings_get().vuInvert) {
         h = 7 - h;
     }
@@ -6149,8 +6145,8 @@ static void audio_sample()
     g_audioHistory[g_audioHistoryIdx] = h;
     g_audioHistoryIdx = (g_audioHistoryIdx + 1) % 20;
     
-    // Simple beat detection
-    if (h >= 5 && g_audioBeat == 0) g_audioBeat = 12; // Longer beat pulse
+    // Beat detection uses RAW value so beats trigger on loud, not silence
+    if (g_audioHeightRaw >= 4 && g_audioBeat == 0) g_audioBeat = 12;
     if (g_audioBeat > 0) g_audioBeat--;
 }
 
@@ -6161,9 +6157,10 @@ static void vu_setup()
     memset(g_vuPeaks, 0, sizeof(g_vuPeaks));
     memset(g_vuPeakHold, 0, sizeof(g_vuPeakHold));
     memset(g_audioHistory, 0, sizeof(g_audioHistory));
-    g_vuPeakLevel = 0;
+    g_vuPeakLevel = 100;  // Start low for sensitivity
     g_vuSilenceFrames = 0;
     g_audioHistoryIdx = 0;
+    g_audioHeightRaw = 0;
 }
 
 static void vu_update(uint32_t now, uint32_t dt)

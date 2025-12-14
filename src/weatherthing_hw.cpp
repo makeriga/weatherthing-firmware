@@ -5,6 +5,10 @@
 #include "soc/gpio_sig_map.h"
 #include <string.h>
 
+// ADC Continuous mode for high-speed mic sampling
+#include "esp_adc/adc_continuous.h"
+#include "esp_log.h"
+
 // ESP32-C3 GPIO matrix fix - after RMT transmission, force GPIO low
 static void fixGpioMatrix(uint8_t pin) {
     // ESP-IDF 5.x uses esp_rom_gpio_connect_out_signal instead of gpio_matrix_out
@@ -67,6 +71,135 @@ static uint32_t g_micLevel = 0;
 static uint32_t g_lightLevel = 0;
 static uint8_t g_brightness = 32;
 
+// ADC Continuous mode for microphone
+static const char* TAG = "WT_MIC";
+static adc_continuous_handle_t g_adcHandle = NULL;
+static const uint32_t ADC_SAMPLE_FREQ_HZ = 20000;  // 20kHz sample rate
+static const uint32_t ADC_FRAME_SIZE = 256;        // Samples per DMA frame
+static const uint32_t ADC_BUFFER_SIZE = 2048;      // Total DMA buffer (increased)
+
+// Ring buffer for processed samples
+static const uint16_t MIC_RING_SIZE = 512;
+static uint16_t g_micRing[MIC_RING_SIZE];
+static volatile uint16_t g_micRingHead = 0;
+static volatile uint16_t g_micRingTail = 0;
+static volatile uint16_t g_micLatestSample = 2048;
+static volatile uint16_t g_micPeakToPeak = 0;      // Peak-to-peak in recent window
+static volatile uint16_t g_micRunningMin = 2048;   // Running min over window
+static volatile uint16_t g_micRunningMax = 2048;   // Running max over window
+static volatile bool g_adcRunning = false;
+
+// ADC continuous mode callback - called from ISR context when DMA buffer ready
+static bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
+{
+    return true;  // Signal task to process (we poll instead)
+}
+
+// Initialize ADC continuous mode for microphone
+static void wt_mic_adc_init()
+{
+    // ESP32-C3 GPIO4 = ADC1 Channel 4
+    adc_continuous_handle_cfg_t adc_config = {
+        .max_store_buf_size = ADC_BUFFER_SIZE,
+        .conv_frame_size = ADC_FRAME_SIZE,
+    };
+    
+    esp_err_t ret = adc_continuous_new_handle(&adc_config, &g_adcHandle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create ADC handle: %d", ret);
+        return;
+    }
+    
+    // Configure the ADC pattern for our mic channel
+    adc_digi_pattern_config_t adc_pattern = {
+        .atten = ADC_ATTEN_DB_12,      // Full range 0-3.3V (renamed from DB_11 in IDF 5.x)
+        .channel = ADC_CHANNEL_4,       // GPIO4 on ESP32-C3
+        .unit = ADC_UNIT_1,
+        .bit_width = ADC_BITWIDTH_12,
+    };
+    
+    adc_continuous_config_t dig_cfg = {
+        .pattern_num = 1,
+        .adc_pattern = &adc_pattern,
+        .sample_freq_hz = ADC_SAMPLE_FREQ_HZ,
+        .conv_mode = ADC_CONV_SINGLE_UNIT_1,
+        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,  // ESP32-C3 requires TYPE2
+    };
+    
+    ret = adc_continuous_config(g_adcHandle, &dig_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure ADC: %d", ret);
+        adc_continuous_deinit(g_adcHandle);
+        g_adcHandle = NULL;
+        return;
+    }
+    
+    // Register callback (optional, we use polling)
+    adc_continuous_evt_cbs_t cbs = {
+        .on_conv_done = adc_conv_done_cb,
+    };
+    adc_continuous_register_event_callbacks(g_adcHandle, &cbs, NULL);
+    
+    // Start continuous conversion
+    ret = adc_continuous_start(g_adcHandle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start ADC: %d", ret);
+        adc_continuous_deinit(g_adcHandle);
+        g_adcHandle = NULL;
+        return;
+    }
+    
+    g_adcRunning = true;
+    ESP_LOGI(TAG, "ADC continuous mode started at %lu Hz", ADC_SAMPLE_FREQ_HZ);
+}
+
+// Process samples from ADC DMA buffer - call this periodically
+static void wt_mic_process_dma()
+{
+    if (!g_adcRunning || g_adcHandle == NULL) return;
+    
+    uint8_t result[ADC_FRAME_SIZE * SOC_ADC_DIGI_RESULT_BYTES];
+    uint32_t ret_num = 0;
+    
+    // Read all available data from DMA
+    esp_err_t ret = adc_continuous_read(g_adcHandle, result, sizeof(result), &ret_num, 0);
+    if (ret != ESP_OK || ret_num == 0) return;
+    
+    uint16_t frameMin = 4095, frameMax = 0;
+    uint32_t numSamples = ret_num / SOC_ADC_DIGI_RESULT_BYTES;
+    
+    for (uint32_t i = 0; i < numSamples; i++) {
+        // ESP32-C3 TYPE2 format: 12-bit data in bits 0-11
+        uint16_t val = result[i * SOC_ADC_DIGI_RESULT_BYTES] | 
+                       ((result[i * SOC_ADC_DIGI_RESULT_BYTES + 1] & 0x0F) << 8);
+        
+        // Track min/max for this frame
+        if (val < frameMin) frameMin = val;
+        if (val > frameMax) frameMax = val;
+        
+        // Store latest sample
+        g_micLatestSample = val;
+        
+        // Store in ring buffer
+        uint16_t nextHead = (g_micRingHead + 1) % MIC_RING_SIZE;
+        if (nextHead != g_micRingTail) {
+            g_micRing[g_micRingHead] = val;
+            g_micRingHead = nextHead;
+        }
+    }
+    
+    // Direct frame peak-to-peak - no slow envelope tracking
+    uint16_t framePP = (frameMax > frameMin) ? (frameMax - frameMin) : 0;
+    
+    // Fast attack, moderate decay for responsive feel
+    if (framePP > g_micPeakToPeak) {
+        g_micPeakToPeak = framePP;  // Instant attack
+    } else {
+        // Decay ~6% per frame for snappy response
+        g_micPeakToPeak = (g_micPeakToPeak * 15) / 16;
+    }
+}
+
 static bool wt_read_button(WtButtonState &button)
 {
     bool raw = digitalRead(button.pin) == (button.activeLow ? LOW : HIGH);
@@ -100,6 +233,9 @@ void wt_hw_begin()
     g_button1.lastStable = g_button1.stable;
     g_button2.stable = wt_read_button(g_button2);
     g_button2.lastStable = g_button2.stable;
+    
+    // Initialize ADC continuous mode for microphone
+    wt_mic_adc_init();
 }
 
 bool wt_button1_is_down()
@@ -227,7 +363,43 @@ bool wt_cap_touch_active()
 
 uint16_t wt_mic_read_raw()
 {
+    // Process any pending DMA data first
+    wt_mic_process_dma();
+    
+    // Return latest sample from DMA, fallback to analogRead if not running
+    if (g_adcRunning) {
+        return g_micLatestSample;
+    }
     return analogRead(WT_MIC_PIN);
+}
+
+// Get peak-to-peak amplitude from recent DMA samples (more accurate than single reads)
+uint16_t wt_mic_peak_to_peak()
+{
+    wt_mic_process_dma();
+    return g_micPeakToPeak;
+}
+
+// Get number of samples available in ring buffer
+uint16_t wt_mic_samples_available()
+{
+    wt_mic_process_dma();
+    if (g_micRingHead >= g_micRingTail) {
+        return g_micRingHead - g_micRingTail;
+    }
+    return MIC_RING_SIZE - g_micRingTail + g_micRingHead;
+}
+
+// Read samples from ring buffer (returns actual count read)
+uint16_t wt_mic_read_samples(uint16_t* buffer, uint16_t maxCount)
+{
+    wt_mic_process_dma();
+    uint16_t count = 0;
+    while (count < maxCount && g_micRingTail != g_micRingHead) {
+        buffer[count++] = g_micRing[g_micRingTail];
+        g_micRingTail = (g_micRingTail + 1) % MIC_RING_SIZE;
+    }
+    return count;
 }
 
 uint16_t wt_light_read_raw()

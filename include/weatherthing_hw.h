@@ -44,6 +44,9 @@ bool wt_button1_is_down();
 bool wt_button2_is_down();
 bool wt_cap_touch_active();
 uint16_t wt_mic_read_raw();
+uint16_t wt_mic_peak_to_peak();        // DMA-based peak-to-peak amplitude
+uint16_t wt_mic_samples_available();   // Samples in ring buffer
+uint16_t wt_mic_read_samples(uint16_t* buffer, uint16_t maxCount);  // Read from ring buffer
 uint16_t wt_mic_level();
 uint16_t wt_light_read_raw();
 uint16_t wt_light_level();
