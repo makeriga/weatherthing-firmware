@@ -9,6 +9,7 @@
 #include "cards.h"
 #include "sprites.h"
 #include "settings.h"
+#include "weatherthing_hw.h"
 #include "mqtt.h"
 
 enum NetState
@@ -56,6 +57,19 @@ static void sendChunk() {
     }
 }
 
+static bool parseHexColor(const String& s, uint32_t* out)
+{
+    const char* p = s.c_str();
+    if (!p || !out) return false;
+    if (p[0] == '#') p++;
+    if (strlen(p) != 6) return false;
+    uint8_t r = (uint8_t)strtoul(String(p).substring(0, 2).c_str(), nullptr, 16);
+    uint8_t g = (uint8_t)strtoul(String(p).substring(2, 4).c_str(), nullptr, 16);
+    uint8_t b = (uint8_t)strtoul(String(p).substring(4, 6).c_str(), nullptr, 16);
+    *out = wt_color(r, g, b);
+    return true;
+}
+
 static void handleRoot()
 {
     Settings& cfg = settings_get();
@@ -64,6 +78,12 @@ static void handleRoot()
     
     String& html = g_html;
     html.reserve(4000);
+
+    auto colorHex = [&](uint32_t c) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "#%02X%02X%02X", (unsigned)((c >> 16) & 0xFF), (unsigned)((c >> 8) & 0xFF), (unsigned)(c & 0xFF));
+        return String(buf);
+    };
     
     html += R"(<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -321,6 +341,16 @@ function showFirstPreset(btn,card){showCard(card,0,btn);}
                 html += "<option value=\"24\""; if (cfg.forecastHours == 24) html += " selected"; html += ">24h</option>";
                 html += "<option value=\"48\""; if (cfg.forecastHours == 48) html += " selected"; html += ">48h</option>";
                 html += "</select></div>";
+                html += "<div style=\"padding:10px 0;border-top:1px solid #ddd;margin-top:8px\">";
+                html += "<details><summary style=\"cursor:pointer;font-weight:bold\">Timeline Colors</summary>";
+                html += "<div style=\"padding:10px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:center\">";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Sunny<input type=\"color\" name=\"wxTlSun\" value=\"" + colorHex(cfg.wxTimelineSunny) + "\" style=\"width:54px;height:36px;padding:0;border:2px solid #000\"></label>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Cloudy<input type=\"color\" name=\"wxTlCld\" value=\"" + colorHex(cfg.wxTimelineCloudy) + "\" style=\"width:54px;height:36px;padding:0;border:2px solid #000\"></label>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Rain<input type=\"color\" name=\"wxTlRai\" value=\"" + colorHex(cfg.wxTimelineRain) + "\" style=\"width:54px;height:36px;padding:0;border:2px solid #000\"></label>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Storm<input type=\"color\" name=\"wxTlSto\" value=\"" + colorHex(cfg.wxTimelineStorm) + "\" style=\"width:54px;height:36px;padding:0;border:2px solid #000\"></label>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Snow<input type=\"color\" name=\"wxTlSno\" value=\"" + colorHex(cfg.wxTimelineSnow) + "\" style=\"width:54px;height:36px;padding:0;border:2px solid #000\"></label>";
+                html += "<label style=\"display:flex;justify-content:space-between;align-items:center;gap:10px\">Wind<input type=\"color\" name=\"wxTlWin\" value=\"" + colorHex(cfg.wxTimelineWind) + "\" style=\"width:54px;height:36px;padding:0;border:2px solid #000\"></label>";
+                html += "</div></details></div>";
                 // Map settings
                 html += "<div style=\"padding:10px 0;border-top:1px solid #ddd;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap;align-items:center\">";
                 html += "<label>&#x1F5FA; Map Zoom:</label><select name=\"mapZoom\" style=\"padding:6px\">";
@@ -1454,6 +1484,31 @@ static void handleCardsConfigPost()
     if (server.hasArg("mapStyle")) {
         uint8_t s = (uint8_t)server.arg("mapStyle").toInt();
         if (s <= 2) cfg.mapStyle = s;
+    }
+
+    if (server.hasArg("wxTlSun")) {
+        uint32_t c;
+        if (parseHexColor(server.arg("wxTlSun"), &c)) cfg.wxTimelineSunny = c;
+    }
+    if (server.hasArg("wxTlCld")) {
+        uint32_t c;
+        if (parseHexColor(server.arg("wxTlCld"), &c)) cfg.wxTimelineCloudy = c;
+    }
+    if (server.hasArg("wxTlRai")) {
+        uint32_t c;
+        if (parseHexColor(server.arg("wxTlRai"), &c)) cfg.wxTimelineRain = c;
+    }
+    if (server.hasArg("wxTlSto")) {
+        uint32_t c;
+        if (parseHexColor(server.arg("wxTlSto"), &c)) cfg.wxTimelineStorm = c;
+    }
+    if (server.hasArg("wxTlSno")) {
+        uint32_t c;
+        if (parseHexColor(server.arg("wxTlSno"), &c)) cfg.wxTimelineSnow = c;
+    }
+    if (server.hasArg("wxTlWin")) {
+        uint32_t c;
+        if (parseHexColor(server.arg("wxTlWin"), &c)) cfg.wxTimelineWind = c;
     }
     
     // 6. Clock settings

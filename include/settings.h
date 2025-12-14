@@ -65,6 +65,12 @@ struct Settings
     
     // Timeline settings
     uint8_t forecastHours;   // 12, 24, or 48 hours forecast
+    uint32_t wxTimelineSunny;
+    uint32_t wxTimelineCloudy;
+    uint32_t wxTimelineRain;
+    uint32_t wxTimelineStorm;
+    uint32_t wxTimelineSnow;
+    uint32_t wxTimelineWind;
     
     // Weather simulation timeout
     uint16_t simTimeoutSecs; // 0=indefinite, else seconds before returning to real weather

@@ -95,6 +95,7 @@ static void tiktok_render();
 
 static void drawDigit(uint8_t x, uint8_t y, uint8_t d, uint32_t color);
 static uint32_t weatherColor(uint8_t type);
+static uint32_t weatherTimelineColor(uint8_t type);
 
 // Boot animation state
 static uint8_t g_bootPhase = 0;       // 0=draw comet, 1=hold, 2=fade, 3=done
@@ -2462,7 +2463,7 @@ static void clock_render_binary()
     {
         uint8_t forecastIdx = i * hoursPerLed;
         if (forecastIdx >= 12) forecastIdx = 11;
-        wt_timeline_set_pixel(i, weatherColor(weather_get_forecast(forecastIdx).type));
+        wt_timeline_set_pixel(i, weatherTimelineColor(weather_get_forecast(forecastIdx).type));
     }
 }
 
@@ -3227,6 +3228,34 @@ static uint32_t weatherColor(uint8_t type)
         return wt_color(0, 255, 200); // Cyan/Turquoise
     default:
         return wt_color(255, 255, 0);
+    }
+}
+
+static uint32_t weatherTimelineColor(uint8_t type)
+{
+    Settings& cfg = settings_get();
+    switch (type)
+    {
+    case WEATHER_SUNNY:
+    case WEATHER_CLEAR_NIGHT:
+        return cfg.wxTimelineSunny;
+    case WEATHER_PARTLY_CLOUDY:
+    case WEATHER_CLOUDY:
+    case WEATHER_FOG:
+        return cfg.wxTimelineCloudy;
+    case WEATHER_RAIN:
+    case WEATHER_DRIZZLE:
+    case WEATHER_HEAVY_RAIN:
+        return cfg.wxTimelineRain;
+    case WEATHER_STORM:
+        return cfg.wxTimelineStorm;
+    case WEATHER_SNOW:
+    case WEATHER_SLEET:
+        return cfg.wxTimelineSnow;
+    case WEATHER_WIND:
+        return cfg.wxTimelineWind;
+    default:
+        return cfg.wxTimelineSunny;
     }
 }
 
@@ -5988,7 +6017,7 @@ static void weather_render()
         uint8_t forecastIdx = i * hoursPerLed;
         if (forecastIdx >= 12) forecastIdx = 11;  // Clamp to available forecast data
         
-        uint32_t baseCol = weatherColor(weather_get_forecast(forecastIdx).type);
+        uint32_t baseCol = weatherTimelineColor(weather_get_forecast(forecastIdx).type);
         
         // Leftmost LED (i=0) = current weather - subtle pulse
         if (i == 0) {

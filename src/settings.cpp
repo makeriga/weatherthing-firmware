@@ -78,6 +78,12 @@ void settings_begin()
     g_settings.brightBlankSecs = 30;  // 30 second blanking interval
     g_settings.highPowerMode = false; // Safe mode by default
     g_settings.forecastHours = 12;   // 12 hour forecast default
+    g_settings.wxTimelineSunny = wt_color(255, 180, 0);
+    g_settings.wxTimelineCloudy = wt_color(100, 100, 120);
+    g_settings.wxTimelineRain = wt_color(0, 0, 255);
+    g_settings.wxTimelineStorm = wt_color(100, 0, 200);
+    g_settings.wxTimelineSnow = wt_color(255, 255, 255);
+    g_settings.wxTimelineWind = wt_color(0, 255, 200);
     g_settings.simTimeoutSecs = 30;  // 30 second simulation timeout
     
     // MQTT defaults
@@ -163,6 +169,12 @@ void settings_begin()
         g_settings.brightBlankSecs = g_prefs.getUChar("blankSec", 30);
         g_settings.highPowerMode = g_prefs.getBool("hiPower", false);
         g_settings.forecastHours = g_prefs.getUChar("fcstHours", 12);
+        g_settings.wxTimelineSunny = g_prefs.getUInt("wxTlSun", wt_color(255, 180, 0));
+        g_settings.wxTimelineCloudy = g_prefs.getUInt("wxTlCld", wt_color(100, 100, 120));
+        g_settings.wxTimelineRain = g_prefs.getUInt("wxTlRai", wt_color(0, 0, 255));
+        g_settings.wxTimelineStorm = g_prefs.getUInt("wxTlSto", wt_color(100, 0, 200));
+        g_settings.wxTimelineSnow = g_prefs.getUInt("wxTlSno", wt_color(255, 255, 255));
+        g_settings.wxTimelineWind = g_prefs.getUInt("wxTlWin", wt_color(0, 255, 200));
         g_settings.simTimeoutSecs = g_prefs.getUShort("simTimeout", 30);
         
         // MQTT settings
@@ -316,6 +328,12 @@ void settings_save()
         g_prefs.putUChar("blankSec", g_settings.brightBlankSecs);
         g_prefs.putBool("hiPower", g_settings.highPowerMode);
         g_prefs.putUChar("fcstHours", g_settings.forecastHours);
+        g_prefs.putUInt("wxTlSun", g_settings.wxTimelineSunny);
+        g_prefs.putUInt("wxTlCld", g_settings.wxTimelineCloudy);
+        g_prefs.putUInt("wxTlRai", g_settings.wxTimelineRain);
+        g_prefs.putUInt("wxTlSto", g_settings.wxTimelineStorm);
+        g_prefs.putUInt("wxTlSno", g_settings.wxTimelineSnow);
+        g_prefs.putUInt("wxTlWin", g_settings.wxTimelineWind);
         g_prefs.putUShort("simTimeout", g_settings.simTimeoutSecs);
         
         // MQTT settings
