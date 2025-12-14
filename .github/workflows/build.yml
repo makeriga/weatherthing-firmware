@@ -91,12 +91,18 @@ jobs:
           # Save current firmware build
           cp -r firmware-build /tmp/firmware-build
           
-          # Fetch and checkout gh-pages branch
-          git fetch origin gh-pages:gh-pages 2>/dev/null || true
-          git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
-          
-          # If orphan branch, clean it
-          if [ -z "$(git log -1 2>/dev/null)" ]; then
+          # We must clean the working tree before switching branches, otherwise
+          # checkout can fail due to build outputs (e.g. .pio/) and we might
+          # incorrectly fall back to orphan checkout.
+          git reset --hard
+          git clean -fdx
+
+          # Fetch and checkout gh-pages branch (robust for first + subsequent runs)
+          git fetch origin --prune --no-tags
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git checkout -B gh-pages origin/gh-pages
+          else
+            git checkout --orphan gh-pages
             git rm -rf . 2>/dev/null || true
           fi
           
