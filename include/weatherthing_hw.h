@@ -26,6 +26,7 @@ void wt_display_clear();
 void wt_display_fill(uint32_t color);
 void wt_display_set_pixel_raw(uint16_t index, uint32_t color);
 void wt_display_set_pixel_xy(uint8_t x, uint8_t y, uint32_t color);
+uint32_t wt_display_get_pixel_xy(uint8_t x, uint8_t y);
 
 void wt_timeline_clear();
 void wt_timeline_fill(uint32_t color);

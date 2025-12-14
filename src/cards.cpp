@@ -219,7 +219,6 @@ static uint8_t g_vuBars[WT_MATRIX_WIDTH];
 static uint8_t g_vuPeaks[WT_MATRIX_WIDTH];
 static uint8_t g_vuPeakHold[WT_MATRIX_WIDTH];
 static uint16_t g_vuNoiseFloor = 10;   // Low noise floor for DMA sampling
-static uint16_t g_vuPeakLevel = 100;   // AGC peak tracker
 static uint8_t g_vuSilenceFrames = 0;
 static uint8_t g_audioHeightRaw = 0;   // Pre-invert height for beat detection
 
@@ -240,6 +239,10 @@ static int8_t g_stockChange = 0;
 // Weather animation state
 static uint32_t g_weatherAnimFrame = 0;
 static uint32_t g_weatherLastAnim = 0;
+
+// Weather audio reactivity state
+static uint8_t g_wxAudioBeat = 0;       // Beat pulse (decays over frames)
+static float g_wxAudioSpeedMult = 1.0f; // Animation speed multiplier
 
 // Global sound-reactive state
 static bool g_soundReactive = false;
@@ -1596,9 +1599,11 @@ static void handleButtons(uint32_t now)
     }
 }
 
-// Adaptive gain / automatic gain control state
+// Unified adaptive gain control state (shared across all audio processing)
 static uint16_t g_agcPeak = 500;          // Adaptive peak level
 static uint32_t g_silenceStartMs = 0;     // When silence started
+static uint16_t g_agcMin = 100;           // Minimum AGC floor (auto-adjusts)
+static uint32_t g_agcLastLoud = 0;        // Last time we saw loud audio
 
 static void sampleAudio(uint32_t now)
 {
@@ -1632,15 +1637,32 @@ static void sampleAudio(uint32_t now)
     // Lower baseline for better sensitivity with quiet audio
     uint16_t noiseFloor = 5 + (cfg.vuNoiseGate / 2);
     
-    // Adaptive gain control (AGC) - can be disabled via settings
+    // Unified adaptive gain control (AGC)
     if (cfg.agcEnabled) {
-        if (amp > g_agcPeak) {
-            g_agcPeak = (g_agcPeak * 3 + amp) / 4;  // Very fast rise
-        } else {
-            g_agcPeak = (g_agcPeak * 63 + 150) / 64;  // Slow decay toward low baseline
+        // Track loud audio timing for auto-adjustment
+        if (amp > g_agcPeak / 2) {
+            g_agcLastLoud = now;
         }
-        if (g_agcPeak < 150) g_agcPeak = 150;   // Very low minimum for sensitivity
-        if (g_agcPeak > 10000) g_agcPeak = 10000; // Higher max for loud audio
+        
+        // Fast attack
+        if (amp > g_agcPeak) {
+            g_agcPeak = (g_agcPeak + amp) / 2;  // Very fast rise
+        } else {
+            // Adaptive decay - faster when no loud audio for a while
+            uint32_t quietTime = now - g_agcLastLoud;
+            if (quietTime > 3000) {
+                // Very quiet - decay faster to increase sensitivity
+                g_agcPeak = (g_agcPeak * 15 + g_agcMin) / 16;
+            } else if (quietTime > 1000) {
+                g_agcPeak = (g_agcPeak * 31 + g_agcMin) / 32;
+            } else {
+                g_agcPeak = (g_agcPeak * 63 + g_agcMin) / 64;
+            }
+        }
+        
+        // Dynamic floor adjustment
+        if (g_agcPeak < g_agcMin) g_agcPeak = g_agcMin;
+        if (g_agcPeak > 8000) g_agcPeak = 8000;
     } else {
         g_agcPeak = 1000;  // Fixed reference when AGC disabled
     }
@@ -5948,6 +5970,29 @@ static void weather_render()
     wt_display_clear();
     wt_timeline_clear();
     
+    // Update weather audio reactivity state
+    Settings& cfg = settings_get();
+    if (cfg.wxAudioHue || cfg.wxAudioSpeed) {
+        sampleAudio(millis());  // Ensure audio is sampled
+        
+        // Beat detection using g_audioLevel (0-255) from sampleAudio
+        // Trigger beat when audio crosses threshold and previous beat has decayed
+        if (g_audioLevel >= 100 && g_wxAudioBeat == 0) {
+            g_wxAudioBeat = 25;  // Beat pulse duration (frames)
+        }
+        if (g_wxAudioBeat > 0) g_wxAudioBeat--;
+        
+        // Speed multiplier based on audio level
+        if (cfg.wxAudioSpeed) {
+            g_wxAudioSpeedMult = 1.0f + (g_audioLevel / 128.0f);  // 1.0 to 3.0x
+        } else {
+            g_wxAudioSpeedMult = 1.0f;
+        }
+    } else {
+        g_wxAudioBeat = 0;
+        g_wxAudioSpeedMult = 1.0f;
+    }
+    
     if (!current.valid)
     {
         uint8_t b = 80 + (millis() / 8) % 80;
@@ -5995,12 +6040,40 @@ static void weather_render()
         case 34: weather_render_seasons(); break;      // Seasons
         default: weather_render_classic(); break;
     }
+    
+    // Apply audio reactive hue/brightness modulation on beat
+    if (cfg.wxAudioHue && g_wxAudioBeat > 0) {
+        // Pulse brightness up on beat
+        uint8_t beatBoost = g_wxAudioBeat * 3;  // 0-60 extra brightness
+        for (uint8_t x = 0; x < WT_MATRIX_WIDTH; ++x) {
+            for (uint8_t y = 0; y < WT_MATRIX_HEIGHT; ++y) {
+                uint32_t col = wt_display_get_pixel_xy(x, y);
+                if (col != 0) {  // Only modify lit pixels
+                    uint8_t r = (col >> 16) & 0xFF;
+                    uint8_t g = (col >> 8) & 0xFF;
+                    uint8_t b = col & 0xFF;
+                    
+                    // Boost brightness
+                    r = min(255, r + beatBoost);
+                    g = min(255, g + beatBoost);
+                    b = min(255, b + beatBoost);
+                    
+                    // Slight hue shift toward warm on strong beats
+                    if (g_wxAudioBeat > 10) {
+                        r = min(255, r + 15);
+                        b = (b > 10) ? b - 10 : 0;
+                    }
+                    
+                    wt_display_set_pixel_xy(x, y, wt_color(r, g, b));
+                }
+            }
+        }
+    }
 
     // Timeline - forecast colors with current hour pulse
     // Index 0 (leftmost) = current weather, index 11 (rightmost) = future
     // forecastHours determines how many hours each LED represents
     uint32_t now = millis();
-    Settings& cfg = settings_get();
     uint8_t hoursPerLed = cfg.forecastHours / WT_TIMELINE_PIXELS;
     if (hoursPerLed < 1) hoursPerLed = 1;
     
@@ -6111,17 +6184,11 @@ static void audio_sample()
         g_vuSilenceFrames = 0;
     }
     
-    // AGC - fast attack, moderate decay
-    if (amplitude > g_vuPeakLevel) {
-        g_vuPeakLevel = amplitude;  // Instant attack
-    } else {
-        g_vuPeakLevel = (g_vuPeakLevel * 31 + 50) / 32;  // ~3% decay per frame
-    }
-    if (g_vuPeakLevel < 50) g_vuPeakLevel = 50;
-    if (g_vuPeakLevel > 4000) g_vuPeakLevel = 4000;
+    // Use shared AGC from sampleAudio - keeps all visualizations in sync
+    // The AGC is updated by sampleAudio, we just use its value here
     
-    // Normalize to 0-7 with safe division
-    uint16_t range = g_vuPeakLevel;
+    // Normalize to 0-7 with safe division using shared AGC
+    uint16_t range = g_agcPeak;
     if (range < g_vuNoiseFloor + 50) range = g_vuNoiseFloor + 50;
     
     uint8_t h = 0;
@@ -6157,7 +6224,7 @@ static void vu_setup()
     memset(g_vuPeaks, 0, sizeof(g_vuPeaks));
     memset(g_vuPeakHold, 0, sizeof(g_vuPeakHold));
     memset(g_audioHistory, 0, sizeof(g_audioHistory));
-    g_vuPeakLevel = 100;  // Start low for sensitivity
+    g_agcPeak = 100;  // Start low for sensitivity (uses shared AGC)
     g_vuSilenceFrames = 0;
     g_audioHistoryIdx = 0;
     g_audioHeightRaw = 0;

@@ -1,0 +1,172 @@
+name: Build Firmware
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio
+
+      - name: Build firmware
+        run: pio run -e esp32c3
+
+      - name: Get build info
+        id: build_info
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "commit_msg=$(git log -1 --pretty=%s | head -c 100)" >> $GITHUB_OUTPUT
+          echo "commit_date=$(git log -1 --pretty=%ci)" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
+      - name: Prepare firmware artifacts
+        run: |
+          mkdir -p firmware-build
+          cp .pio/build/esp32c3/firmware.bin firmware-build/
+          cp .pio/build/esp32c3/bootloader.bin firmware-build/
+          cp .pio/build/esp32c3/partitions.bin firmware-build/
+          
+          # Create build info JSON
+          cat > firmware-build/build-info.json << EOF
+          {
+            "sha": "${{ github.sha }}",
+            "sha_short": "${{ steps.build_info.outputs.sha_short }}",
+            "commit_message": "${{ steps.build_info.outputs.commit_msg }}",
+            "commit_date": "${{ steps.build_info.outputs.commit_date }}",
+            "build_date": "${{ steps.build_info.outputs.build_date }}",
+            "branch": "${{ github.ref_name }}"
+          }
+          EOF
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ steps.build_info.outputs.sha_short }}
+          path: firmware-build/
+          retention-days: 90
+
+      - name: Save docs folder
+        run: cp -r docs /tmp/docs
+
+      - name: Deploy to GitHub Pages (main branch only)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Save current firmware build
+          cp -r firmware-build /tmp/firmware-build
+          
+          # Fetch and checkout gh-pages branch
+          git fetch origin gh-pages:gh-pages 2>/dev/null || true
+          git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
+          
+          # If orphan branch, clean it
+          if [ -z "$(git log -1 2>/dev/null)" ]; then
+            git rm -rf . 2>/dev/null || true
+          fi
+          
+          # Keep existing builds and pages content
+          mkdir -p builds
+          mkdir -p builds/${{ steps.build_info.outputs.sha_short }}
+          
+          # Copy new firmware
+          cp /tmp/firmware-build/firmware.bin builds/${{ steps.build_info.outputs.sha_short }}/
+          cp /tmp/firmware-build/bootloader.bin builds/${{ steps.build_info.outputs.sha_short }}/
+          cp /tmp/firmware-build/partitions.bin builds/${{ steps.build_info.outputs.sha_short }}/
+          cp /tmp/firmware-build/build-info.json builds/${{ steps.build_info.outputs.sha_short }}/
+          
+          # Generate manifest for ESP Web Tools
+          cat > builds/${{ steps.build_info.outputs.sha_short }}/manifest.json << EOF
+          {
+            "name": "WeatherThing Firmware",
+            "version": "${{ steps.build_info.outputs.sha_short }}",
+            "builds": [
+              {
+                "chipFamily": "ESP32-C3",
+                "parts": [
+                  { "path": "bootloader.bin", "offset": 0 },
+                  { "path": "partitions.bin", "offset": 32768 },
+                  { "path": "firmware.bin", "offset": 65536 }
+                ]
+              }
+            ]
+          }
+          EOF
+          
+          # Update builds index - sort by build_date descending
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          from pathlib import Path
+          from datetime import datetime
+          
+          builds_dir = Path("builds")
+          builds = []
+          
+          for build_dir in builds_dir.iterdir():
+              if build_dir.is_dir():
+                  info_file = build_dir / "build-info.json"
+                  if info_file.exists():
+                      with open(info_file) as f:
+                          info = json.load(f)
+                          info["path"] = build_dir.name
+                          builds.append(info)
+          
+          # Sort by build_date descending
+          builds.sort(key=lambda x: x.get("build_date", ""), reverse=True)
+          
+          # Keep last 20 builds
+          builds_to_keep = builds[:20]
+          paths_to_keep = {b["path"] for b in builds_to_keep}
+          
+          with open("builds/index.json", "w") as f:
+              json.dump({"builds": builds_to_keep}, f, indent=2)
+          
+          # Clean up old builds (keep last 20)
+          import shutil
+          for build_dir in builds_dir.iterdir():
+              if build_dir.is_dir() and build_dir.name not in paths_to_keep:
+                  shutil.rmtree(build_dir)
+          PYTHON_SCRIPT
+          
+          # Always update the index.html from docs
+          cp /tmp/docs/index.html ./index.html
+          
+          # Commit and push
+          git add -A
+          git commit -m "Deploy firmware ${{ steps.build_info.outputs.sha_short }}" || echo "No changes to commit"
+          git push origin gh-pages

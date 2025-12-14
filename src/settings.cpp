@@ -62,6 +62,8 @@ void settings_begin()
     g_settings.weatherPreset = 0;
     g_settings.weatherProvider = 0;
     g_settings.tempPalette = 0;  // Default temperature colors
+    g_settings.wxAudioHue = false;   // Weather audio hue shift off by default
+    g_settings.wxAudioSpeed = false; // Weather audio speed off by default
     g_settings.mapZoom = 4;      // Medium zoom level
     g_settings.mapStyle = 0;     // Precipitation colors
     g_settings.stockSymbol[0] = '\0';
@@ -144,6 +146,8 @@ void settings_begin()
         g_settings.weatherPreset = g_prefs.getUChar("wxPreset", 0);
         g_settings.weatherProvider = g_prefs.getUChar("wxProv", 0);
         g_settings.tempPalette = g_prefs.getUChar("tempPal", 0);
+        g_settings.wxAudioHue = g_prefs.getBool("wxAudHue", false);
+        g_settings.wxAudioSpeed = g_prefs.getBool("wxAudSpd", false);
         g_settings.mapZoom = g_prefs.getUChar("mapZoom", 4);
         g_settings.mapStyle = g_prefs.getUChar("mapStyle", 0);
         g_settings.stockEnabled = g_prefs.getBool("stockOn", false);
@@ -310,6 +314,8 @@ void settings_save()
         g_prefs.putUChar("wxPreset", g_settings.weatherPreset);
         g_prefs.putUChar("wxProv", g_settings.weatherProvider);
         g_prefs.putUChar("tempPal", g_settings.tempPalette);
+        g_prefs.putBool("wxAudHue", g_settings.wxAudioHue);
+        g_prefs.putBool("wxAudSpd", g_settings.wxAudioSpeed);
         g_prefs.putUChar("mapZoom", g_settings.mapZoom);
         g_prefs.putUChar("mapStyle", g_settings.mapStyle);
         g_prefs.putBool("stockOn", g_settings.stockEnabled);

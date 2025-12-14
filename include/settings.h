@@ -38,6 +38,10 @@ struct Settings
     uint8_t weatherProvider; // 0=auto, 1=open-meteo, 2=met.no
     uint8_t tempPalette;     // 0=default (blue-cyan-green-yellow-red), 1=cool (purple-blue-cyan), 2=warm (yellow-orange-red)
     
+    // Weather audio reactivity
+    bool wxAudioHue;         // Shift hue/brightness on beat
+    bool wxAudioSpeed;       // Speed up animations on beat
+    
     // Map presets config
     uint8_t mapZoom;         // Map zoom level 2-6 (lower = wider area)
     uint8_t mapStyle;        // 0=precip colors, 1=cloud emphasis, 2=temperature

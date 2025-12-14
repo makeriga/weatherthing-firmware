@@ -346,6 +346,11 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 html += "<option value=\"24\""; if (cfg.forecastHours == 24) html += " selected"; html += ">24h</option>";
                 html += "<option value=\"48\""; if (cfg.forecastHours == 48) html += " selected"; html += ">48h</option>";
                 html += "</select></div>";
+                html += "<div style=\"padding:8px 0;display:flex;gap:20px;flex-wrap:wrap;align-items:center\">";
+                html += "<span style=\"font-weight:bold\">&#x1F3B5; Audio Reactive:</span>";
+                html += "<label><input type=\"checkbox\" name=\"wxAudHue\""; if (cfg.wxAudioHue) html += " checked"; html += "> Pulse Brightness</label>";
+                html += "<label><input type=\"checkbox\" name=\"wxAudSpd\""; if (cfg.wxAudioSpeed) html += " checked"; html += "> Animation Speed</label>";
+                html += "</div>";
                 html += "<div style=\"padding:10px 0;border-top:1px solid #ddd;margin-top:8px\">";
                 html += "<details><summary style=\"cursor:pointer;font-weight:bold\">Timeline Colors</summary>";
                 html += "<div style=\"padding:10px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:center\">";
@@ -1126,6 +1131,8 @@ static void handleSettingsPost()
         cfg.tempPalette = (uint8_t)server.arg("tempPalette").toInt();
         if (cfg.tempPalette > 2) cfg.tempPalette = 0;
     }
+    cfg.wxAudioHue = server.hasArg("wxAudHue");
+    cfg.wxAudioSpeed = server.hasArg("wxAudSpd");
     
     if (server.hasArg("simTimeout")) {
         cfg.simTimeoutSecs = (uint16_t)server.arg("simTimeout").toInt();
@@ -1308,7 +1315,6 @@ static void handleSettingsGet()
     String json = "{";
     json += "\"animSpeed\":" + String(cfg.animSpeed) + ",";
     json += "\"vuPalette\":" + String(cfg.vuPalette) + ",";
-    json += "\"vuSensitivity\":" + String(cfg.vuSensitivity) + ",";
     json += "\"weatherPreset\":" + String(cfg.weatherPreset) + ",";
     json += "\"weatherProvider\":" + String(cfg.weatherProvider) + ",";
     json += "\"stockSymbol\":\"" + String(cfg.stockSymbol) + "\",";
@@ -1473,6 +1479,8 @@ static void handleCardsConfigPost()
         cfg.tempPalette = (uint8_t)server.arg("tempPalette").toInt();
         if (cfg.tempPalette > 2) cfg.tempPalette = 0;
     }
+    cfg.wxAudioHue = server.hasArg("wxAudHue");
+    cfg.wxAudioSpeed = server.hasArg("wxAudSpd");
     if (server.hasArg("forecastHours")) {
         cfg.forecastHours = (uint8_t)server.arg("forecastHours").toInt();
     }

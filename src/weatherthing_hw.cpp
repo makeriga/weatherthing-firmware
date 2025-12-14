@@ -300,6 +300,16 @@ void wt_display_set_pixel_xy(uint8_t x, uint8_t y, uint32_t color)
     matrixStrip.setPixelColor(idx, color);
 }
 
+uint32_t wt_display_get_pixel_xy(uint8_t x, uint8_t y)
+{
+    uint16_t idx = xyToIndex(x, y);
+    if (idx == 0xFFFF)
+    {
+        return 0;
+    }
+    return matrixStrip.getPixelColor(idx);
+}
+
 void wt_timeline_clear()
 {
     timelineStrip.clear();
