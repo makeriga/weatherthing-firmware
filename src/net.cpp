@@ -11,6 +11,7 @@
 #include "settings.h"
 #include "weatherthing_hw.h"
 #include "mqtt.h"
+#include "build_info.h"
 
 enum NetState
 {
@@ -41,6 +42,7 @@ static void handleSettingsGet();
 static void handleCardSwitch();
 static void handleApiCardSwitch();
 static void handleApiSimulate();
+static void handleApiVersion();
 static void handleCardsConfigPost();
 static void handleEditor();
 static void handleApiSprites();
@@ -881,10 +883,19 @@ function toggleCollapse(btn) {
     html += "<button class=\"btn btn-secondary\" onclick=\"alert('ESP32-C3 | 20x7 Matrix | 12 LED Timeline')\">&#x2139; Info</button>";
     html += "</div></div>";
 
+    String fwLine = String("0.1+") + wt_fw_git_sha_short();
+    if (wt_fw_git_dirty()) fwLine += "+dirty";
+    String fwDate = wt_fw_build_date();
+
     html += R"(</div></div>
 <div class="footer">
 <p><strong>WeatherThing v0.1</strong></p>
-<p>by <a href="https://github.com/makeriga">Makeriga</a> • <a href="https://github.com/makeriga/weatherthing-firmware">GitHub</a> • <a href="/editor">Sprite Editor</a></p>
+<p>Firmware: )";
+    html += fwLine;
+    html += " • ";
+    html += fwDate;
+    html += R"(</p>
+<p>by <a href="https://github.com/makeriga">Makeriga</a> • <a href="https://github.com/makeriga/weatherthing-firmware">GitHub</a> • <a href="/editor">Sprite Editor</a> • <a href="https://makeriga.github.io/weatherthing-firmware/" target="_blank">Firmware Updater</a></p>
 </div>
 <script>
 function simWeather(btn){
@@ -912,6 +923,7 @@ static void startServer()
     server.on("/simulate", HTTP_POST, handleSimulatePost);
     server.on("/settings", HTTP_POST, handleSettingsPost);
     server.on("/api/settings", HTTP_GET, handleSettingsGet);
+    server.on("/api/version", HTTP_GET, handleApiVersion);
     server.on("/editor", handleEditor);
     server.on("/api/sprites", HTTP_GET, handleApiSprites);
     server.on("/api/sprite", HTTP_GET, handleApiSpriteGet);
@@ -922,6 +934,28 @@ static void startServer()
     server.on("/api/simulate", HTTP_GET, handleApiSimulate);
     server.on("/cards_config", HTTP_POST, handleCardsConfigPost);
     server.begin();
+}
+
+static void handleApiVersion()
+{
+    String json;
+    json.reserve(256);
+    json += "{";
+    json += "\"app\":\"WeatherThing\"";
+    json += ",\"sw_version\":\"0.1\"";
+    json += ",\"git_sha\":\"";
+    json += wt_fw_git_sha();
+    json += "\"";
+    json += ",\"git_sha_short\":\"";
+    json += wt_fw_git_sha_short();
+    json += "\"";
+    json += ",\"build_date\":\"";
+    json += wt_fw_build_date();
+    json += "\"";
+    json += ",\"dirty\":";
+    json += wt_fw_git_dirty() ? "1" : "0";
+    json += "}";
+    server.send(200, "application/json", json);
 }
 
 static void loadCreds()
