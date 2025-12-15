@@ -242,6 +242,14 @@
       font-size: 0.85rem;
     }
 
+    .version-info {
+      margin-top: 0.5rem;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      word-break: break-word;
+    }
+
     footer a {
       color: var(--accent);
       text-decoration: none;
@@ -305,16 +313,15 @@
         &bull;
         <a href="https://github.com/makeriga/weatherthing-firmware" target="_blank">View on GitHub</a>
       </p>
+      <p id="versionInfo" class="version-info">Latest available firmware: loading…</p>
     </footer>
   </div>
 
   <script>
-    // Check for Web Serial support
     if (!('serial' in navigator)) {
       document.getElementById('browserWarning').classList.add('show');
     }
 
-    // Format date nicely
     function formatDate(dateString) {
       const date = new Date(dateString);
       return date.toLocaleDateString('en-US', {
@@ -326,14 +333,50 @@
       });
     }
 
-    // Escape HTML to prevent XSS
     function escapeHtml(text) {
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
     }
 
-    // Load and render builds
+    function setVersionInfo(text, commitUrl) {
+      const el = document.getElementById('versionInfo');
+      if (!el) return;
+
+      if (commitUrl) {
+        el.innerHTML = `Latest available firmware: <a href="${escapeHtml(commitUrl)}" target="_blank">${escapeHtml(text)}</a>`;
+      } else {
+        el.textContent = `Latest available firmware: ${text}`;
+      }
+    }
+
+    async function loadVersionFromGitHubApi() {
+      try {
+        const resp = await fetch('https://api.github.com/repos/makeriga/weatherthing-firmware/commits?per_page=1', {
+          headers: {
+            'Accept': 'application/vnd.github+json'
+          }
+        });
+
+        if (!resp.ok) {
+          throw new Error('GitHub API request failed');
+        }
+
+        const commits = await resp.json();
+        if (!commits || !commits.length) {
+          throw new Error('No commits returned');
+        }
+
+        const c = commits[0];
+        const shaShort = (c.sha || '').slice(0, 7);
+        const msg = (c.commit && c.commit.message ? c.commit.message.split('\n')[0] : '');
+        const text = msg ? `${shaShort} — ${msg}` : shaShort;
+        setVersionInfo(text, c.html_url);
+      } catch (e) {
+        setVersionInfo('unknown');
+      }
+    }
+
     async function loadBuilds() {
       const container = document.getElementById('buildsContainer');
       
@@ -348,7 +391,17 @@
         
         if (!builds || builds.length === 0) {
           container.innerHTML = '<div class="error"><p>No builds available yet.</p></div>';
+          await loadVersionFromGitHubApi();
           return;
+        }
+
+        const latest = builds[0];
+        if (latest && latest.sha_short) {
+          const text = latest.commit_message
+            ? `${latest.sha_short} — ${latest.commit_message}`
+            : latest.sha_short;
+          const commitUrl = latest.sha ? `https://github.com/makeriga/weatherthing-firmware/commit/${latest.sha}` : null;
+          setVersionInfo(text, commitUrl);
         }
         
         container.innerHTML = builds.map((build, index) => `
@@ -382,10 +435,11 @@
             </p>
           </div>
         `;
+
+        await loadVersionFromGitHubApi();
       }
     }
 
-    // Load builds on page load
     loadBuilds();
   </script>
 </body>
