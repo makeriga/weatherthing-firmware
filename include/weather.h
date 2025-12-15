@@ -96,6 +96,14 @@ bool weather_fetch_radar_map();
 // Fetch Open-Meteo grid data for 140 points around location
 bool weather_fetch_grid_map();
 
+// Non-blocking map fetch requests (schedule if needed)
+bool weather_request_radar_map();
+bool weather_request_grid_map();
+
+// Copy latest map data into caller-provided struct
+void weather_get_radar_map_copy(RadarMapData* out);
+void weather_get_grid_map_copy(GridMapData* out);
+
 // Get current radar map data
 const RadarMapData& weather_get_radar_map();
 

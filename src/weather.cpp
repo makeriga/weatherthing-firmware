@@ -5,6 +5,10 @@
 #include <Preferences.h>
 #include "weather.h"
 #include "settings.h"
+#include "http_worker.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 
 static WeatherType codeToType(int code);
 
@@ -20,8 +24,12 @@ static const uint32_t STALE_THRESHOLD = 1800000; // 30 minutes - data considered
 static bool g_simulating = false;  // True when simulating weather (don't fetch)
 static uint32_t g_simStartMs = 0;  // When simulation started
 static bool g_isFetching = false;  // True while actively fetching data
+static volatile bool g_weatherFetchQueued = false;
 
 static Preferences g_weatherPrefs;
+
+static portMUX_TYPE g_weatherMux = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE g_mapMux = portMUX_INITIALIZER_UNLOCKED;
 
 static WeatherType symbolToType(const String& symbol)
 {
@@ -276,6 +284,7 @@ static bool fetch_met_no(WeatherData* outCurrent, ForecastSlot outForecast[12])
             if (tIdx >= 0) {
                 tStart = tIdx + 18;
                 tEnd = buf.indexOf(",", tStart);
+                if (tEnd < 0) tEnd = buf.indexOf("}", tStart);
                 if (tEnd > tStart) break;
             }
             if (!pump()) {
@@ -464,64 +473,94 @@ void weather_update()
     }
     
     uint32_t now = millis();
-    if (g_current.valid && (now - g_lastSuccess) < FETCH_INTERVAL)
-    {
+    bool shouldFetch = false;
+
+    portENTER_CRITICAL(&g_weatherMux);
+    if (!g_weatherFetchQueued) {
+        if (!(g_current.valid && (now - g_lastSuccess) < FETCH_INTERVAL)) {
+            if (!((now - g_lastAttempt) < RETRY_INTERVAL)) {
+                g_lastAttempt = now;
+                g_isFetching = true;
+                g_weatherFetchQueued = true;
+                shouldFetch = true;
+            }
+        }
+    }
+    portEXIT_CRITICAL(&g_weatherMux);
+
+    if (!shouldFetch) {
         return;
     }
-    if ((now - g_lastAttempt) < RETRY_INTERVAL)
-    {
-        return;
-    }
-    g_lastAttempt = now;
-    g_isFetching = true;  // Mark as fetching for UI feedback
 
-    WeatherData nextCurrent;
-    ForecastSlot nextForecast[12];
+    auto job = [](void*) {
+        WeatherData nextCurrent;
+        ForecastSlot nextForecast[12];
 
-    Settings& cfg = settings_get();
-    uint8_t provider = cfg.weatherProvider;
-    if (provider > 2) provider = 0;
+        Settings& cfg = settings_get();
+        uint8_t provider = cfg.weatherProvider;
+        if (provider > 2) provider = 0;
 
-    bool usedFallback = false;
-    bool ok = false;
-    if (provider == 1) {
-        ok = fetch_open_meteo(&nextCurrent, nextForecast);
-    } else if (provider == 2) {
-        ok = fetch_met_no(&nextCurrent, nextForecast);
-    } else {
-        ok = fetch_open_meteo(&nextCurrent, nextForecast);
-        if (!ok) {
-            usedFallback = true;
+        bool usedFallback = false;
+        bool ok = false;
+        if (provider == 1) {
+            ok = fetch_open_meteo(&nextCurrent, nextForecast);
+        } else if (provider == 2) {
             ok = fetch_met_no(&nextCurrent, nextForecast);
-        }
-    }
-    
-    g_isFetching = false;  // Done fetching
-
-    if (ok)
-    {
-        g_current = nextCurrent;
-        for (int i = 0; i < 12; ++i) g_forecast[i] = nextForecast[i];
-        g_lastSuccess = now;
-        if (provider == 2) {
-            Serial.println("Weather provider: MET Norway");
-        } else if (provider == 1) {
-            Serial.println("Weather provider: Open-Meteo");
-        } else if (usedFallback) {
-            Serial.println("Weather provider: MET Norway (fallback)");
         } else {
-            Serial.println("Weather provider: Open-Meteo");
+            ok = fetch_open_meteo(&nextCurrent, nextForecast);
+            if (!ok) {
+                usedFallback = true;
+                ok = fetch_met_no(&nextCurrent, nextForecast);
+            }
         }
-        Serial.print("Weather updated: ");
-        Serial.print(g_current.temp);
-        Serial.print("C, type=");
-        Serial.println(g_current.type);
+
+        uint32_t now = millis();
+
+        portENTER_CRITICAL(&g_weatherMux);
+        g_isFetching = false;
+        g_weatherFetchQueued = false;
+
+        if (ok)
+        {
+            g_current = nextCurrent;
+            for (int i = 0; i < 12; ++i) g_forecast[i] = nextForecast[i];
+            g_lastSuccess = now;
+        }
+        portEXIT_CRITICAL(&g_weatherMux);
+
+        if (ok)
+        {
+            if (provider == 2) {
+                Serial.println("Weather provider: MET Norway");
+            } else if (provider == 1) {
+                Serial.println("Weather provider: Open-Meteo");
+            } else if (usedFallback) {
+                Serial.println("Weather provider: MET Norway (fallback)");
+            } else {
+                Serial.println("Weather provider: Open-Meteo");
+            }
+            Serial.print("Weather updated: ");
+            Serial.print(nextCurrent.temp);
+            Serial.print("C, type=");
+            Serial.println(nextCurrent.type);
+        }
+    };
+
+    if (!http_worker_enqueue(job, nullptr)) {
+        portENTER_CRITICAL(&g_weatherMux);
+        g_isFetching = false;
+        g_weatherFetchQueued = false;
+        portEXIT_CRITICAL(&g_weatherMux);
     }
 }
 
 WeatherData weather_get_current()
 {
-    return g_current;
+    WeatherData out;
+    portENTER_CRITICAL(&g_weatherMux);
+    out = g_current;
+    portEXIT_CRITICAL(&g_weatherMux);
+    return out;
 }
 
 ForecastSlot weather_get_forecast(uint8_t slot)
@@ -530,7 +569,11 @@ ForecastSlot weather_get_forecast(uint8_t slot)
     {
         slot = 11;
     }
-    return g_forecast[slot];
+    ForecastSlot out;
+    portENTER_CRITICAL(&g_weatherMux);
+    out = g_forecast[slot];
+    portEXIT_CRITICAL(&g_weatherMux);
+    return out;
 }
 
 void weather_set_location(float lat, float lon)
@@ -581,7 +624,11 @@ void weather_stop_simulation()
 
 bool weather_is_fetching()
 {
-    return g_isFetching;
+    bool out;
+    portENTER_CRITICAL(&g_weatherMux);
+    out = g_isFetching;
+    portEXIT_CRITICAL(&g_weatherMux);
+    return out;
 }
 
 bool weather_is_stale()
@@ -662,6 +709,11 @@ static GridMapData g_gridMap = {{{0}}, {{0}}, 0, false};
 static uint32_t g_lastRadarFetch = 0;
 static uint32_t g_lastGridFetch = 0;
 static const uint32_t MAP_FETCH_INTERVAL = 300000; // 5 minutes
+static const uint32_t MAP_RETRY_INTERVAL = 60000;  // 60 seconds
+static uint32_t g_lastRadarAttempt = 0;
+static uint32_t g_lastGridAttempt = 0;
+static volatile bool g_radarFetchQueued = false;
+static volatile bool g_gridFetchQueued = false;
 
 // RainViewer radar host and path (updated from API)
 static char g_rainviewerHost[64] = "";
@@ -813,8 +865,8 @@ bool weather_fetch_radar_map()
     // For simplicity, we'll scan for non-zero bytes in the IDAT region
     // and map them to our 20x7 grid. This is a simplified approach.
     
-    // Clear the grid first
-    memset(g_radarMap.intensity, 0, sizeof(g_radarMap.intensity));
+    uint8_t nextIntensity[20][7];
+    memset(nextIntensity, 0, sizeof(nextIntensity));
     
     // Find IDAT chunk (contains compressed image data)
     int idatPos = -1;
@@ -841,7 +893,7 @@ bool weather_fetch_radar_map()
                         // Use raw byte value as intensity hint
                         uint8_t val = pngData[idx];
                         // RainViewer uses color palette where higher values = more rain
-                        g_radarMap.intensity[x][y] = val;
+                        nextIntensity[x][y] = val;
                     }
                 }
             }
@@ -850,9 +902,12 @@ bool weather_fetch_radar_map()
     
     free(pngData);
     
+    portENTER_CRITICAL(&g_mapMux);
+    memcpy(g_radarMap.intensity, nextIntensity, sizeof(nextIntensity));
     g_radarMap.timestamp = now;
     g_radarMap.valid = true;
     g_lastRadarFetch = now;
+    portEXIT_CRITICAL(&g_mapMux);
     
     Serial.println("Radar map updated");
     return true;
@@ -877,6 +932,8 @@ bool weather_fetch_grid_map()
     // Build comma-separated coordinate lists for 20x7 = 140 points
     String latList = "";
     String lonList = "";
+    latList.reserve(1800);
+    lonList.reserve(1800);
     
     for (int y = 0; y < 7; y++) {
         float lat = latMax - (y * (latMax - latMin) / 6.0f);
@@ -918,9 +975,10 @@ bool weather_fetch_grid_map()
     // Parse response - format is array of current values
     // Look for "cloud_cover" and "precipitation" arrays
     
-    // Clear grid
-    memset(g_gridMap.cloud, 0, sizeof(g_gridMap.cloud));
-    memset(g_gridMap.precip, 0, sizeof(g_gridMap.precip));
+    uint8_t nextCloud[20][7];
+    uint8_t nextPrecip[20][7];
+    memset(nextCloud, 0, sizeof(nextCloud));
+    memset(nextPrecip, 0, sizeof(nextPrecip));
     
     // Find cloud_cover values
     int cloudIdx = payload.indexOf("\"cloud_cover\":");
@@ -946,7 +1004,7 @@ bool weather_fetch_grid_map()
                 int cc = payload.substring(valStart, valEnd).toInt();
                 int x = pointIdx % 20;
                 int y = pointIdx / 20;
-                g_gridMap.cloud[x][y] = (uint8_t)constrain(cc, 0, 100);
+                nextCloud[x][y] = (uint8_t)constrain(cc, 0, 100);
             }
         }
         
@@ -961,7 +1019,7 @@ bool weather_fetch_grid_map()
                 int x = pointIdx % 20;
                 int y = pointIdx / 20;
                 // Scale precipitation (0-10mm/h) to 0-255
-                g_gridMap.precip[x][y] = (uint8_t)constrain((int)(pr * 25.5f), 0, 255);
+                nextPrecip[x][y] = (uint8_t)constrain((int)(pr * 25.5f), 0, 255);
             }
         }
         
@@ -969,9 +1027,13 @@ bool weather_fetch_grid_map()
         pointIdx++;
     }
     
+    portENTER_CRITICAL(&g_mapMux);
+    memcpy(g_gridMap.cloud, nextCloud, sizeof(nextCloud));
+    memcpy(g_gridMap.precip, nextPrecip, sizeof(nextPrecip));
     g_gridMap.timestamp = now;
     g_gridMap.valid = (pointIdx > 0);
     g_lastGridFetch = now;
+    portEXIT_CRITICAL(&g_mapMux);
     
     Serial.print("Grid map updated: ");
     Serial.print(pointIdx);
@@ -990,10 +1052,100 @@ const GridMapData& weather_get_grid_map()
     return g_gridMap;
 }
 
+void weather_get_radar_map_copy(RadarMapData* out)
+{
+    if (!out) return;
+    portENTER_CRITICAL(&g_mapMux);
+    *out = g_radarMap;
+    portEXIT_CRITICAL(&g_mapMux);
+}
+
+void weather_get_grid_map_copy(GridMapData* out)
+{
+    if (!out) return;
+    portENTER_CRITICAL(&g_mapMux);
+    *out = g_gridMap;
+    portEXIT_CRITICAL(&g_mapMux);
+}
+
+bool weather_request_radar_map()
+{
+    if (WiFi.status() != WL_CONNECTED) return false;
+    uint32_t now = millis();
+
+    portENTER_CRITICAL(&g_mapMux);
+    bool fresh = g_radarMap.valid && (now - g_lastRadarFetch) < MAP_FETCH_INTERVAL;
+    bool queued = g_radarFetchQueued;
+    bool retryOk = (now - g_lastRadarAttempt) >= MAP_RETRY_INTERVAL || g_lastRadarAttempt == 0;
+    if (!fresh && !queued && retryOk) {
+        g_lastRadarAttempt = now;
+        g_radarFetchQueued = true;
+    }
+    bool willQueue = (!fresh && !queued && retryOk);
+    portEXIT_CRITICAL(&g_mapMux);
+
+    if (fresh || queued) return true;
+    if (!willQueue) return false;
+
+    auto job = [](void*) {
+        weather_fetch_radar_map();
+        portENTER_CRITICAL(&g_mapMux);
+        g_radarFetchQueued = false;
+        portEXIT_CRITICAL(&g_mapMux);
+    };
+
+    if (!http_worker_enqueue(job, nullptr)) {
+        portENTER_CRITICAL(&g_mapMux);
+        g_radarFetchQueued = false;
+        portEXIT_CRITICAL(&g_mapMux);
+        return false;
+    }
+    return true;
+}
+
+bool weather_request_grid_map()
+{
+    if (WiFi.status() != WL_CONNECTED) return false;
+    uint32_t now = millis();
+
+    portENTER_CRITICAL(&g_mapMux);
+    bool fresh = g_gridMap.valid && (now - g_lastGridFetch) < MAP_FETCH_INTERVAL;
+    bool queued = g_gridFetchQueued;
+    bool retryOk = (now - g_lastGridAttempt) >= MAP_RETRY_INTERVAL || g_lastGridAttempt == 0;
+    if (!fresh && !queued && retryOk) {
+        g_lastGridAttempt = now;
+        g_gridFetchQueued = true;
+    }
+    bool willQueue = (!fresh && !queued && retryOk);
+    portEXIT_CRITICAL(&g_mapMux);
+
+    if (fresh || queued) return true;
+    if (!willQueue) return false;
+
+    auto job = [](void*) {
+        weather_fetch_grid_map();
+        portENTER_CRITICAL(&g_mapMux);
+        g_gridFetchQueued = false;
+        portEXIT_CRITICAL(&g_mapMux);
+    };
+
+    if (!http_worker_enqueue(job, nullptr)) {
+        portENTER_CRITICAL(&g_mapMux);
+        g_gridFetchQueued = false;
+        portEXIT_CRITICAL(&g_mapMux);
+        return false;
+    }
+    return true;
+}
+
 void weather_refresh_maps()
 {
     g_lastRadarFetch = 0;
     g_lastGridFetch = 0;
     g_radarMap.valid = false;
     g_gridMap.valid = false;
+    g_lastRadarAttempt = 0;
+    g_lastGridAttempt = 0;
+    g_radarFetchQueued = false;
+    g_gridFetchQueued = false;
 }

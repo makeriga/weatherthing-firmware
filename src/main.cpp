@@ -7,6 +7,7 @@
 #include "settings.h"
 #include "mqtt.h"
 #include "factory_test.h"
+#include "http_worker.h"
 
 static bool g_factoryTestMode = false;
 
@@ -20,6 +21,7 @@ void setup()
     wt_hw_begin();
     sprites_begin();
     settings_begin();
+    http_worker_begin();
 
     // Check if factory test needs to run (first boot)
     if (!factory_test_completed())

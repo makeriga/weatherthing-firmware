@@ -12,6 +12,9 @@
 #include "weatherthing_hw.h"
 #include "mqtt.h"
 #include "build_info.h"
+#include "http_worker.h"
+
+#include <esp_heap_caps.h>
 
 enum NetState
 {
@@ -43,6 +46,7 @@ static void handleCardSwitch();
 static void handleApiCardSwitch();
 static void handleApiSimulate();
 static void handleApiVersion();
+static void handleApiDiag();
 static void handleCardsConfigPost();
 static void handleEditor();
 static void handleApiSprites();
@@ -895,6 +899,7 @@ function toggleCollapse(btn) {
     html += " • ";
     html += fwDate;
     html += R"(</p>
+<p id="diagInfo">Diagnostics: loading…</p>
 <p>by <a href="https://github.com/makeriga">Makeriga</a> • <a href="https://github.com/makeriga/weatherthing-firmware">GitHub</a> • <a href="/editor">Sprite Editor</a> • <a href="https://makeriga.github.io/weatherthing-firmware/" target="_blank">Firmware Updater</a></p>
 </div>
 <script>
@@ -908,6 +913,48 @@ fetch('/api/simulate?type='+type+'&temp='+temp)
 .then(d=>{if(d.ok){btn.style.background='#4ade80';setTimeout(()=>btn.style.background='',400)}})
 .catch(e=>console.error(e));
 }
+
+async function loadDiag(){
+  try{
+    const r=await fetch('/api/diag');
+    if(!r.ok) return;
+    const d=await r.json();
+    const el=document.getElementById('diagInfo');
+    if(!el) return;
+    el.textContent='Diagnostics: heap '+d.free_heap+'/'+d.min_free_heap+' free/min • maxAlloc '+d.max_alloc_heap+' • largest '+d.largest_free_block+' • frag '+d.frag_pct+'% • httpq '+d.httpq_waiting+'/'+d.httpq_free+'/'+d.httpq_cap+' enq '+d.httpq_enq_ok+'/'+d.httpq_enq_fail+' • wifi '+(d.ap_mode?'AP':'STA')+' st '+d.wifi_status+' rssi '+d.wifi_rssi+' • up '+Math.floor(d.uptime_ms/1000)+'s';
+  }catch(e){
+  }
+}
+
+function ajaxifyForm(form){
+  form.addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    try{
+      if(typeof saveOrder==='function') saveOrder();
+      const fd=new FormData(form);
+      fd.append('ajax','1');
+      const params=new URLSearchParams();
+      for(const kv of fd.entries()) params.append(kv[0], kv[1]);
+      const btn=form.querySelector('button[type=submit]');
+      if(btn){btn.disabled=true;btn.dataset._bg=btn.style.background;btn.style.background='#ffa500';}
+      const resp=await fetch(form.getAttribute('action')||'/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params.toString()});
+      if(!resp.ok) throw new Error('HTTP '+resp.status);
+      if(btn){btn.style.background='#4ade80';setTimeout(function(){btn.style.background=btn.dataset._bg||'';btn.disabled=false;},600);}
+    }catch(e){
+      const btn=form.querySelector('button[type=submit]');
+      if(btn){btn.style.background='#ff6b6b';btn.disabled=false;}
+    }
+  });
+}
+
+window.addEventListener('DOMContentLoaded', function(){
+  loadDiag();
+  setInterval(loadDiag, 2000);
+  document.querySelectorAll('form[method="POST"]').forEach(function(f){
+    const act=f.getAttribute('action');
+    if(act==='/settings' || act==='/cards_config' || act==='/simulate' || act==='/card') ajaxifyForm(f);
+  });
+});
 </script>
 </body></html>)";
 
@@ -924,6 +971,7 @@ static void startServer()
     server.on("/settings", HTTP_POST, handleSettingsPost);
     server.on("/api/settings", HTTP_GET, handleSettingsGet);
     server.on("/api/version", HTTP_GET, handleApiVersion);
+    server.on("/api/diag", HTTP_GET, handleApiDiag);
     server.on("/editor", handleEditor);
     server.on("/api/sprites", HTTP_GET, handleApiSprites);
     server.on("/api/sprite", HTTP_GET, handleApiSpriteGet);
@@ -954,6 +1002,65 @@ static void handleApiVersion()
     json += "\"";
     json += ",\"dirty\":";
     json += wt_fw_git_dirty() ? "1" : "0";
+    json += "}";
+    server.send(200, "application/json", json);
+}
+
+static void handleApiDiag()
+{
+    uint32_t freeHeap = ESP.getFreeHeap();
+    uint32_t minFreeHeap = ESP.getMinFreeHeap();
+    uint32_t maxAllocHeap = ESP.getMaxAllocHeap();
+    uint32_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    uint32_t fragPct = 0;
+    if (freeHeap > 0 && maxAllocHeap <= freeHeap) {
+        fragPct = (uint32_t)(((uint64_t)(freeHeap - maxAllocHeap) * 100ULL) / (uint64_t)freeHeap);
+    }
+
+    uint32_t up = millis();
+    uint8_t qWaiting = http_worker_queue_waiting();
+    uint8_t qFree = http_worker_queue_free();
+    uint8_t qCap = http_worker_queue_capacity();
+    uint32_t enqOk = http_worker_enqueue_ok_count();
+    uint32_t enqFail = http_worker_enqueue_fail_count();
+
+    uint8_t wifiStatus = (uint8_t)WiFi.status();
+    int32_t wifiRssi = 0;
+    if (wifiStatus == (uint8_t)WL_CONNECTED) {
+        wifiRssi = (int32_t)WiFi.RSSI();
+    }
+
+    String json;
+    json.reserve(256);
+    json += "{";
+    json += "\"uptime_ms\":";
+    json += String(up);
+    json += ",\"free_heap\":";
+    json += String(freeHeap);
+    json += ",\"min_free_heap\":";
+    json += String(minFreeHeap);
+    json += ",\"max_alloc_heap\":";
+    json += String(maxAllocHeap);
+    json += ",\"largest_free_block\":";
+    json += String(largestBlock);
+    json += ",\"frag_pct\":";
+    json += String(fragPct);
+    json += ",\"httpq_waiting\":";
+    json += String(qWaiting);
+    json += ",\"httpq_free\":";
+    json += String(qFree);
+    json += ",\"httpq_cap\":";
+    json += String(qCap);
+    json += ",\"httpq_enq_ok\":";
+    json += String(enqOk);
+    json += ",\"httpq_enq_fail\":";
+    json += String(enqFail);
+    json += ",\"ap_mode\":";
+    json += g_isApMode ? "1" : "0";
+    json += ",\"wifi_status\":";
+    json += String(wifiStatus);
+    json += ",\"wifi_rssi\":";
+    json += String(wifiRssi);
     json += "}";
     server.send(200, "application/json", json);
 }
@@ -1206,7 +1313,12 @@ static void handleSimulatePost()
     if (type >= WEATHER_TYPE_COUNT) type = 0;
     
     weather_simulate(type, temp);
-    
+
+    if (server.hasArg("ajax") && server.arg("ajax") == "1") {
+        server.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+
     server.sendHeader("Location", "/");
     server.send(303);
 }
@@ -1438,7 +1550,12 @@ static void handleSettingsPost()
     if (mqttChanged && cfg.mqttEnabled) {
         mqtt_begin();
     }
-    
+
+    if (server.hasArg("ajax") && server.arg("ajax") == "1") {
+        server.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+
     server.sendHeader("Location", "/");
     server.send(303);
 }
@@ -1469,6 +1586,11 @@ static void handleCardSwitch()
         uint8_t preset = (uint8_t)server.arg("preset").toInt();
         cards_set_preset(preset);
     }
+    if (server.hasArg("ajax") && server.arg("ajax") == "1") {
+        server.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+
     server.sendHeader("Location", "/");
     server.send(303);
 }
@@ -1767,7 +1889,12 @@ static void handleCardsConfigPost()
     if (mqttChanged && cfg.mqttEnabled) {
         mqtt_begin();
     }
-    
+
+    if (server.hasArg("ajax") && server.arg("ajax") == "1") {
+        server.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+
     server.sendHeader("Location", "/");
     server.send(303);
 }

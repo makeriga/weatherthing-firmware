@@ -12,6 +12,7 @@
 #include "sprites.h"
 #include "settings.h"
 #include "mqtt.h"
+#include "http_worker.h"
 
 struct Card
 {
@@ -158,8 +159,11 @@ static const uint8_t CARD_TIKTOK = 15;
 static const uint8_t g_cardCount = sizeof(g_cards) / sizeof(g_cards[0]);
 static uint8_t g_currentCard = 0;
 static uint32_t g_lastTick = 0;
+static uint32_t g_lastBgSecondTick = 0;
 static bool g_lastBtn1 = false;
 static bool g_lastBtn2 = false;
+
+static portMUX_TYPE g_cardsMux = portMUX_INITIALIZER_UNLOCKED;
 
 // Card names for title animation (short single words)
 static const char* g_cardNames[] = {
@@ -228,6 +232,7 @@ static float g_tickerPrice = 0;
 static float g_tickerPrevPrice = 0;  // For price change tracking
 static bool g_tickerValid = false;
 static int8_t g_tickerChange = 0;    // -1=down, 0=same, 1=up
+static volatile bool g_tickerFetchInFlight = false;
 
 // Stock ticker state
 static uint32_t g_stockLastFetch = 0;
@@ -235,6 +240,7 @@ static float g_stockPrice = 0;
 static float g_stockPrevPrice = 0;
 static bool g_stockValid = false;
 static int8_t g_stockChange = 0;
+static volatile bool g_stockFetchInFlight = false;
 
 // Weather animation state
 static uint32_t g_weatherAnimFrame = 0;
@@ -796,7 +802,7 @@ static void drawWeatherIcon(int8_t x, int8_t y, uint8_t type, uint32_t frame)
             for (int row = 0; row < 7; ++row) {
                 // Denser at bottom (low Y), fading toward top
                 float density = 1.0f - (row / 7.0f);
-                float drift = sinf(now * 0.0008f + row * 0.3f) * 1.5f;
+                float drift = sinf(now * 0.0008f + row * 0.3f);
                 
                 for (int col = 0; col < 8; ++col) {
                     float colDrift = sinf(now * 0.001f + col * 0.5f + row);
@@ -1061,18 +1067,18 @@ static void drawNoteIcon(int16_t x, uint8_t y, uint32_t color) {
 }
 
 // Card icons - 7x7 bitmaps for epic transitions
-static const uint8_t ICON_SUN[7] = {0x10, 0x54, 0x38, 0xFE, 0x38, 0x54, 0x10};      // ☀
-static const uint8_t ICON_CLOCK[7] = {0x38, 0x44, 0x4C, 0x54, 0x44, 0x44, 0x38};    // ⏰
-static const uint8_t ICON_BTC[7] = {0x7C, 0x52, 0x72, 0x52, 0x72, 0x52, 0x7C};      // ₿
-static const uint8_t ICON_CHART[7] = {0x01, 0x03, 0x07, 0x0E, 0x1C, 0x38, 0x7F};    // 📈
-static const uint8_t ICON_WIFI[7] = {0x00, 0x7E, 0x00, 0x3C, 0x00, 0x18, 0x18};     // 📶
-static const uint8_t ICON_MIC[7] = {0x18, 0x3C, 0x3C, 0x3C, 0x18, 0x18, 0x7E};      // 🎤
-static const uint8_t ICON_STAR[7] = {0x10, 0x10, 0x54, 0x38, 0x54, 0x10, 0x10};     // ✨
-static const uint8_t ICON_WAVE[7] = {0x60, 0x90, 0x60, 0x06, 0x09, 0x06, 0x00};     // 🌈
-static const uint8_t ICON_GAME[7] = {0x7F, 0x41, 0x5D, 0x55, 0x5D, 0x41, 0x7F};     // 🎮
-static const uint8_t ICON_HOME[7] = {0x10, 0x38, 0x7C, 0x54, 0x54, 0x54, 0x7C};     // 🏠
-static const uint8_t ICON_NEWS[7] = {0x7F, 0x41, 0x7F, 0x41, 0x5F, 0x41, 0x7F};     // 📰
-static const uint8_t ICON_PLAY[7] = {0x00, 0x7C, 0x38, 0x10, 0x00, 0x00, 0x00};     // ▶
+static const uint8_t ICON_SUN[7] = {0x10, 0x54, 0x38, 0xFE, 0x38, 0x54, 0x10};      // 
+static const uint8_t ICON_CLOCK[7] = {0x38, 0x44, 0x4C, 0x54, 0x44, 0x44, 0x38};    // 
+static const uint8_t ICON_BTC[7] = {0x7C, 0x52, 0x72, 0x52, 0x72, 0x52, 0x7C};      // 
+static const uint8_t ICON_CHART[7] = {0x01, 0x03, 0x07, 0x0E, 0x1C, 0x38, 0x7F};    // 
+static const uint8_t ICON_WIFI[7] = {0x00, 0x7E, 0x00, 0x3C, 0x00, 0x18, 0x18};     // 
+static const uint8_t ICON_MIC[7] = {0x18, 0x3C, 0x3C, 0x3C, 0x18, 0x18, 0x7E};      // 
+static const uint8_t ICON_STAR[7] = {0x10, 0x10, 0x54, 0x38, 0x54, 0x10, 0x10};     // 
+static const uint8_t ICON_WAVE[7] = {0x60, 0x90, 0x60, 0x06, 0x09, 0x06, 0x00};     // 
+static const uint8_t ICON_GAME[7] = {0x7F, 0x41, 0x5D, 0x55, 0x5D, 0x41, 0x7F};     // 
+static const uint8_t ICON_HOME[7] = {0x10, 0x38, 0x7C, 0x54, 0x54, 0x54, 0x7C};     // 
+static const uint8_t ICON_NEWS[7] = {0x7F, 0x41, 0x7F, 0x41, 0x5F, 0x41, 0x7F};     // 
+static const uint8_t ICON_PLAY[7] = {0x00, 0x7C, 0x38, 0x10, 0x00, 0x00, 0x00};     // 
 
 // Get icon for card
 static const uint8_t* getCardIcon(uint8_t card) {
@@ -1254,13 +1260,14 @@ static void renderTitle(uint32_t now) {
             int revealLine = (int)(progress * (WT_MATRIX_HEIGHT + 3));
             // Draw rain drops
             for (int x = 0; x < WT_MATRIX_WIDTH; x++) {
-                int dropY = (revealLine + (x * 3) % 5) % (WT_MATRIX_HEIGHT + 5);
-                if (dropY >= 0 && dropY < WT_MATRIX_HEIGHT) {
-                    uint8_t hue = (x * 15 + (int)(now / 20)) % 256;
-                    wt_display_set_pixel_xy(x, dropY, wt_color_hsv(hue, 200, 255));
-                }
-                if (dropY > 0 && dropY - 1 < WT_MATRIX_HEIGHT) {
-                    wt_display_set_pixel_xy(x, dropY - 1, wt_color(50, 50, 80));
+                int speed = 2 + (x % 3);
+                int dropY = ((int)(now / (30 + x * 2)) + x * 7) % (WT_MATRIX_HEIGHT + 8) - 4;
+                for (int t = 0; t < 4; t++) {
+                    int py = dropY - t;
+                    if (py >= 0 && py < WT_MATRIX_HEIGHT) {
+                        uint8_t br = 255 - t * 60;
+                        wt_display_set_pixel_xy(x, py, wt_color(0, br, br/3));
+                    }
                 }
             }
             // Icon appears as rain clears
@@ -1778,13 +1785,9 @@ static void renderBootAnimation(uint32_t now)
     // Heart shape bitmap (centered, 9x7)
     // Using classic pixel heart shape
     static const uint16_t HEART[7] = {
-        0b011011000,  // row 6 (top)     .##.##.
-        0b111111100,  // row 5           #######
-        0b111111100,  // row 4           #######
-        0b011111000,  // row 3           .#####.
-        0b001110000,  // row 2           ..###..
-        0b000100000,  // row 1           ...#...
-        0b000000000,  // row 0 (bottom)  .......
+        0b011011000,  // y=4: columns 1-5
+        0b111111100,  // y=5: columns 0-6
+        0b00011100   // y=6: columns 2-4
     };
     
     // Calculate beat phase (0-1 within each beat)
@@ -2014,6 +2017,16 @@ static void renderAPWelcomeScreen(uint32_t now)
         0b01111111100,  // row 1
         0b00011100000,  // row 0 (bottom)
     };
+
+    static const uint16_t HEART[7] = {
+        0b000100000,
+        0b000110000,
+        0b001111000,
+        0b011111100,
+        0b111111110,
+        0b111111110,
+        0b011001100,
+    };
     
     // Draw cloud (offset to left)
     float cloudPulse = 0.8f + 0.2f * sinf(now * 0.005f);
@@ -2024,10 +2037,12 @@ static void renderAPWelcomeScreen(uint32_t now)
     
     int8_t cloudX = 0;
     int8_t cloudY = 1;
-    for (int8_t row = 0; row < 5; ++row) {
-        uint16_t bits = CLOUD[4 - row];
-        for (int8_t col = 0; col < 11; ++col) {
-            if (bits & (1 << (10 - col))) {
+
+    // Draw heart
+    for (int8_t row = 0; row < 7; ++row) {
+        uint16_t bits = HEART[6 - row];  // Flip vertically
+        for (int8_t col = 0; col < 9; ++col) {
+            if (bits & (1 << (8 - col))) {
                 int8_t px = cloudX + col;
                 int8_t py = cloudY + row;
                 if (px >= 0 && px < WT_MATRIX_WIDTH && py >= 0 && py < WT_MATRIX_HEIGHT) {
@@ -2036,55 +2051,12 @@ static void renderAPWelcomeScreen(uint32_t now)
             }
         }
     }
-    
-    // Small beating heart inside cloud
-    float heartbeat = sinf(now * 0.008f);
-    uint8_t heartBright = (heartbeat > 0) ? (uint8_t)(180 + 75 * heartbeat) : 180;
-    uint32_t heartCol = wt_color(heartBright, heartBright/5, heartBright/4);
-    
-    // Tiny 3x3 heart in cloud center
-    wt_display_set_pixel_xy(4, 4, heartCol);
-    wt_display_set_pixel_xy(6, 4, heartCol);
-    wt_display_set_pixel_xy(3, 3, heartCol);
-    wt_display_set_pixel_xy(4, 3, heartCol);
-    wt_display_set_pixel_xy(5, 3, heartCol);
-    wt_display_set_pixel_xy(6, 3, heartCol);
-    wt_display_set_pixel_xy(7, 3, heartCol);
-    wt_display_set_pixel_xy(4, 2, heartCol);
-    wt_display_set_pixel_xy(5, 2, heartCol);
-    wt_display_set_pixel_xy(6, 2, heartCol);
-    wt_display_set_pixel_xy(5, 1, heartCol);
-    
-    // WiFi symbol on right side (animated signal)
-    int8_t wifiX = 13;
-    int8_t wifiY = 0;
-    uint8_t arcPhase = (now / 400) % 4;
-    
-    uint32_t wifiOn = wt_color(0, 220, 180);
-    uint32_t wifiDim = wt_color(0, 60, 50);
-    
-    // Center dot
-    wt_display_set_pixel_xy(wifiX + 3, wifiY + 0, wifiOn);
-    wt_display_set_pixel_xy(wifiX + 3, wifiY + 1, wifiOn);
-    
-    // Arc 1
-    uint32_t a1 = (arcPhase >= 1) ? wifiOn : wifiDim;
-    wt_display_set_pixel_xy(wifiX + 2, wifiY + 2, a1);
-    wt_display_set_pixel_xy(wifiX + 4, wifiY + 2, a1);
-    
-    // Arc 2
-    uint32_t a2 = (arcPhase >= 2) ? wifiOn : wifiDim;
-    wt_display_set_pixel_xy(wifiX + 1, wifiY + 3, a2);
-    wt_display_set_pixel_xy(wifiX + 5, wifiY + 3, a2);
-    wt_display_set_pixel_xy(wifiX + 1, wifiY + 4, a2);
-    wt_display_set_pixel_xy(wifiX + 5, wifiY + 4, a2);
-    
-    // Arc 3
-    uint32_t a3 = (arcPhase >= 3) ? wifiOn : wifiDim;
-    wt_display_set_pixel_xy(wifiX + 0, wifiY + 5, a3);
-    wt_display_set_pixel_xy(wifiX + 6, wifiY + 5, a3);
-    wt_display_set_pixel_xy(wifiX + 0, wifiY + 6, a3);
-    wt_display_set_pixel_xy(wifiX + 6, wifiY + 6, a3);
+
+    // Timeline pulses with heartbeat
+    uint8_t tlBright = (uint8_t)(30 * cloudPulse);
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        wt_timeline_set_pixel(i, wt_color(tlBright, tlBright/4, tlBright/3));
+    }
 }
 
 void cards_loop()
@@ -2248,10 +2220,10 @@ void cards_loop()
     }
 
     // Background tasks (fetch tickers and social media)
-    if (now % 1000 == 0) { // Check every second
+    if (now - g_lastBgSecondTick >= 1000) {
+        g_lastBgSecondTick = now;
         ticker_update(now, 0);
         stock_update(now, 0);
-        // Social media updates (they manage their own timing)
         youtube_update(now, 0);
         twitch_update(now, 0);
         twitter_update(now, 0);
@@ -8178,57 +8150,77 @@ static void ticker_setup()
     g_tickerPrevPrice = 0;
     g_tickerValid = false;
     g_tickerChange = 0;
+    g_tickerFetchInFlight = false;
+}
+
+static void ticker_fetch_job(void* ctx)
+{
+    (void)ctx;
+
+    if (WiFi.status() != WL_CONNECTED) {
+        g_tickerFetchInFlight = false;
+        return;
+    }
+
+    HTTPClient http;
+    http.begin("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
+    http.setTimeout(15000);
+    http.addHeader("User-Agent", "WeatherThing/1.0");
+    http.addHeader("Accept", "application/json");
+    int code = http.GET();
+
+    Serial.print("BTC API response: ");
+    Serial.println(code);
+
+    if (code == 200)
+    {
+        String payload = http.getString();
+        int priceIdx = payload.indexOf("\"usd\":");
+        if (priceIdx >= 0)
+        {
+            int start = priceIdx + 6;
+            int end = payload.indexOf(",", start);
+            if (end < 0) end = payload.indexOf("}", start);
+
+            float newPrice = payload.substring(start, end).toFloat();
+            if (newPrice > 0)
+            {
+                portENTER_CRITICAL(&g_cardsMux);
+                if (g_tickerValid) {
+                    if (newPrice > g_tickerPrice) g_tickerChange = 1;
+                    else if (newPrice < g_tickerPrice) g_tickerChange = -1;
+                    g_tickerPrevPrice = g_tickerPrice;
+                }
+                g_tickerPrice = newPrice;
+                g_tickerValid = true;
+                portEXIT_CRITICAL(&g_cardsMux);
+
+                Serial.print("BTC: $");
+                Serial.println(newPrice);
+            }
+        }
+    }
+    http.end();
+
+    g_tickerFetchInFlight = false;
 }
 
 static void ticker_update(uint32_t now, uint32_t dt)
 {
+    (void)dt;
+    Settings& cfg = settings_get();
+    if (!cfg.cardEnabled[CARD_BTC]) return;
+
     // Fetch price at configurable interval (default 5 minutes)
-    uint32_t updateMs = (uint32_t)settings_get().btcUpdateMins * 60000UL;
-    if (WiFi.status() == WL_CONNECTED && (now - g_tickerLastFetch > updateMs || g_tickerLastFetch == 0))
+    uint32_t updateMs = (uint32_t)cfg.btcUpdateMins * 60000UL;
+    if (WiFi.status() == WL_CONNECTED && !g_tickerFetchInFlight && (now - g_tickerLastFetch > updateMs || g_tickerLastFetch == 0))
     {
-        g_tickerLastFetch = now;
-        
-        HTTPClient http;
-        // Use HTTPS and add User-Agent header (required by CoinGecko)
-        http.begin("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
-        http.setTimeout(15000);
-        http.addHeader("User-Agent", "WeatherThing/1.0");
-        http.addHeader("Accept", "application/json");
-        int code = http.GET();
-        
-        Serial.print("BTC API response: ");
-        Serial.println(code);
-        
-        if (code == 200)
-        {
-            String payload = http.getString();
-            int priceIdx = payload.indexOf("\"usd\":");
-            if (priceIdx >= 0)
-            {
-                int start = priceIdx + 6;
-                int end = payload.indexOf(",", start);
-                if (end < 0) end = payload.indexOf("}", start);
-                
-                float newPrice = payload.substring(start, end).toFloat();
-                
-                // Track price change - Keep change indicator if stable
-                if (g_tickerValid && newPrice > 0) {
-                    if (newPrice > g_tickerPrice) g_tickerChange = 1;
-                    else if (newPrice < g_tickerPrice) g_tickerChange = -1;
-                    // Else keep previous change state
-                    
-                    g_tickerPrevPrice = g_tickerPrice;
-                }
-                
-                if (newPrice > 0) {
-                    g_tickerPrice = newPrice;
-                    g_tickerValid = true;
-                    Serial.print("BTC: $");
-                    Serial.println(g_tickerPrice);
-                }
-            }
+        g_tickerFetchInFlight = true;
+        if (!http_worker_enqueue(ticker_fetch_job, nullptr)) {
+            g_tickerFetchInFlight = false;
+            return;
         }
-        http.end();
+        g_tickerLastFetch = now;
     }
 }
 
@@ -8237,11 +8229,20 @@ static void ticker_render()
     wt_display_clear();
     wt_timeline_clear();
 
+    float tickerPrice;
+    bool tickerValid;
+    int8_t tickerChange;
+    portENTER_CRITICAL(&g_cardsMux);
+    tickerPrice = g_tickerPrice;
+    tickerValid = g_tickerValid;
+    tickerChange = g_tickerChange;
+    portEXIT_CRITICAL(&g_cardsMux);
+
     // Icon always golden (Bitcoin brand color)
     uint32_t iconCol = wt_color(255, 180, 50);  // Golden
     drawBitcoinIcon(0, 0, iconCol);
 
-    if (!g_tickerValid) {
+    if (!tickerValid) {
         // Pulsing dot while loading
         uint8_t b = 50 + (millis() / 10) % 100;
         wt_display_set_pixel_xy(10, 3, wt_color(b, b / 2, 0));
@@ -8249,13 +8250,13 @@ static void ticker_render()
     }
 
     // Price in K (e.g. 98500 -> 98.5)
-    uint16_t kVal = (uint16_t)(g_tickerPrice / 1000.0f);
-    uint16_t dec = (uint16_t)(g_tickerPrice / 100.0f) % 10;
+    uint16_t kVal = (uint16_t)(tickerPrice / 1000.0f);
+    uint16_t dec = (uint16_t)(tickerPrice / 100.0f) % 10;
 
     // Color based on price movement (matches icon)
     uint32_t pCol;
-    if (g_tickerChange > 0) pCol = wt_color(50, 255, 100);       // Green - up
-    else if (g_tickerChange < 0) pCol = wt_color(255, 80, 80);   // Red - down  
+    if (tickerChange > 0) pCol = wt_color(50, 255, 100);       // Green - up
+    else if (tickerChange < 0) pCol = wt_color(255, 80, 80);   // Red - down  
     else pCol = wt_color(200, 200, 200);                         // Light grey - stable
     
     uint32_t pDim = wt_color(((pCol>>16)&0xFF)/2, ((pCol>>8)&0xFF)/2, (pCol&0xFF)/2);
@@ -8284,10 +8285,10 @@ static void ticker_render()
     
     // Timeline shows trend - animated pulse (green/red/grey)
     uint32_t tlCol;
-    if (g_tickerChange > 0) {
+    if (tickerChange > 0) {
         uint8_t pulse = 80 + ((millis() / 50) % 80);
         tlCol = wt_color(0, pulse, pulse / 3);
-    } else if (g_tickerChange < 0) {
+    } else if (tickerChange < 0) {
         uint8_t pulse = 80 + ((millis() / 50) % 80);
         tlCol = wt_color(pulse, 0, 0);
     } else {
@@ -8345,69 +8346,97 @@ static void stock_setup()
     g_stockPrevPrice = 0;
     g_stockValid = false;
     g_stockChange = 0;
+    g_stockFetchInFlight = false;
+}
+
+static void stock_fetch_job(void* ctx)
+{
+    (void)ctx;
+
+    Settings& cfg = settings_get();
+
+    if (!cfg.stockEnabled || cfg.stockSymbol[0] == '\0') {
+        g_stockFetchInFlight = false;
+        return;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        g_stockFetchInFlight = false;
+        return;
+    }
+
+    // Use Yahoo Finance chart API (public, no auth)
+    String url = "https://query1.finance.yahoo.com/v8/finance/chart/";
+    url += cfg.stockSymbol;
+    url += "?interval=1d&range=1d";
+
+    HTTPClient http;
+    http.begin(url);
+    http.setTimeout(10000);
+    http.addHeader("User-Agent", "WeatherThing/1.0");
+    int code = http.GET();
+
+    if (code == 200)
+    {
+        String payload = http.getString();
+
+        // Parse regularMarketPrice from response
+        int priceIdx = payload.indexOf("\"regularMarketPrice\":");
+        if (priceIdx >= 0)
+        {
+            int start = priceIdx + 21;
+            int end = payload.indexOf(",", start);
+            if (end < 0) end = payload.indexOf("}", start);
+
+            float newPrice = payload.substring(start, end).toFloat();
+
+            if (newPrice > 0) {
+                portENTER_CRITICAL(&g_cardsMux);
+                if (g_stockValid) {
+                    if (newPrice > g_stockPrice) g_stockChange = 1;
+                    else if (newPrice < g_stockPrice) g_stockChange = -1;
+                    g_stockPrevPrice = g_stockPrice;
+                }
+                g_stockPrice = newPrice;
+                g_stockValid = true;
+                portEXIT_CRITICAL(&g_cardsMux);
+
+                Serial.print("Stock ");
+                Serial.print(cfg.stockSymbol);
+                Serial.print(": $");
+                Serial.println(newPrice);
+            }
+        }
+    }
+    http.end();
+
+    g_stockFetchInFlight = false;
 }
 
 static void stock_update(uint32_t now, uint32_t dt)
 {
     Settings& cfg = settings_get();
+    (void)dt;
+    if (!cfg.cardEnabled[CARD_STOCK]) return;
     
     // Skip if no symbol configured
     if (!cfg.stockEnabled || cfg.stockSymbol[0] == '\0') {
+        portENTER_CRITICAL(&g_cardsMux);
         g_stockValid = false;
+        portEXIT_CRITICAL(&g_cardsMux);
         return;
     }
     
     // Fetch price at configurable interval (default 5 minutes)
     uint32_t updateMs = (uint32_t)cfg.stockUpdateMins * 60000UL;
-    if (WiFi.status() == WL_CONNECTED && (now - g_stockLastFetch > updateMs || g_stockLastFetch == 0))
+    if (WiFi.status() == WL_CONNECTED && !g_stockFetchInFlight && (now - g_stockLastFetch > updateMs || g_stockLastFetch == 0))
     {
-        g_stockLastFetch = now;
-        
-        // Use Yahoo Finance chart API (public, no auth)
-        String url = "https://query1.finance.yahoo.com/v8/finance/chart/";
-        url += cfg.stockSymbol;
-        url += "?interval=1d&range=1d";
-        
-        HTTPClient http;
-        http.begin(url);
-        http.setTimeout(10000);
-        http.addHeader("User-Agent", "WeatherThing/1.0");
-        int code = http.GET();
-        
-        if (code == 200)
-        {
-            String payload = http.getString();
-            
-            // Parse regularMarketPrice from response
-            int priceIdx = payload.indexOf("\"regularMarketPrice\":");
-            if (priceIdx >= 0)
-            {
-                int start = priceIdx + 21;
-                int end = payload.indexOf(",", start);
-                if (end < 0) end = payload.indexOf("}", start);
-                
-                float newPrice = payload.substring(start, end).toFloat();
-                
-                if (newPrice > 0) {
-                    // Track price change - Keep change indicator if stable
-                    if (g_stockValid) {
-                        if (newPrice > g_stockPrice) g_stockChange = 1;
-                        else if (newPrice < g_stockPrice) g_stockChange = -1;
-                        // Else keep previous change state
-                        
-                        g_stockPrevPrice = g_stockPrice;
-                    }
-                    
-                    g_stockPrice = newPrice;
-                    g_stockValid = true;
-                    Serial.print("Stock ");
-                    Serial.print(cfg.stockSymbol);
-                    Serial.print(": $");
-                    Serial.println(g_stockPrice);
-                }
-            }
+        g_stockFetchInFlight = true;
+        if (!http_worker_enqueue(stock_fetch_job, nullptr)) {
+            g_stockFetchInFlight = false;
+            return;
         }
-        http.end();
+        g_stockLastFetch = now;
     }
 }
 
@@ -8417,6 +8446,15 @@ static void stock_render()
     wt_timeline_clear();
     
     Settings& cfg = settings_get();
+
+    float stockPrice;
+    bool stockValid;
+    int8_t stockChange;
+    portENTER_CRITICAL(&g_cardsMux);
+    stockPrice = g_stockPrice;
+    stockValid = g_stockValid;
+    stockChange = g_stockChange;
+    portEXIT_CRITICAL(&g_cardsMux);
     
     // Check if stock is enabled
     if (!cfg.stockEnabled || cfg.stockSymbol[0] == '\0') {
@@ -8436,9 +8474,9 @@ static void stock_render()
     
     // Icon always golden
     uint32_t iconCol = wt_color(255, 180, 50);  // Golden
-    drawStockIcon(0, 1, iconCol, g_stockChange >= 0);
+    drawStockIcon(0, 1, iconCol, stockChange >= 0);
     
-    if (!g_stockValid) {
+    if (!stockValid) {
         // Pulsing dot while loading
         uint8_t b = 50 + (millis() / 10) % 100;
         wt_display_set_pixel_xy(10, 3, wt_color(b, b, b));
@@ -8449,18 +8487,18 @@ static void stock_render()
     // For prices < 1000, show 2 decimals (XX.XX)
     // For prices >= 1000, show in K format (XX.XK)
     uint32_t pCol;
-    if (g_stockChange > 0) pCol = wt_color(50, 255, 100);       // Green
-    else if (g_stockChange < 0) pCol = wt_color(255, 80, 80);   // Red
+    if (stockChange > 0) pCol = wt_color(50, 255, 100);       // Green
+    else if (stockChange < 0) pCol = wt_color(255, 80, 80);   // Red
     else pCol = wt_color(200, 200, 200);                        // Grey - neutral
     
     uint32_t pDim = wt_color(((pCol>>16)&0xFF)/2, ((pCol>>8)&0xFF)/2, (pCol&0xFF)/2);
     
     uint8_t x = 7;
     
-    if (g_stockPrice >= 1000) {
+    if (stockPrice >= 1000) {
         // Show as XX.XK or XXXK
-        uint16_t kVal = (uint16_t)(g_stockPrice / 1000.0f);
-        uint16_t dec = (uint16_t)(g_stockPrice / 100.0f) % 10;
+        uint16_t kVal = (uint16_t)(stockPrice / 1000.0f);
+        uint16_t dec = (uint16_t)(stockPrice / 100.0f) % 10;
         
         bool showDec = (kVal < 100); // Only show decimal if < 100K
         
@@ -8478,22 +8516,22 @@ static void stock_render()
             drawDigit(x, 0, dec, pDim);
         }
         
-    } else if (g_stockPrice >= 100) {
+    } else if (stockPrice >= 100) {
         // Show as XXX
-        uint16_t val = (uint16_t)g_stockPrice;
+        uint16_t val = (uint16_t)stockPrice;
         drawDigit(x, 0, val / 100, pCol); x += 4;
         drawDigit(x, 0, (val / 10) % 10, pCol); x += 4;
         drawDigit(x, 0, val % 10, pDim);
-    } else if (g_stockPrice >= 10) {
+    } else if (stockPrice >= 10) {
         // Show as XX.X
-        uint16_t val = (uint16_t)(g_stockPrice * 10);
+        uint16_t val = (uint16_t)(stockPrice * 10);
         drawDigit(x, 0, val / 100, pCol); x += 4;
         drawDigit(x, 0, (val / 10) % 10, pCol); x += 4;
         wt_display_set_pixel_xy(x, 0, pDim); x += 2;
         drawDigit(x, 0, val % 10, pDim);
     } else {
         // Show as X.XX
-        uint16_t val = (uint16_t)(g_stockPrice * 100);
+        uint16_t val = (uint16_t)(stockPrice * 100);
         drawDigit(x, 0, val / 100, pCol); x += 4;
         wt_display_set_pixel_xy(x, 0, pDim); x += 2;
         drawDigit(x, 0, (val / 10) % 10, pCol); x += 4;
@@ -8502,10 +8540,10 @@ static void stock_render()
     
     // Timeline shows trend (green/red/grey)
     uint32_t tlCol;
-    if (g_stockChange > 0) {
+    if (stockChange > 0) {
         uint8_t pulse = 80 + ((millis() / 50) % 80);
         tlCol = wt_color(0, pulse, pulse / 3);
-    } else if (g_stockChange < 0) {
+    } else if (stockChange < 0) {
         uint8_t pulse = 80 + ((millis() / 50) % 80);
         tlCol = wt_color(pulse, 0, 0);
     } else {
@@ -9165,16 +9203,14 @@ static void sparkle_render()
         uint8_t palPos = i * 21;  // Spread across palette
         wt_timeline_set_pixel(i, settings_palette_color(palette, palPos, b));
     }
-}
 
-// ============================================================================
+}
 
 static int16_t g_mqttScrollX = 0;
 static uint32_t g_mqttLastScroll = 0;
 static uint8_t g_mqttDisplayMode = 0;  // 0=message, 1=status
-
+ 
 // Simple icon bitmaps (7x7)
-// ... (rest of the code remains the same)
 static const uint8_t MQTT_ICON_BELL_DATA[] = {
     0b0001000,
     0b0011100,
@@ -9368,7 +9404,6 @@ static void mqttcard_render()
         wt_timeline_set_pixel(i, wt_color(pr, pg, pb));
     }
 }
-
 // ============================================================================
 // RSS Card - Custom RSS Feed Reader with Extended Character Support
 // ============================================================================
@@ -9378,6 +9413,7 @@ static uint32_t g_rssLastFetch = 0;
 static int16_t g_rssScrollX = 20;
 static uint32_t g_rssLastScroll = 0;
 static bool g_rssValid = false;
+static volatile bool g_rssFetchInFlight = false;
 
 // Extended 4x7 font for Latvian characters (ĀČĒĢĪĶĻŅŠŪŽ)
 static const uint8_t FONT_EXT[][7] = {
@@ -9486,180 +9522,203 @@ static void cleanRSSString(String& s) {
     s.trim();
 }
 
+static void rss_append_literal(const char* s, char* out, int& outLen, size_t outSize)
+{
+    while (*s && outLen < (int)outSize - 1) {
+        out[outLen++] = *s++;
+    }
+    out[outLen] = 0;
+}
+
+static void rss_append_utf8_to_outTitle(const String& fullText, char* outTitle, int& outLen, size_t outSize)
+{
+    for (size_t i = 0; i < fullText.length() && outLen < (int)outSize - 1; i++) {
+        uint8_t c = (uint8_t)fullText[i];
+
+        // Handle UTF-8 multi-byte sequences for Latvian chars
+        if (c == 0xC4 || c == 0xC5) {
+            if (i + 1 < fullText.length()) {
+                uint8_t c2 = (uint8_t)fullText[++i];
+                uint8_t code = 0;
+                if (c == 0xC4) {
+                    if(c2==0x80) code=128; else if(c2==0x81) code=139;
+                    else if(c2==0x8C) code=129; else if(c2==0x8D) code=140;
+                    else if(c2==0x92) code=130; else if(c2==0x93) code=141;
+                    else if(c2==0x9C) code=131; else if(c2==0x9D) code=142;
+                    else if(c2==0xAA) code=132; else if(c2==0xAB) code=143;
+                    else if(c2==0xB6) code=133; else if(c2==0xB7) code=144;
+                    else if(c2==0xBB) code=134; else if(c2==0xBC) code=145;
+                } else if (c == 0xC5) {
+                    if(c2==0x85) code=135; else if(c2==0x86) code=146;
+                    else if(c2==0x60) code=136; else if(c2==0x61) code=147;
+                    else if(c2==0xAA) code=137; else if(c2==0xAB) code=148;
+                    else if(c2==0xBD) code=138; else if(c2==0xBE) code=149;
+                }
+                if (code != 0 && outLen < (int)outSize - 1) {
+                    outTitle[outLen++] = code;
+                }
+            }
+        } else if ((c & 0xE0) == 0xC0) {
+            i++; // Skip other 2-byte char
+        } else if ((c & 0xF0) == 0xE0) {
+            i += 2; // Skip 3-byte char
+        } else if ((c & 0xF8) == 0xF0) {
+            i += 3; // Skip 4-byte char
+        } else if (c < 128) {
+            outTitle[outLen++] = (char)c;
+        }
+    }
+    outTitle[outLen] = 0;
+}
+
 static void fetchRSS() {
     Settings& cfg = settings_get();
-    if (strlen(cfg.rssUrl) < 5) {
-        snprintf(g_rssTitle, sizeof(g_rssTitle), "Configure RSS URL in web panel");
-        g_rssValid = false;
-        return;
-    }
-    
-    if (WiFi.status() != WL_CONNECTED) {
-        snprintf(g_rssTitle, sizeof(g_rssTitle), "WiFi disconnected");
-        g_rssValid = false;
-        return;
-    }
-    
-    Serial.printf("[RSS] Fetching: %s\n", cfg.rssUrl);
-    
-    HTTPClient http;
-    WiFiClientSecure *secureClient = nullptr;
-    
-    // Use WiFiClientSecure for HTTPS URLs
-    if (strncmp(cfg.rssUrl, "https://", 8) == 0) {
-        secureClient = new WiFiClientSecure();
-        secureClient->setInsecure(); // Skip certificate validation
-        http.begin(*secureClient, cfg.rssUrl);
-    } else {
-        http.begin(cfg.rssUrl);
-    }
-    
-    http.setTimeout(15000);
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.addHeader("User-Agent", "WeatherThing/1.0");
-    http.addHeader("Accept", "application/rss+xml, application/xml, text/xml");
-    
-    int httpCode = http.GET();
-    Serial.printf("[RSS] HTTP code: %d\n", httpCode);
-    
-    if (httpCode != HTTP_CODE_OK) {
-        snprintf(g_rssTitle, sizeof(g_rssTitle), "RSS error %d", httpCode);
-        g_rssValid = false;
-        http.end();
-        if (secureClient) delete secureClient;
-        return;
-    }
-    
-    // Read response
-    String response = "";
-    WiFiClient *stream = http.getStreamPtr();
-    uint32_t startTime = millis();
-    int bytesRead = 0;
-    const int maxBytes = 48000; // Increased buffer for multiple items
-    
-    while (stream->available() || (millis() - startTime) < 5000) {
-        if (stream->available()) {
-            int toRead = min(1024, stream->available());
-            char buf[1025];
-            int len = stream->readBytes(buf, toRead);
-            if (len > 0) {
-                buf[len] = 0;
-                response += buf;
-                bytesRead += len;
-                if (bytesRead >= maxBytes) break;
-                startTime = millis(); // Reset timeout on data
-            }
+    char outTitle[sizeof(g_rssTitle)] = {0};
+    bool outValid = false;
+
+    do {
+        if (strlen(cfg.rssUrl) < 5) {
+            snprintf(outTitle, sizeof(outTitle), "Configure RSS URL in web panel");
+            break;
         }
-        delay(1);
-    }
-    
-    http.end();
-    
-    // Parse Items
-    String fullText = "";
-    int searchPos = 0;
-    int itemsFound = 0;
-    int targetItems = (cfg.rssItemCount > 0) ? cfg.rssItemCount : 3;
-    
-    while (itemsFound < targetItems) {
-        // Find item start
-        int itemStart = response.indexOf("<item", searchPos);
-        if (itemStart < 0) itemStart = response.indexOf("<entry", searchPos); // Atom support
-        if (itemStart < 0) break;
-        
-        int itemEnd = response.indexOf("</item>", itemStart);
-        if (itemEnd < 0) itemEnd = response.indexOf("</entry>", itemStart);
-        if (itemEnd < 0) itemEnd = response.length();
-        
-        // Find Title
-        int titleStart = response.indexOf("<title", itemStart);
-        if (titleStart > 0 && titleStart < itemEnd) {
-            int contentStart = response.indexOf(">", titleStart) + 1;
-            int titleEnd = response.indexOf("</title>", contentStart);
-            
-            if (contentStart > 0 && titleEnd > 0) {
-                String title = response.substring(contentStart, titleEnd);
-                cleanRSSString(title);
-                
-                if (fullText.length() > 0) fullText += "   ***   ";
-                fullText += title;
-                
-                // Find Description/Summary if requested
-                if (cfg.rssFormat == 1) {
-                    int descStart = response.indexOf("<description", itemStart);
-                    if (descStart < 0) descStart = response.indexOf("<summary", itemStart);
-                    
-                    if (descStart > 0 && descStart < itemEnd) {
-                        int dContentStart = response.indexOf(">", descStart) + 1;
-                        int dEnd = response.indexOf("</", dContentStart);
-                        
-                        if (dContentStart > 0 && dEnd > 0) {
-                            String desc = response.substring(dContentStart, dEnd);
-                            cleanRSSString(desc);
-                            if (desc.length() > 0) {
-                                fullText += ": " + desc;
+
+        if (WiFi.status() != WL_CONNECTED) {
+            snprintf(outTitle, sizeof(outTitle), "WiFi disconnected");
+            break;
+        }
+
+        Serial.printf("[RSS] Fetching: %s\n", cfg.rssUrl);
+
+        HTTPClient http;
+        WiFiClientSecure secureClient;
+
+        // Use WiFiClientSecure for HTTPS URLs
+        if (strncmp(cfg.rssUrl, "https://", 8) == 0) {
+            secureClient.setInsecure(); // Skip certificate validation
+            http.begin(secureClient, cfg.rssUrl);
+        } else {
+            http.begin(cfg.rssUrl);
+        }
+
+        http.setTimeout(15000);
+        http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+        http.addHeader("User-Agent", "WeatherThing/1.0");
+        http.addHeader("Accept", "application/rss+xml, application/xml, text/xml");
+
+        int httpCode = http.GET();
+        Serial.printf("[RSS] HTTP code: %d\n", httpCode);
+
+        if (httpCode != HTTP_CODE_OK) {
+            http.end();
+            snprintf(outTitle, sizeof(outTitle), "RSS error %d", httpCode);
+            break;
+        }
+
+        const int maxBytes = 48000; // Increased buffer for multiple items
+
+        // Read response
+        String response = "";
+        response.reserve(maxBytes);
+        WiFiClient* stream = http.getStreamPtr();
+        uint32_t startTime = millis();
+        int bytesRead = 0;
+
+        while (stream->available() || (millis() - startTime) < 5000) {
+            if (stream->available()) {
+                int toRead = min(1024, stream->available());
+                char buf[1025];
+                int len = stream->readBytes(buf, toRead);
+                if (len > 0) {
+                    buf[len] = 0;
+                    response += buf;
+                    bytesRead += len;
+                    if (bytesRead >= maxBytes) break;
+                    startTime = millis(); // Reset timeout on data
+                }
+            }
+            delay(1);
+        }
+
+        http.end();
+
+        // Parse Items
+        int searchPos = 0;
+        int itemsFound = 0;
+        int targetItems = (cfg.rssItemCount > 0) ? cfg.rssItemCount : 3;
+        int outLen = 0;
+
+        while (itemsFound < targetItems) {
+            // Find item start
+            int itemStart = response.indexOf("<item", searchPos);
+            if (itemStart < 0) itemStart = response.indexOf("<entry", searchPos); // Atom support
+            if (itemStart < 0) break;
+
+            int itemEnd = response.indexOf("</item>", itemStart);
+            if (itemEnd < 0) itemEnd = response.indexOf("</entry>", itemStart);
+            if (itemEnd < 0) itemEnd = response.length();
+
+            // Find Title
+            int titleStart = response.indexOf("<title", itemStart);
+            if (titleStart > 0 && titleStart < itemEnd) {
+                int contentStart = response.indexOf(">", titleStart) + 1;
+                int titleEnd = response.indexOf("</title>", contentStart);
+
+                if (contentStart > 0 && titleEnd > 0) {
+                    String title = response.substring(contentStart, titleEnd);
+                    cleanRSSString(title);
+
+                    if (title.length() > 200) title.remove(200);
+
+                    if (outLen > 0) rss_append_literal("   ***   ", outTitle, outLen, sizeof(outTitle));
+                    rss_append_utf8_to_outTitle(title, outTitle, outLen, sizeof(outTitle));
+
+                    // Find Description/Summary if requested
+                    if (cfg.rssFormat == 1) {
+                        int descStart = response.indexOf("<description", itemStart);
+                        if (descStart < 0) descStart = response.indexOf("<summary", itemStart);
+
+                        if (descStart > 0 && descStart < itemEnd) {
+                            int dContentStart = response.indexOf(">", descStart) + 1;
+                            int dEnd = response.indexOf("</", dContentStart);
+
+                            if (dContentStart > 0 && dEnd > 0) {
+                                String desc = response.substring(dContentStart, dEnd);
+                                cleanRSSString(desc);
+                                if (desc.length() > 0) {
+                                    if (desc.length() > 300) desc.remove(300);
+                                    rss_append_literal(": ", outTitle, outLen, sizeof(outTitle));
+                                    rss_append_utf8_to_outTitle(desc, outTitle, outLen, sizeof(outTitle));
+                                }
                             }
                         }
                     }
                 }
             }
+
+            searchPos = itemEnd;
+            itemsFound++;
         }
-        
-        searchPos = itemEnd;
-        itemsFound++;
-    }
-    
-    if (fullText.length() == 0) {
-        snprintf(g_rssTitle, sizeof(g_rssTitle), "No items found");
-        g_rssValid = false;
-    } else {
-        // Convert UTF-8 to display format
-        int outLen = 0;
-        for(size_t i = 0; i < fullText.length() && outLen < (int)sizeof(g_rssTitle) - 1; i++) {
-            uint8_t c = fullText[i];
-            
-            // Handle UTF-8 multi-byte sequences for Latvian chars
-            if (c == 0xC4 || c == 0xC5) {
-                if (i + 1 < fullText.length()) {
-                    uint8_t c2 = fullText[++i];
-                    uint8_t code = 0;
-                    if (c == 0xC4) {
-                        if(c2==0x80) code=128; else if(c2==0x81) code=139;
-                        else if(c2==0x8C) code=129; else if(c2==0x8D) code=140;
-                        else if(c2==0x92) code=130; else if(c2==0x93) code=141;
-                        else if(c2==0x9C) code=131; else if(c2==0x9D) code=142;
-                        else if(c2==0xAA) code=132; else if(c2==0xAB) code=143;
-                        else if(c2==0xB6) code=133; else if(c2==0xB7) code=144;
-                        else if(c2==0xBB) code=134; else if(c2==0xBC) code=145;
-                    } else if (c == 0xC5) {
-                        if(c2==0x85) code=135; else if(c2==0x86) code=146;
-                        else if(c2==0x60) code=136; else if(c2==0x61) code=147;
-                        else if(c2==0xAA) code=137; else if(c2==0xAB) code=148;
-                        else if(c2==0xBD) code=138; else if(c2==0xBE) code=149;
-                    }
-                    if (code != 0) g_rssTitle[outLen++] = code;
-                }
-            } else if ((c & 0xE0) == 0xC0) {
-                i++; // Skip other 2-byte char
-            } else if ((c & 0xF0) == 0xE0) {
-                i += 2; // Skip 3-byte char
-            } else if ((c & 0xF8) == 0xF0) {
-                i += 3; // Skip 4-byte char
-            } else if (c < 128) {
-                g_rssTitle[outLen++] = c;
-            }
+
+        if (outLen == 0) {
+            snprintf(outTitle, sizeof(outTitle), "No items found");
+            outValid = false;
+            break;
         }
-        g_rssTitle[outLen] = 0;
-        g_rssValid = true;
-        Serial.printf("[RSS] Text: %s\n", g_rssTitle);
-    }
-    
-    if (secureClient) delete secureClient;
+        outValid = true;
+        Serial.printf("[RSS] Text: %s\n", outTitle);
+    } while (false);
+
+    portENTER_CRITICAL(&g_cardsMux);
+    strncpy(g_rssTitle, outTitle, sizeof(g_rssTitle) - 1);
+    g_rssTitle[sizeof(g_rssTitle) - 1] = 0;
+    g_rssValid = outValid;
+    portEXIT_CRITICAL(&g_cardsMux);
 }
 
 static void rss_setup() {
     g_rssScrollX = WT_MATRIX_WIDTH;
     g_rssLastFetch = 0;
+    g_rssFetchInFlight = false;
     Settings& cfg = settings_get();
     if (cfg.rssUrl[0] == 0) {
         strcpy(g_rssTitle, "Set RSS URL in web panel");
@@ -9668,11 +9727,43 @@ static void rss_setup() {
     }
 }
 
+static void rss_fetch_job(void* ctx)
+{
+    (void)ctx;
+    fetchRSS();
+    g_rssFetchInFlight = false;
+}
+
 static void rss_update(uint32_t now, uint32_t dt) {
     Settings& cfg = settings_get();
+    (void)dt;
+    if (!cfg.cardEnabled[CARD_RSS]) return;
+
+    if (strlen(cfg.rssUrl) < 5) {
+        portENTER_CRITICAL(&g_cardsMux);
+        snprintf(g_rssTitle, sizeof(g_rssTitle), "Configure RSS URL in web panel");
+        g_rssValid = false;
+        portEXIT_CRITICAL(&g_cardsMux);
+        return;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        portENTER_CRITICAL(&g_cardsMux);
+        snprintf(g_rssTitle, sizeof(g_rssTitle), "WiFi disconnected");
+        g_rssValid = false;
+        portEXIT_CRITICAL(&g_cardsMux);
+        return;
+    }
+
     if (now - g_rssLastFetch > (uint32_t)cfg.rssUpdateMins * 60000 || g_rssLastFetch == 0) {
-        fetchRSS();
-        g_rssLastFetch = now;
+        if (!g_rssFetchInFlight) {
+            g_rssFetchInFlight = true;
+            if (!http_worker_enqueue(rss_fetch_job, nullptr)) {
+                g_rssFetchInFlight = false;
+                return;
+            }
+            g_rssLastFetch = now;
+        }
     }
     
     uint32_t scrollSpeed = 100 - (cfg.rssSpeed * 8); 
@@ -9680,7 +9771,10 @@ static void rss_update(uint32_t now, uint32_t dt) {
     
     if (now - g_rssLastScroll > scrollSpeed) {
         g_rssScrollX--;
-        int len = strlen(g_rssTitle);
+        int len;
+        portENTER_CRITICAL(&g_cardsMux);
+        len = strlen(g_rssTitle);
+        portEXIT_CRITICAL(&g_cardsMux);
         if (g_rssScrollX < -(len * 5)) { // 4 pixels wide + 1 space
             g_rssScrollX = WT_MATRIX_WIDTH;
         }
@@ -9692,13 +9786,19 @@ static void rss_render() {
     wt_display_clear();
     wt_timeline_clear();
     Settings& cfg = settings_get();
-    int len = strlen(g_rssTitle);
+    char title[sizeof(g_rssTitle)];
+    portENTER_CRITICAL(&g_cardsMux);
+    strncpy(title, g_rssTitle, sizeof(title) - 1);
+    title[sizeof(title) - 1] = 0;
+    portEXIT_CRITICAL(&g_cardsMux);
+
+    int len = strlen(title);
     
     for(int i=0; i<len; ++i) {
         int16_t x = g_rssScrollX + i * 5; // 4 pixels wide + 1 space
         if (x > -5 && x < WT_MATRIX_WIDTH) {
             uint32_t charCol = settings_palette_color(cfg.rssPalette, (i * 10) % 255);
-            const uint8_t* bitmap = getCharBitmap((uint8_t)g_rssTitle[i]);
+            const uint8_t* bitmap = getCharBitmap((uint8_t)title[i]);
             // Full height 4x7 font: row 0 = top, row 6 = bottom
             for(int r=0; r<7; ++r) {
                 for(int cx=0; cx<4; ++cx) {
@@ -9720,6 +9820,7 @@ static void rss_render() {
 static uint32_t g_ytLastFetch = 0;
 static uint32_t g_ytSubs = 0;
 static bool g_ytValid = false;
+static volatile bool g_ytFetchInFlight = false;
 
 static uint32_t g_twitchLastFetch = 0;
 static uint32_t g_twitchFollowers = 0;
@@ -9940,9 +10041,9 @@ static void renderSocialCard(void (*drawIcon)(uint8_t, uint8_t), uint32_t count,
     for(int i = 0; i < len; i++) {
         int16_t x = startX + i * 5;
         if (x >= 0 && x < WT_MATRIX_WIDTH - 3) {
-            drawDigit(x, 0, countStr[i] - '0', brandColor);
-            // Handle letters (K, M, .)
-            if (countStr[i] == 'K' || countStr[i] == 'M' || countStr[i] == '.') {
+            if (countStr[i] >= '0' && countStr[i] <= '9') {
+                drawDigit(x, 0, countStr[i] - '0', brandColor);
+            } else {
                 const uint8_t* bitmap = getCharBitmap((uint8_t)countStr[i]);
                 for(int r=0; r<7; ++r) {
                     for(int cx=0; cx<4; ++cx) {
@@ -9971,52 +10072,95 @@ static void youtube_setup() {
     g_ytLastFetch = 0;
     g_ytSubs = 0;
     g_ytValid = false;
+    g_ytFetchInFlight = false;
+}
+
+static void youtube_fetch_job(void* ctx)
+{
+    (void)ctx;
+    Settings& cfg = settings_get();
+
+    if (cfg.ytChannelId[0] == '\0' || cfg.ytApiKey[0] == '\0') {
+        portENTER_CRITICAL(&g_cardsMux);
+        g_ytValid = false;
+        portEXIT_CRITICAL(&g_cardsMux);
+        g_ytFetchInFlight = false;
+        return;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        portENTER_CRITICAL(&g_cardsMux);
+        g_ytValid = false;
+        portEXIT_CRITICAL(&g_cardsMux);
+        g_ytFetchInFlight = false;
+        return;
+    }
+
+    String url = "https://www.googleapis.com/youtube/v3/channels?part=statistics&id=";
+    url += cfg.ytChannelId;
+    url += "&key=";
+    url += cfg.ytApiKey;
+
+    HTTPClient http;
+    http.begin(url);
+    http.setTimeout(15000);
+    int code = http.GET();
+
+    Serial.printf("[YouTube] API response: %d\n", code);
+
+    if (code == 200) {
+        String payload = http.getString();
+        int subIdx = payload.indexOf("\"subscriberCount\"");
+        if (subIdx >= 0) {
+            int start = payload.indexOf("\"", subIdx + 17) + 1;
+            int end = payload.indexOf("\"", start);
+            if (start > 0 && end > start) {
+                uint32_t subs = (uint32_t)payload.substring(start, end).toInt();
+                portENTER_CRITICAL(&g_cardsMux);
+                g_ytSubs = subs;
+                g_ytValid = true;
+                portEXIT_CRITICAL(&g_cardsMux);
+                Serial.printf("[YouTube] Subscribers: %lu\n", (unsigned long)subs);
+            }
+        }
+    }
+    http.end();
+
+    g_ytFetchInFlight = false;
 }
 
 static void youtube_update(uint32_t now, uint32_t dt) {
     Settings& cfg = settings_get();
+    (void)dt;
+    if (!cfg.cardEnabled[CARD_YOUTUBE]) return;
     
     // Skip if not configured
     if (cfg.ytChannelId[0] == '\0' || cfg.ytApiKey[0] == '\0') {
+        portENTER_CRITICAL(&g_cardsMux);
         g_ytValid = false;
+        portEXIT_CRITICAL(&g_cardsMux);
         return;
     }
     
     uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
-    if (WiFi.status() == WL_CONNECTED && (now - g_ytLastFetch > updateMs || g_ytLastFetch == 0)) {
-        g_ytLastFetch = now;
-        
-        String url = "https://www.googleapis.com/youtube/v3/channels?part=statistics&id=";
-        url += cfg.ytChannelId;
-        url += "&key=";
-        url += cfg.ytApiKey;
-        
-        HTTPClient http;
-        http.begin(url);
-        http.setTimeout(15000);
-        int code = http.GET();
-        
-        Serial.printf("[YouTube] API response: %d\n", code);
-        
-        if (code == 200) {
-            String payload = http.getString();
-            int subIdx = payload.indexOf("\"subscriberCount\"");
-            if (subIdx >= 0) {
-                int start = payload.indexOf("\"", subIdx + 17) + 1;
-                int end = payload.indexOf("\"", start);
-                if (start > 0 && end > start) {
-                    g_ytSubs = payload.substring(start, end).toInt();
-                    g_ytValid = true;
-                    Serial.printf("[YouTube] Subscribers: %lu\n", (unsigned long)g_ytSubs);
-                }
-            }
+    if (WiFi.status() == WL_CONNECTED && !g_ytFetchInFlight && (now - g_ytLastFetch > updateMs || g_ytLastFetch == 0)) {
+        g_ytFetchInFlight = true;
+        if (!http_worker_enqueue(youtube_fetch_job, nullptr)) {
+            g_ytFetchInFlight = false;
+            return;
         }
-        http.end();
+        g_ytLastFetch = now;
     }
 }
 
 static void youtube_render() {
-    renderSocialCard(drawYouTubeIcon, g_ytSubs, g_ytValid, wt_color(255, 0, 0));
+    uint32_t subs;
+    bool valid;
+    portENTER_CRITICAL(&g_cardsMux);
+    subs = g_ytSubs;
+    valid = g_ytValid;
+    portEXIT_CRITICAL(&g_cardsMux);
+    renderSocialCard(drawYouTubeIcon, subs, valid, wt_color(255, 0, 0));
 }
 
 // ============== TWITCH CARD ==============
@@ -10029,6 +10173,8 @@ static void twitch_setup() {
 
 static void twitch_update(uint32_t now, uint32_t dt) {
     Settings& cfg = settings_get();
+    (void)dt;
+    if (!cfg.cardEnabled[CARD_TWITCH]) return;
     
     // Skip if not configured
     if (cfg.twitchUser[0] == '\0' || cfg.twitchClientId[0] == '\0') {
@@ -10062,6 +10208,8 @@ static void twitter_setup() {
 
 static void twitter_update(uint32_t now, uint32_t dt) {
     Settings& cfg = settings_get();
+    (void)dt;
+    if (!cfg.cardEnabled[CARD_TWITTER]) return;
     
     // Skip if not configured
     if (cfg.twitterUser[0] == '\0') {
@@ -10094,6 +10242,8 @@ static void insta_setup() {
 
 static void insta_update(uint32_t now, uint32_t dt) {
     Settings& cfg = settings_get();
+    (void)dt;
+    if (!cfg.cardEnabled[CARD_INSTA]) return;
     
     // Skip if not configured
     if (cfg.instaUser[0] == '\0') {
@@ -10126,6 +10276,8 @@ static void tiktok_setup() {
 
 static void tiktok_update(uint32_t now, uint32_t dt) {
     Settings& cfg = settings_get();
+    (void)dt;
+    if (!cfg.cardEnabled[CARD_TIKTOK]) return;
     
     // Skip if not configured
     if (cfg.tiktokUser[0] == '\0') {
