@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "9f03be4e051d0385730ad0443e4dac973c9234c6",
+      "sha_short": "9f03be4",
+      "commit_message": "minor pre-shipping polish",
+      "commit_date": "2025-12-16 18:48:15 +0200",
+      "build_date": "2025-12-16T16:49:30Z",
+      "branch": "main",
+      "path": "9f03be4"
+    },
+    {
       "sha": "1515a69aacb35abaaf91dd07d4de7e8cacc4b488",
       "sha_short": "1515a69",
       "commit_message": "updater restyle, nvr persistance, bootanim fixes",
