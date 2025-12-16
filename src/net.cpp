@@ -852,22 +852,6 @@ function toggleCollapse(btn) {
     sendChunk(); // Flush buffer after card gallery
     
     html += "<div class=\"grid\">"; // Reopen grid
-
-    // WiFi Settings Card
-    html += "<div class=\"card\">";
-    html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F4F6;</span><span class=\"card-title\">WiFi Settings</span></div>";
-    
-    if (g_hasCreds) {
-        html += "<div class='info-box'>Connected to: <strong>" + g_ssid + "</strong></div>";
-    }
-    
-    html += "<form method=\"POST\" action=\"/wifi\">";
-    html += "<div class=\"form-group\"><label>Network Name (SSID)</label><input name=\"ssid\" value=\"";
-    html += g_ssid;
-    html += "\" placeholder=\"Enter WiFi network name\"></div>";
-    html += "<div class=\"form-group\"><label>Password</label><input name=\"pass\" type=\"password\" placeholder=\"Enter WiFi password\"></div>";
-    html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; Save WiFi Settings</button>";
-    html += "</form></div>";
     sendChunk();
     
     // System Configuration Card (Brightness only now)
@@ -915,16 +899,15 @@ function toggleCollapse(btn) {
     html += "<a href=\"/editor\" class=\"btn btn-secondary btn-full\" style=\"margin-bottom:10px\">&#x1F3A8; Open Sprite Editor</a>";
     html += "<div class=\"quick-actions\">";
     html += "<a href=\"/\" class=\"btn btn-secondary\">&#x1F504; Refresh</a>";
-    html += "<button class=\"btn btn-secondary\" onclick=\"alert('ESP32-C3 | 20x7 Matrix | 12 LED Timeline')\">&#x2139; Info</button>";
     html += "</div></div>";
 
-    String fwLine = String("0.1+") + wt_fw_git_sha_short();
+    String fwLine = wt_fw_git_sha_short();
     if (wt_fw_git_dirty()) fwLine += "+dirty";
     String fwDate = wt_fw_build_date();
 
     html += R"(</div></div>
 <div class="footer">
-<p><strong>WeatherThing v0.1</strong></p>
+<p><strong>WeatherThing</strong></p>
 <p>Firmware: )";
     html += fwLine;
     html += " • ";

@@ -79,20 +79,20 @@ void settings_begin()
     g_settings.tzOffset = 2;  // GMT+2 (Riga, Latvia) by default
     g_settings.btcUpdateMins = 5;    // 5 minute default
     g_settings.stockUpdateMins = 5;  // 5 minute default
-    g_settings.brightMin = 8;        // Dark room brightness
-    g_settings.brightMax = 80;       // Light room brightness (max 127 safe, 255 with highPower)
-    g_settings.brightMode = 0;       // Auto by default
-    g_settings.brightManual = 50;    // Manual brightness level
-    g_settings.brightBlanking = true; // Use blanking for cleaner readings
+    g_settings.brightMin = 2;         // Minimum brightness (absolute min)
+    g_settings.brightMax = 80;        // Light room brightness (max 127 safe, 255 with highPower)
+    g_settings.brightMode = 0;        // Auto by default
+    g_settings.brightManual = 50;     // Manual brightness level
+    g_settings.brightBlanking = false; // Blanking disabled by default
     g_settings.brightBlankSecs = 30;  // 30 second blanking interval
     g_settings.highPowerMode = false; // Safe mode by default
     g_settings.forecastHours = 12;   // 12 hour forecast default
-    g_settings.wxTimelineSunny = wt_color(255, 180, 0);
-    g_settings.wxTimelineCloudy = wt_color(100, 100, 120);
-    g_settings.wxTimelineRain = wt_color(0, 0, 255);
-    g_settings.wxTimelineStorm = wt_color(100, 0, 200);
-    g_settings.wxTimelineSnow = wt_color(255, 255, 255);
-    g_settings.wxTimelineWind = wt_color(0, 255, 200);
+    g_settings.wxTimelineSunny = wt_color(255, 180, 0);    // Warm yellow-orange
+    g_settings.wxTimelineCloudy = wt_color(140, 140, 160);  // Visible gray-blue tint
+    g_settings.wxTimelineRain = wt_color(30, 80, 180);      // Darker visible blue
+    g_settings.wxTimelineStorm = wt_color(120, 0, 200);     // Purple
+    g_settings.wxTimelineSnow = wt_color(200, 220, 255);    // Icy white-blue
+    g_settings.wxTimelineWind = wt_color(0, 200, 180);      // Teal
     g_settings.simTimeoutSecs = 30;  // 30 second simulation timeout
     
     // MQTT defaults
@@ -180,11 +180,11 @@ void settings_begin()
         g_settings.cryptoSymbol[sizeof(g_settings.cryptoSymbol) - 1] = '\0';
         
         // Brightness settings
-        g_settings.brightMin = g_prefs.getUChar("brightMin", 8);
+        g_settings.brightMin = g_prefs.getUChar("brightMin", 2);
         g_settings.brightMax = g_prefs.getUChar("brightMax", 80);
         g_settings.brightMode = g_prefs.getUChar("brightMode", 0);
         g_settings.brightManual = g_prefs.getUChar("brightMan", 50);
-        g_settings.brightBlanking = g_prefs.getBool("brightBlk", true);
+        g_settings.brightBlanking = g_prefs.getBool("brightBlk", false);
         g_settings.brightBlankSecs = g_prefs.getUChar("blankSec", 30);
         g_settings.highPowerMode = g_prefs.getBool("hiPower", false);
         g_settings.forecastHours = g_prefs.getUChar("fcstHours", 12);
