@@ -173,9 +173,9 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     html += R"(</div></div>
 <div class="container">)";
 
-    // Card names and icons for 16 cards (11 original + 5 social)
-    const char* cardNames[] = {"<span class='weather-title'>Weather</span>", "Clock", "BTC", "Stocks", "Network", "Audio", "Sparkle", "Aurora", "Games", "MQTT", "RSS", "YouTube", "Twitch", "Twitter", "Insta", "TikTok"};
-    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;", "&#x1F4F0;", "&#x25B6;", "&#x1F4AC;", "&#x2716;", "&#x1F4F7;", "&#x1F3B5;"};
+    // Card names and icons for 16 cards (12 original + 4 timers)
+    const char* cardNames[] = {"<span class='weather-title'>Weather</span>", "Clock", "BTC", "Stocks", "Network", "Audio", "Sparkle", "Aurora", "Games", "MQTT", "RSS", "YouTube", "Countdown", "Pomodoro", "Sun", "Stopwatch"};
+    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;", "&#x1F4F0;", "&#x25B6;", "&#x23F1;", "&#x1F345;", "&#x2600;", "&#x23F1;"};
     
     // ========== WiFi FIRST when in AP mode ==========
     if (g_isApMode) {
@@ -277,13 +277,12 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     html += "<p style=\"font-size:1em;margin-bottom:15px;padding:12px;background:#fffacd;border:3px solid #000;font-weight:bold\">&#x2630; Drag cards to reorder &bull; Click preset to show on display &bull; &#x1F503; Toggle to include in auto-cycle</p>";
     html += "<div id=\"cardGallery\" style=\"display:flex;flex-direction:column;gap:15px\">";
     
-    // Generate cards in order (skip Sparkle=6, Aurora=7, and non-functional social cards 12-15)
+    // Generate cards in order (skip Sparkle=6, Aurora=7 as VU-only)
     uint16_t seenCards = 0; // Bitmask to track which cards we've already shown
     for(int i=0; i<16; ++i) {
         uint8_t cardIdx = cfg.cardOrder[i];
         if(cardIdx > 15) continue; // Skip invalid entries
         if(cardIdx == 6 || cardIdx == 7) continue; // Skip Sparkle/Aurora (VU-only)
-        if(cardIdx >= 12 && cardIdx <= 15) continue; // Skip non-functional social cards (Twitch/Twitter/Insta/TikTok)
         if(seenCards & (1 << cardIdx)) continue; // Skip duplicates
         seenCards |= (1 << cardIdx); // Mark as seen
         bool enabled = cfg.cardEnabled[cardIdx];
@@ -713,6 +712,30 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 html += "</select>";
                 html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='padding:6px 12px'>&#x1F4BE; Save</button>";
                 html += "</div>"; // Close flex container
+                break;
+            case 12: // Countdown timer
+                presetBtn(12, 0, "1 min"); presetBtn(12, 1, "5 min"); presetBtn(12, 2, "15 min"); presetBtn(12, 3, "30 min");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.85em;line-height:1.6;color:#333\">";
+                html += "<b>&#x23F1; Controls:</b> Tap to start/pause. Long touch (1.2s) to reset.</p>";
+                break;
+            case 13: // Pomodoro timer
+                presetBtn(13, 0, "25/5"); presetBtn(13, 1, "50/10"); presetBtn(13, 2, "15/3");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.85em;line-height:1.6;color:#333\">";
+                html += "<b>&#x1F345; Controls:</b> Tap to start/pause. Long touch to reset. Red=Work, Blue=Break.</p>";
+                break;
+            case 14: // Sun position
+                presetBtn(14, 0, "Yellow"); presetBtn(14, 1, "Orange");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.85em;line-height:1.6;color:#333\">";
+                html += "<b>&#x2600; Info:</b> Shows sun arc position based on time of day with digital clock.</p>";
+                break;
+            case 15: // Stopwatch
+                presetBtn(15, 0, "SHOW");
+                html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
+                html += "<p style=\"font-size:0.85em;line-height:1.6;color:#333\">";
+                html += "<b>&#x23F1; Controls:</b> Tap to start/pause. Long touch (1.2s) to reset.</p>";
                 break;
             default: // Single preset cards (Network, etc)
                 presetBtn(cardIdx, 0, "SHOW");

@@ -9,21 +9,21 @@ ESP32-C3 firmware for the WeatherThing LED matrix display.
 | Card | Description | Presets |
 |------|-------------|---------|
 | **Weather** | Current conditions, forecast timeline | 35 presets including Classic, Animated, Terminal, Cyber, Radar/Grid Maps, Heat Map, Compass, Gauge, Starfield, Seasons |
-| **Clock** | Time display with effects | 19 presets: Digital, Binary, Minimal, Bars, Nixie, Glitch, Pong, Word, Bounce, Matrix, Radar, Flip, Cyber, Analog, Countdown, DotMatrix, Gradient, Segment, Orbit |
-| **Bitcoin** | Live BTC price with trend since last update | CoinGecko (BTC/USD) |
-| **Stocks** | Stock ticker with price tracking | Yahoo Finance symbol (no API key) |
+| **Clock** | Time display with effects | 24 presets: Digital, Binary, Minimal, Bars, Nixie, Glitch, Pong, Word, Bounce, Matrix, Radar, Flip, Cyber, Analog, Countdown, DotMatrix, Gradient, Segment, Orbit, Tally, Cutout, Scan, Duo, Frame |
+| **Bitcoin** | Live BTC price with trend since last update | CoinGecko (BTC/USD) - *disabled by default* |
+| **Stocks** | Stock ticker with price tracking | Yahoo Finance symbol (no API key) - *disabled by default* |
 | **Network** | WiFi status, IP address display | - |
-| **Audio VU** | Microphone-reactive visualizer | 34 presets including Spectrum, Fire, Plasma, Matrix, Disco, Fireworks, Nyan, Ocean, Aurora, Lightning, Ripple, DNA, Kaleidoscope, Snake |
+| **Audio VU** | Microphone-reactive visualizer | 39 presets including Spectrum, Fire, Plasma, Matrix, Disco, Fireworks, Nyan, Ocean, Aurora, Lightning, Ripple, DNA, Kaleidoscope, Snake |
 | **Sparkle** | Audio-reactive particle effects | Sound-reactive mode |
 | **Aurora** | Flowing plasma animation | Sound-reactive mode |
-| **Games** | Interactive games | Flappy Bird, Snake, Breakout, Pong |
-| **MQTT** | Home Assistant notifications | - |
-| **RSS** | RSS feed ticker | - |
-| **YouTube** | Subscriber count display | Requires API key |
-| **Twitch** | Follower/live status | Placeholder (API auth not implemented) |
-| **Twitter/X** | Follower count | Placeholder (API auth not implemented) |
-| **Instagram** | Follower count | Placeholder (API auth not implemented) |
-| **TikTok** | Follower count | Placeholder (API auth not implemented) |
+| **Games** | Interactive games | Flappy Bird, Snake, Breakout, Pong - *disabled by default* |
+| **MQTT** | Home Assistant notifications | - *disabled by default* |
+| **RSS** | RSS feed ticker | - *disabled by default* |
+| **YouTube** | Subscriber count display | Requires API key - *disabled by default* |
+| **Countdown** | Countdown timer with touch controls | 4 presets: 1min, 5min, 15min, 30min |
+| **Pomodoro** | Pomodoro productivity timer | 3 presets: 25/5, 50/10, 15/3 (work/break minutes) |
+| **Sun** | Sun position arc with digital clock | 2 presets: Yellow, Orange |
+| **Stopwatch** | Stopwatch with touch controls | Tap to start/pause, long touch to reset |
 
 ### Hardware
 
@@ -107,8 +107,18 @@ Re-running the test:
 | **Button 1** | Next preset (Weather/Clock/Audio/Games mode), then next enabled card |
 | **Button 2** | Previous preset, then previous enabled card |
 | **Touch** | Game action; toggles mode on some cards (e.g. MQTT) |
+| **Touch (Timer cards)** | Tap to start/pause; hold 1.2s to reset |
 
 In the Games card: hold **Button 1 + Button 2** for ~1 second to exit.
+
+### Timer Card Controls
+
+| Card | Tap | Long Touch (1.2s) |
+|------|-----|-------------------|
+| **Countdown** | Start/Pause (restarts if at 00:00) | Reset to preset duration |
+| **Pomodoro** | Start/Pause | Reset to Work phase |
+| **Stopwatch** | Start/Pause | Reset to 00:00 |
+| **Sun** | - | - |
 
 ## Audio Settings
 

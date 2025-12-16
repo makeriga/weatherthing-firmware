@@ -73,26 +73,26 @@ static void rss_setup();
 static void rss_update(uint32_t now, uint32_t dt);
 static void rss_render();
 
+static void countdown_setup();
+static void countdown_update(uint32_t now, uint32_t dt);
+static void countdown_render();
+
+static void pomodoro_setup();
+static void pomodoro_update(uint32_t now, uint32_t dt);
+static void pomodoro_render();
+
+static void sun_setup();
+static void sun_update(uint32_t now, uint32_t dt);
+static void sun_render();
+
+static void stopwatch_setup();
+static void stopwatch_update(uint32_t now, uint32_t dt);
+static void stopwatch_render();
+
 // Social media cards
 static void youtube_setup();
 static void youtube_update(uint32_t now, uint32_t dt);
 static void youtube_render();
-
-static void twitch_setup();
-static void twitch_update(uint32_t now, uint32_t dt);
-static void twitch_render();
-
-static void twitter_setup();
-static void twitter_update(uint32_t now, uint32_t dt);
-static void twitter_render();
-
-static void insta_setup();
-static void insta_update(uint32_t now, uint32_t dt);
-static void insta_render();
-
-static void tiktok_setup();
-static void tiktok_update(uint32_t now, uint32_t dt);
-static void tiktok_render();
 
 static void drawDigit(uint8_t x, uint8_t y, uint8_t d, uint32_t color);
 static uint32_t weatherColor(uint8_t type);
@@ -118,6 +118,10 @@ static uint8_t g_weatherPreset = 0;  // 0=classic, 1=fullscreen
 static uint8_t g_vuPreset = 0;       // 0=mirror, 1=bars, 2=dots
 static uint8_t g_clockPreset = 0;    // 0=digital, 1=binary, 2=minimal, 3=bars
 
+static uint8_t g_countdownPreset = 0;
+static uint8_t g_pomodoroPreset = 0;
+static uint8_t g_sunPreset = 0;
+
 // Card order: Weather, Clock, BTC, Stock, Network, Audio, Sparkle, Aurora, Games, MQTT, RSS, Social
 static Card g_cards[] = {
     {weather_setup, weather_update, weather_render},   // 0
@@ -132,10 +136,10 @@ static Card g_cards[] = {
     {mqttcard_setup, mqttcard_update, mqttcard_render}, // 9 (MQTT/Home Assistant)
     {rss_setup, rss_update, rss_render},               // 10 (RSS)
     {youtube_setup, youtube_update, youtube_render},   // 11 (YouTube)
-    {twitch_setup, twitch_update, twitch_render},      // 12 (Twitch)
-    {twitter_setup, twitter_update, twitter_render},   // 13 (Twitter/X)
-    {insta_setup, insta_update, insta_render},         // 14 (Instagram)
-    {tiktok_setup, tiktok_update, tiktok_render}       // 15 (TikTok)
+    {countdown_setup, countdown_update, countdown_render},
+    {pomodoro_setup, pomodoro_update, pomodoro_render},
+    {sun_setup, sun_update, sun_render},
+    {stopwatch_setup, stopwatch_update, stopwatch_render}
 };
 
 // Card indices for reference
@@ -151,10 +155,11 @@ static const uint8_t CARD_GAMES = 8;
 static const uint8_t CARD_MQTT = 9;
 static const uint8_t CARD_RSS = 10;
 static const uint8_t CARD_YOUTUBE = 11;
-static const uint8_t CARD_TWITCH = 12;
-static const uint8_t CARD_TWITTER = 13;
-static const uint8_t CARD_INSTA = 14;
-static const uint8_t CARD_TIKTOK = 15;
+
+static const uint8_t CARD_COUNTDOWN = 12;
+static const uint8_t CARD_POMODORO = 13;
+static const uint8_t CARD_SUN = 14;
+static const uint8_t CARD_STOPWATCH = 15;
 
 static const uint8_t g_cardCount = sizeof(g_cards) / sizeof(g_cards[0]);
 static uint8_t g_currentCard = 0;
@@ -179,10 +184,10 @@ static const char* g_cardNames[] = {
     "MQTT",      // 9
     "RSS",       // 10
     "YouTube",   // 11
-    "Twitch",    // 12
-    "Twitter",   // 13
-    "Insta",     // 14
-    "TikTok"     // 15
+    "Count",     // 12
+    "Pomo",      // 13
+    "Sun",       // 14
+    "Stop"       // 15
 };
 
 // Which cards are "musical" (show note icon) - VU (5), Sparkle (6), Aurora (7)
@@ -1079,6 +1084,9 @@ static const uint8_t ICON_GAME[7] = {0x7F, 0x41, 0x5D, 0x55, 0x5D, 0x41, 0x7F}; 
 static const uint8_t ICON_HOME[7] = {0x10, 0x38, 0x7C, 0x54, 0x54, 0x54, 0x7C};     // 
 static const uint8_t ICON_NEWS[7] = {0x7F, 0x41, 0x7F, 0x41, 0x5F, 0x41, 0x7F};     // 
 static const uint8_t ICON_PLAY[7] = {0x00, 0x7C, 0x38, 0x10, 0x00, 0x00, 0x00};     // 
+static const uint8_t ICON_HOURGLASS[7] = {0x7F, 0x41, 0x22, 0x1C, 0x22, 0x41, 0x7F};
+static const uint8_t ICON_TOMATO[7] = {0x1C, 0x3E, 0x7F, 0x7F, 0x7F, 0x3E, 0x1C};
+static const uint8_t ICON_STOPWATCH[7] = {0x1C, 0x22, 0x41, 0x4D, 0x41, 0x22, 0x1C};
 
 // Get icon for card
 static const uint8_t* getCardIcon(uint8_t card) {
@@ -1094,6 +1102,10 @@ static const uint8_t* getCardIcon(uint8_t card) {
         case CARD_GAMES:   return ICON_GAME;
         case CARD_MQTT:    return ICON_HOME;
         case CARD_RSS:     return ICON_NEWS;
+        case CARD_COUNTDOWN: return ICON_HOURGLASS;
+        case CARD_POMODORO:  return ICON_TOMATO;
+        case CARD_SUN:       return ICON_SUN;
+        case CARD_STOPWATCH: return ICON_STOPWATCH;
         default:           return ICON_PLAY;
     }
 }
@@ -1113,10 +1125,10 @@ static uint32_t getCardColor(uint8_t card) {
         case CARD_MQTT:    return wt_color(65, 180, 255);   // Home Assistant blue
         case CARD_RSS:     return wt_color(255, 150, 50);   // RSS orange
         case CARD_YOUTUBE: return wt_color(255, 0, 0);      // YouTube red
-        case CARD_TWITCH:  return wt_color(145, 70, 255);   // Twitch purple
-        case CARD_TWITTER: return wt_color(29, 161, 242);   // Twitter blue
-        case CARD_INSTA:   return wt_color(255, 100, 150);  // Insta pink
-        case CARD_TIKTOK:  return wt_color(0, 255, 200);    // TikTok teal
+        case CARD_COUNTDOWN: return wt_color(0, 200, 255);
+        case CARD_POMODORO:  return wt_color(255, 80, 80);
+        case CARD_SUN:       return wt_color(255, 200, 40);
+        case CARD_STOPWATCH: return wt_color(200, 200, 200);
         default:           return wt_color(200, 200, 200);
     }
 }
@@ -1370,6 +1382,10 @@ static const uint8_t WEATHER_PRESET_COUNT = 40;  // Weather presets 0-39 (update
 static const uint8_t CLOCK_PRESET_COUNT = 24;    // Clock presets 0-23 (update in clock_render switch + net.cpp UI)
 static const uint8_t VU_PRESET_COUNT = 39;       // VU presets 0-38 (update in vu_render switch + net.cpp UI)
 
+static const uint8_t COUNTDOWN_PRESET_COUNT = 4;
+static const uint8_t POMODORO_PRESET_COUNT = 3;
+static const uint8_t SUN_PRESET_COUNT = 2;
+
 // Demo mode state
 static bool g_demoActive = false;
 static uint32_t g_demoLastSwitch = 0;
@@ -1495,12 +1511,24 @@ static void cycleNext()
     } else if (g_currentCard == CARD_GAMES && g_gameMode < GAME_MODE_COUNT - 1) {
         g_gameMode++;
         g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_COUNTDOWN && g_countdownPreset < COUNTDOWN_PRESET_COUNT - 1) {
+        g_countdownPreset++;
+        g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_POMODORO && g_pomodoroPreset < POMODORO_PRESET_COUNT - 1) {
+        g_pomodoroPreset++;
+        g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_SUN && g_sunPreset < SUN_PRESET_COUNT - 1) {
+        g_sunPreset++;
+        g_cards[g_currentCard].setup();
     } else {
         // Move to next card
         g_weatherPreset = 0;
         g_clockPreset = 0;
         g_vuPreset = 0;
         g_gameMode = 0;
+        g_countdownPreset = 0;
+        g_pomodoroPreset = 0;
+        g_sunPreset = 0;
         
         uint8_t next = getNextEnabledCard(g_currentCard);
         if (next != g_currentCard) {
@@ -1525,6 +1553,15 @@ static void cyclePrev()
     } else if (g_currentCard == CARD_GAMES && g_gameMode > 0) {
         g_gameMode--;
         g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_COUNTDOWN && g_countdownPreset > 0) {
+        g_countdownPreset--;
+        g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_POMODORO && g_pomodoroPreset > 0) {
+        g_pomodoroPreset--;
+        g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_SUN && g_sunPreset > 0) {
+        g_sunPreset--;
+        g_cards[g_currentCard].setup();
     } else {
         // Move to previous card
         uint8_t prev = getPrevEnabledCard(g_currentCard);
@@ -1541,11 +1578,20 @@ static void cyclePrev()
                 g_vuPreset = VU_PRESET_COUNT - 1;
             } else if (g_currentCard == CARD_GAMES) {
                 g_gameMode = GAME_MODE_COUNT - 1;
+            } else if (g_currentCard == CARD_COUNTDOWN) {
+                g_countdownPreset = COUNTDOWN_PRESET_COUNT - 1;
+            } else if (g_currentCard == CARD_POMODORO) {
+                g_pomodoroPreset = POMODORO_PRESET_COUNT - 1;
+            } else if (g_currentCard == CARD_SUN) {
+                g_sunPreset = SUN_PRESET_COUNT - 1;
             } else {
                 g_weatherPreset = 0;
                 g_clockPreset = 0;
                 g_vuPreset = 0;
                 g_gameMode = 0;
+                g_countdownPreset = 0;
+                g_pomodoroPreset = 0;
+                g_sunPreset = 0;
             }
             g_cards[g_currentCard].setup();
             startTitleAnimation(now);
@@ -1967,6 +2013,9 @@ void cards_switch_to(uint8_t cardIndex)
     g_clockPreset = 0;
     g_vuPreset = 0;
     g_gameMode = 0;
+    g_countdownPreset = 0;
+    g_pomodoroPreset = 0;
+    g_sunPreset = 0;
     g_cards[g_currentCard].setup();
     startTitleAnimation(millis());
 }
@@ -1982,6 +2031,15 @@ void cards_set_preset(uint8_t preset)
     } else if (g_currentCard == CARD_GAMES) {
         g_gameMode = preset % GAME_MODE_COUNT;
         g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_COUNTDOWN) {
+        g_countdownPreset = preset % COUNTDOWN_PRESET_COUNT;
+        g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_POMODORO) {
+        g_pomodoroPreset = preset % POMODORO_PRESET_COUNT;
+        g_cards[g_currentCard].setup();
+    } else if (g_currentCard == CARD_SUN) {
+        g_sunPreset = preset % SUN_PRESET_COUNT;
+        g_cards[g_currentCard].setup();
     }
 }
 
@@ -1991,6 +2049,9 @@ uint8_t cards_get_preset() {
     if (g_currentCard == CARD_CLOCK) return g_clockPreset;
     if (g_currentCard == CARD_VU) return g_vuPreset;
     if (g_currentCard == CARD_GAMES) return g_gameMode;
+    if (g_currentCard == CARD_COUNTDOWN) return g_countdownPreset;
+    if (g_currentCard == CARD_POMODORO) return g_pomodoroPreset;
+    if (g_currentCard == CARD_SUN) return g_sunPreset;
     return 0;
 }
 uint8_t cards_get_count() { return g_cardCount; }
@@ -2156,13 +2217,13 @@ void cards_loop()
             g_demoLastSwitch = now;
             
             // Pick a random enabled card that has presets
-            uint8_t cardChoices[3] = {CARD_WEATHER, CARD_CLOCK, CARD_VU};
-            uint8_t presetCounts[3] = {WEATHER_PRESET_COUNT, CLOCK_PRESET_COUNT, VU_PRESET_COUNT};
+            uint8_t cardChoices[6] = {CARD_WEATHER, CARD_CLOCK, CARD_VU, CARD_COUNTDOWN, CARD_POMODORO, CARD_SUN};
+            uint8_t presetCounts[6] = {WEATHER_PRESET_COUNT, CLOCK_PRESET_COUNT, VU_PRESET_COUNT, COUNTDOWN_PRESET_COUNT, POMODORO_PRESET_COUNT, SUN_PRESET_COUNT};
             
             // Filter to only enabled cards
-            uint8_t validCards[3];
+            uint8_t validCards[6];
             uint8_t validCount = 0;
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 6; ++i) {
                 if (cfg.cardEnabled[cardChoices[i]]) {
                     validCards[validCount++] = i;
                 }
@@ -2180,6 +2241,9 @@ void cards_loop()
                 if (newCard == CARD_WEATHER) g_weatherPreset = newPreset;
                 else if (newCard == CARD_CLOCK) g_clockPreset = newPreset;
                 else if (newCard == CARD_VU) g_vuPreset = newPreset;
+                else if (newCard == CARD_COUNTDOWN) g_countdownPreset = newPreset;
+                else if (newCard == CARD_POMODORO) g_pomodoroPreset = newPreset;
+                else if (newCard == CARD_SUN) g_sunPreset = newPreset;
                 
                 startTitleAnimation(now);
             }
@@ -2225,10 +2289,6 @@ void cards_loop()
         ticker_update(now, 0);
         stock_update(now, 0);
         youtube_update(now, 0);
-        twitch_update(now, 0);
-        twitter_update(now, 0);
-        insta_update(now, 0);
-        tiktok_update(now, 0);
     }
 
     Card &card = g_cards[g_currentCard];
@@ -3331,16 +3391,16 @@ static void clock_render()
 
     if (net_is_ap_mode() || !g_clockTimeValid)
     {
-        // Error state
+        // Error state - show red indicator
         uint32_t red = wt_color(255, 50, 50);
         wt_display_set_pixel_xy(10, 3, red);
-        wt_display_set_pixel_xy(9, 2, red); wt_display_set_pixel_xy(11, 2, red);
-        wt_display_set_pixel_xy(8, 1, red); wt_display_set_pixel_xy(12, 1, red);
+        wt_display_set_pixel_xy(9, 2, red);
+        wt_display_set_pixel_xy(11, 2, red);
         return;
     }
 
-    // Switch between watchfaces
-    switch (g_clockPreset) {
+    switch (g_clockPreset)
+    {
         case 0: clock_render_digital(); break;
         case 1: clock_render_binary(); break;
         case 2: clock_render_minimal(); break;
@@ -3369,29 +3429,336 @@ static void clock_render()
     }
 }
 
+// Timer card state
+static uint32_t g_countdownDurationMs = 0;
+static uint32_t g_countdownRemainingMs = 0;
+static bool g_countdownRunning = false;
+static bool g_countdownLastTouch = false;
+static uint32_t g_countdownTouchStartMs = 0;
+static bool g_countdownLongTouchConsumed = false;
+
+static uint32_t g_pomodoroWorkMs = 0;
+static uint32_t g_pomodoroBreakMs = 0;
+static uint32_t g_pomodoroRemainingMs = 0;
+static bool g_pomodoroRunning = false;
+static bool g_pomodoroOnBreak = false;
+static bool g_pomodoroLastTouch = false;
+static uint32_t g_pomodoroTouchStartMs = 0;
+static bool g_pomodoroLongTouchConsumed = false;
+
+static uint32_t g_stopwatchElapsedMs = 0;
+static bool g_stopwatchRunning = false;
+static bool g_stopwatchLastTouch = false;
+static uint32_t g_stopwatchTouchStartMs = 0;
+static bool g_stopwatchLongTouchConsumed = false;
+
+static void countdown_setup()
+{
+    uint32_t mins = 1;
+    if (g_countdownPreset == 1) mins = 5;
+    else if (g_countdownPreset == 2) mins = 15;
+    else if (g_countdownPreset == 3) mins = 30;
+
+    g_countdownDurationMs = mins * 60UL * 1000UL;
+    g_countdownRemainingMs = g_countdownDurationMs;
+    g_countdownRunning = false;
+    g_countdownLastTouch = false;
+    g_countdownTouchStartMs = 0;
+    g_countdownLongTouchConsumed = false;
+}
+
+static void countdown_update(uint32_t now, uint32_t dt)
+{
+    bool touch = wt_cap_touch_active();
+    bool edge = touch && !g_countdownLastTouch;
+
+    if (edge) {
+        g_countdownTouchStartMs = now;
+        g_countdownLongTouchConsumed = false;
+        if (g_countdownRemainingMs == 0) {
+            g_countdownRemainingMs = g_countdownDurationMs;
+            g_countdownRunning = true;
+        } else {
+            g_countdownRunning = !g_countdownRunning;
+        }
+    }
+
+    if (touch && g_countdownTouchStartMs != 0 && !g_countdownLongTouchConsumed) {
+        if (now - g_countdownTouchStartMs > 1200) {
+            g_countdownRemainingMs = g_countdownDurationMs;
+            g_countdownRunning = false;
+            g_countdownLongTouchConsumed = true;
+        }
+    }
+
+    if (!touch) g_countdownTouchStartMs = 0;
+    g_countdownLastTouch = touch;
+
+    if (g_countdownRunning && g_countdownRemainingMs > 0) {
+        if (dt >= g_countdownRemainingMs) {
+            g_countdownRemainingMs = 0;
+            g_countdownRunning = false;
+        } else {
+            g_countdownRemainingMs -= dt;
+        }
+    }
+}
+
+static void countdown_render()
+{
+    wt_display_clear();
+    wt_timeline_clear();
+
+    uint32_t col = g_countdownRunning ? wt_color(60, 255, 120) : wt_color(0, 200, 255);
+    if (g_countdownRemainingMs == 0) col = wt_color(255, 80, 80);
+
+    uint32_t totalSec = g_countdownRemainingMs / 1000UL;
+    uint32_t mm = totalSec / 60UL;
+    uint32_t ss = totalSec % 60UL;
+    if (mm > 99) mm = 99;
+
+    uint8_t x = 1;
+    drawDigit(x, 0, (uint8_t)(mm / 10), col); x += 4;
+    drawDigit(x, 0, (uint8_t)(mm % 10), col); x += 4;
+    wt_display_set_pixel_xy(x, 2, col);
+    wt_display_set_pixel_xy(x, 4, col);
+    x += 2;
+    drawDigit(x, 0, (uint8_t)(ss / 10), col); x += 4;
+    drawDigit(x, 0, (uint8_t)(ss % 10), col);
+
+    if (g_countdownDurationMs > 0) {
+        uint8_t filled = (uint8_t)((g_countdownRemainingMs * WT_TIMELINE_PIXELS) / g_countdownDurationMs);
+        for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+            if (i < filled) wt_timeline_set_pixel(i, col);
+        }
+    }
+}
+
+static void pomodoro_setup()
+{
+    if (g_pomodoroPreset == 1) {
+        g_pomodoroWorkMs = 50UL * 60UL * 1000UL;
+        g_pomodoroBreakMs = 10UL * 60UL * 1000UL;
+    } else if (g_pomodoroPreset == 2) {
+        g_pomodoroWorkMs = 15UL * 60UL * 1000UL;
+        g_pomodoroBreakMs = 3UL * 60UL * 1000UL;
+    } else {
+        g_pomodoroWorkMs = 25UL * 60UL * 1000UL;
+        g_pomodoroBreakMs = 5UL * 60UL * 1000UL;
+    }
+
+    g_pomodoroOnBreak = false;
+    g_pomodoroRemainingMs = g_pomodoroWorkMs;
+    g_pomodoroRunning = false;
+    g_pomodoroLastTouch = false;
+    g_pomodoroTouchStartMs = 0;
+    g_pomodoroLongTouchConsumed = false;
+}
+
+static void pomodoro_update(uint32_t now, uint32_t dt)
+{
+    bool touch = wt_cap_touch_active();
+    bool edge = touch && !g_pomodoroLastTouch;
+
+    if (edge) {
+        g_pomodoroTouchStartMs = now;
+        g_pomodoroLongTouchConsumed = false;
+        g_pomodoroRunning = !g_pomodoroRunning;
+    }
+
+    if (touch && g_pomodoroTouchStartMs != 0 && !g_pomodoroLongTouchConsumed) {
+        if (now - g_pomodoroTouchStartMs > 1200) {
+            g_pomodoroOnBreak = false;
+            g_pomodoroRemainingMs = g_pomodoroWorkMs;
+            g_pomodoroRunning = false;
+            g_pomodoroLongTouchConsumed = true;
+        }
+    }
+
+    if (!touch) g_pomodoroTouchStartMs = 0;
+    g_pomodoroLastTouch = touch;
+
+    if (g_pomodoroRunning && g_pomodoroRemainingMs > 0) {
+        if (dt >= g_pomodoroRemainingMs) {
+            g_pomodoroOnBreak = !g_pomodoroOnBreak;
+            g_pomodoroRemainingMs = g_pomodoroOnBreak ? g_pomodoroBreakMs : g_pomodoroWorkMs;
+        } else {
+            g_pomodoroRemainingMs -= dt;
+        }
+    }
+}
+
+static void pomodoro_render()
+{
+    wt_display_clear();
+    wt_timeline_clear();
+
+    uint32_t col = g_pomodoroOnBreak ? wt_color(0, 200, 255) : wt_color(255, 80, 80);
+
+    uint32_t totalSec = g_pomodoroRemainingMs / 1000UL;
+    uint32_t mm = totalSec / 60UL;
+    uint32_t ss = totalSec % 60UL;
+    if (mm > 99) mm = 99;
+
+    uint8_t x = 1;
+    drawDigit(x, 0, (uint8_t)(mm / 10), col); x += 4;
+    drawDigit(x, 0, (uint8_t)(mm % 10), col); x += 4;
+    wt_display_set_pixel_xy(x, 2, col);
+    wt_display_set_pixel_xy(x, 4, col);
+    x += 2;
+    drawDigit(x, 0, (uint8_t)(ss / 10), col); x += 4;
+    drawDigit(x, 0, (uint8_t)(ss % 10), col);
+
+    uint32_t denom = g_pomodoroOnBreak ? g_pomodoroBreakMs : g_pomodoroWorkMs;
+    if (denom > 0) {
+        uint8_t filled = (uint8_t)((g_pomodoroRemainingMs * WT_TIMELINE_PIXELS) / denom);
+        for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+            if (i < filled) wt_timeline_set_pixel(i, col);
+        }
+    }
+}
+
+static void sun_setup() {}
+
+static void sun_update(uint32_t now, uint32_t dt)
+{
+    (void)now;
+    (void)dt;
+}
+
+static void sun_render()
+{
+    wt_display_clear();
+    wt_timeline_clear();
+
+    if (net_is_ap_mode() || !g_clockTimeValid) {
+        uint32_t red = wt_color(255, 50, 50);
+        wt_display_set_pixel_xy(10, 3, red);
+        wt_display_set_pixel_xy(9, 2, red);
+        wt_display_set_pixel_xy(11, 2, red);
+        return;
+    }
+
+    int hour;
+    uint8_t minute, second;
+    getClockTime(hour, minute, second);
+
+    uint32_t tsec = (uint32_t)hour * 3600UL + (uint32_t)minute * 60UL + second;
+    float phase = (float)tsec / 86400.0f;
+
+    int sunX = (int)(phase * (WT_MATRIX_WIDTH - 1));
+    float arc = sinf(phase * 6.2831853f);
+    int sunY = 4 - (int)(arc * 2.5f);
+    if (sunY < 0) sunY = 0;
+    if (sunY >= WT_MATRIX_HEIGHT) sunY = WT_MATRIX_HEIGHT - 1;
+
+    uint32_t sunCol = (g_sunPreset == 0) ? wt_color(255, 220, 80) : wt_color(255, 140, 40);
+    wt_display_set_pixel_xy((uint8_t)sunX, (uint8_t)sunY, sunCol);
+
+    uint32_t col = wt_color(255, 200, 40);
+    uint8_t x = 1;
+    drawDigit(x, 0, (uint8_t)(hour / 10), col); x += 4;
+    drawDigit(x, 0, (uint8_t)(hour % 10), col); x += 4;
+    wt_display_set_pixel_xy(x, 2, col);
+    wt_display_set_pixel_xy(x, 4, col);
+    x += 2;
+    drawDigit(x, 0, (uint8_t)(minute / 10), col); x += 4;
+    drawDigit(x, 0, (uint8_t)(minute % 10), col);
+
+    uint8_t filled = (uint8_t)((tsec * WT_TIMELINE_PIXELS) / 86400UL);
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        if (i <= filled) wt_timeline_set_pixel(i, sunCol);
+    }
+}
+
+static void stopwatch_setup()
+{
+    g_stopwatchElapsedMs = 0;
+    g_stopwatchRunning = false;
+    g_stopwatchLastTouch = false;
+    g_stopwatchTouchStartMs = 0;
+    g_stopwatchLongTouchConsumed = false;
+}
+
+static void stopwatch_update(uint32_t now, uint32_t dt)
+{
+    bool touch = wt_cap_touch_active();
+    bool edge = touch && !g_stopwatchLastTouch;
+
+    if (edge) {
+        g_stopwatchTouchStartMs = now;
+        g_stopwatchLongTouchConsumed = false;
+        g_stopwatchRunning = !g_stopwatchRunning;
+    }
+
+    if (touch && g_stopwatchTouchStartMs != 0 && !g_stopwatchLongTouchConsumed) {
+        if (now - g_stopwatchTouchStartMs > 1200) {
+            g_stopwatchElapsedMs = 0;
+            g_stopwatchRunning = false;
+            g_stopwatchLongTouchConsumed = true;
+        }
+    }
+
+    if (!touch) g_stopwatchTouchStartMs = 0;
+    g_stopwatchLastTouch = touch;
+
+    if (g_stopwatchRunning) {
+        uint32_t maxMs = 99UL * 60UL * 1000UL + 59UL * 1000UL + 999UL;
+        if (maxMs - g_stopwatchElapsedMs < dt) g_stopwatchElapsedMs = maxMs;
+        else g_stopwatchElapsedMs += dt;
+    }
+}
+
+static void stopwatch_render()
+{
+    wt_display_clear();
+    wt_timeline_clear();
+
+    uint32_t col = g_stopwatchRunning ? wt_color(255, 255, 255) : wt_color(200, 200, 200);
+
+    uint32_t totalSec = g_stopwatchElapsedMs / 1000UL;
+    uint32_t mm = totalSec / 60UL;
+    uint32_t ss = totalSec % 60UL;
+    if (mm > 99) mm = 99;
+
+    uint8_t x = 1;
+    drawDigit(x, 0, (uint8_t)(mm / 10), col); x += 4;
+    drawDigit(x, 0, (uint8_t)(mm % 10), col); x += 4;
+    wt_display_set_pixel_xy(x, 2, col);
+    wt_display_set_pixel_xy(x, 4, col);
+    x += 2;
+    drawDigit(x, 0, (uint8_t)(ss / 10), col); x += 4;
+    drawDigit(x, 0, (uint8_t)(ss % 10), col);
+
+    uint8_t secFill = (uint8_t)((ss * WT_TIMELINE_PIXELS) / 60UL);
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        if (i <= secFill) wt_timeline_set_pixel(i, col);
+    }
+}
+
 static uint32_t weatherColor(uint8_t type)
 {
-    // Use pure, saturated colors for maximum punch
     switch (type)
     {
     case WEATHER_SUNNY:
+        return wt_color(255, 255, 0);
     case WEATHER_CLEAR_NIGHT:
-        return wt_color(255, 180, 0); // Deep Gold/Orange Sun
+        return wt_color(100, 150, 255);
     case WEATHER_PARTLY_CLOUDY:
     case WEATHER_CLOUDY:
     case WEATHER_FOG:
-        return wt_color(100, 100, 120); // Blue-ish Grey
+        return wt_color(100, 100, 120);
     case WEATHER_RAIN:
     case WEATHER_DRIZZLE:
     case WEATHER_HEAVY_RAIN:
-        return wt_color(0, 0, 255); // Pure Blue
+        return wt_color(0, 0, 255);
     case WEATHER_STORM:
-        return wt_color(100, 0, 200); // Deep Purple
+        return wt_color(100, 0, 200);
     case WEATHER_SNOW:
     case WEATHER_SLEET:
-        return wt_color(255, 255, 255); // Pure White
+        return wt_color(255, 255, 255);
     case WEATHER_WIND:
-        return wt_color(0, 255, 200); // Cyan/Turquoise
+        return wt_color(0, 255, 200);
     default:
         return wt_color(255, 255, 0);
     }
@@ -10172,26 +10539,8 @@ static void twitch_setup() {
 }
 
 static void twitch_update(uint32_t now, uint32_t dt) {
-    Settings& cfg = settings_get();
+    (void)now;
     (void)dt;
-    if (!cfg.cardEnabled[CARD_TWITCH]) return;
-    
-    // Skip if not configured
-    if (cfg.twitchUser[0] == '\0' || cfg.twitchClientId[0] == '\0') {
-        g_twitchValid = false;
-        return;
-    }
-    
-    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
-    if (WiFi.status() == WL_CONNECTED && (now - g_twitchLastFetch > updateMs || g_twitchLastFetch == 0)) {
-        g_twitchLastFetch = now;
-        
-        // Note: Twitch API requires OAuth token, showing placeholder
-        // For real implementation, would need OAuth flow
-        Serial.println("[Twitch] API requires OAuth - showing placeholder");
-        g_twitchFollowers = 0;
-        g_twitchValid = false;
-    }
 }
 
 static void twitch_render() {
@@ -10207,25 +10556,8 @@ static void twitter_setup() {
 }
 
 static void twitter_update(uint32_t now, uint32_t dt) {
-    Settings& cfg = settings_get();
+    (void)now;
     (void)dt;
-    if (!cfg.cardEnabled[CARD_TWITTER]) return;
-    
-    // Skip if not configured
-    if (cfg.twitterUser[0] == '\0') {
-        g_twitterValid = false;
-        return;
-    }
-    
-    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
-    if (WiFi.status() == WL_CONNECTED && (now - g_twitterLastFetch > updateMs || g_twitterLastFetch == 0)) {
-        g_twitterLastFetch = now;
-        
-        // Note: Twitter API v2 requires Bearer token
-        Serial.println("[Twitter] API requires Bearer token - showing placeholder");
-        g_twitterFollowers = 0;
-        g_twitterValid = false;
-    }
 }
 
 static void twitter_render() {
@@ -10241,25 +10573,8 @@ static void insta_setup() {
 }
 
 static void insta_update(uint32_t now, uint32_t dt) {
-    Settings& cfg = settings_get();
+    (void)now;
     (void)dt;
-    if (!cfg.cardEnabled[CARD_INSTA]) return;
-    
-    // Skip if not configured
-    if (cfg.instaUser[0] == '\0') {
-        g_instaValid = false;
-        return;
-    }
-    
-    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
-    if (WiFi.status() == WL_CONNECTED && (now - g_instaLastFetch > updateMs || g_instaLastFetch == 0)) {
-        g_instaLastFetch = now;
-        
-        // Note: Instagram API requires Facebook business integration
-        Serial.println("[Instagram] API requires FB integration - showing placeholder");
-        g_instaFollowers = 0;
-        g_instaValid = false;
-    }
 }
 
 static void insta_render() {
@@ -10275,25 +10590,8 @@ static void tiktok_setup() {
 }
 
 static void tiktok_update(uint32_t now, uint32_t dt) {
-    Settings& cfg = settings_get();
+    (void)now;
     (void)dt;
-    if (!cfg.cardEnabled[CARD_TIKTOK]) return;
-    
-    // Skip if not configured
-    if (cfg.tiktokUser[0] == '\0') {
-        g_tiktokValid = false;
-        return;
-    }
-    
-    uint32_t updateMs = (uint32_t)cfg.socialUpdateMins * 60000UL;
-    if (WiFi.status() == WL_CONNECTED && (now - g_tiktokLastFetch > updateMs || g_tiktokLastFetch == 0)) {
-        g_tiktokLastFetch = now;
-        
-        // Note: TikTok API requires OAuth
-        Serial.println("[TikTok] API requires OAuth - showing placeholder");
-        g_tiktokFollowers = 0;
-        g_tiktokValid = false;
-    }
 }
 
 static void tiktok_render() {

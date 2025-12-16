@@ -112,9 +112,11 @@ void settings_begin()
     g_settings.rssFormat = 0;        // Default title only
 
     // Card Cycle defaults
+    // Enable: Weather(0), Clock(1), Network(4), Audio(5), Sparkle(6), Aurora(7), Countdown(12), Pomodoro(13), Sun(14), Stopwatch(15)
+    // Disable: BTC(2), Stocks(3), Games(8), MQTT(9), RSS(10), YouTube(11)
     for(int i=0; i<16; ++i) {
-        // Enable cards 0-7 by default, disable Games(8), MQTT(9), RSS(10), and social(11-15)
-        g_settings.cardEnabled[i] = (i < 8);
+        bool enabled = (i == 0 || i == 1 || i == 4 || i == 5 || i == 6 || i == 7 || i >= 12);
+        g_settings.cardEnabled[i] = enabled;
         g_settings.cardOrder[i] = i;
         g_settings.presetEnabled[i] = 0xFFFFFFFFFFFFFFFFULL; // All presets enabled by default
     }
