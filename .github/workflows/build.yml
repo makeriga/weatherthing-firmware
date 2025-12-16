@@ -117,10 +117,12 @@ jobs:
           cp /tmp/firmware-build/build-info.json builds/${{ steps.build_info.outputs.sha_short }}/
           
           # Generate manifest for ESP Web Tools
+          # Note: erase_flash not specified = preserve NVS/settings on update
           cat > builds/${{ steps.build_info.outputs.sha_short }}/manifest.json << EOF
           {
             "name": "WeatherThing Firmware",
             "version": "${{ steps.build_info.outputs.sha_short }}",
+            "new_install_prompt_erase": true,
             "builds": [
               {
                 "chipFamily": "ESP32-C3",

@@ -1829,11 +1829,14 @@ static void renderBootAnimation(uint32_t now)
     }
 
     // Heart shape bitmap (centered, 9x7)
-    // Using classic pixel heart shape
     static const uint16_t HEART[7] = {
-        0b011011000,  // y=4: columns 1-5
-        0b111111100,  // y=5: columns 0-6
-        0b00011100   // y=6: columns 2-4
+        0b011001100,  // row 0 (bottom): two bumps
+        0b111111110,  // row 1
+        0b111111110,  // row 2
+        0b011111100,  // row 3
+        0b001111000,  // row 4
+        0b000110000,  // row 5
+        0b000100000,  // row 6 (top): point
     };
     
     // Calculate beat phase (0-1 within each beat)
@@ -2056,67 +2059,80 @@ uint8_t cards_get_preset() {
 }
 uint8_t cards_get_count() { return g_cardCount; }
 
-// Friendly AP mode welcome screen with cloud animation
+// Friendly AP mode welcome screen with wifi icon and heart
 static void renderAPWelcomeScreen(uint32_t now)
 {
     wt_display_clear();
     wt_timeline_clear();
     
-    // Welcoming rainbow timeline - gentle wave
-    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
-        uint8_t hue = (now / 30 + i * 15) % 256;
-        uint8_t bright = 40 + (uint8_t)(20 * sinf(now * 0.003f + i * 0.3f));
-        wt_timeline_set_pixel(i, colorWheel(hue));
-    }
+    float pulse = 0.7f + 0.3f * sinf(now * 0.004f);
     
-    // Cute cloud with pulsing heart inside (it's a cloud device!)
-    // Cloud shape (11x5)
-    static const uint16_t CLOUD[5] = {
-        0b00111110000,  // row 4 (top)
-        0b01111111100,  // row 3
-        0b11111111110,  // row 2
-        0b01111111100,  // row 1
-        0b00011100000,  // row 0 (bottom)
-    };
-
+    // WiFi icon (left side) - 7x7 with AP indicator
+    // Classic wifi arcs
+    uint32_t wifiCol = wt_color((uint8_t)(100 * pulse), (uint8_t)(200 * pulse), (uint8_t)(255 * pulse));
+    uint32_t wifiDim = wt_color((uint8_t)(50 * pulse), (uint8_t)(100 * pulse), (uint8_t)(150 * pulse));
+    
+    // Bottom dot (access point)
+    wt_display_set_pixel_xy(3, 0, wifiCol);
+    
+    // First arc
+    wt_display_set_pixel_xy(2, 1, wifiDim);
+    wt_display_set_pixel_xy(3, 2, wifiCol);
+    wt_display_set_pixel_xy(4, 1, wifiDim);
+    
+    // Second arc
+    wt_display_set_pixel_xy(1, 2, wifiDim);
+    wt_display_set_pixel_xy(2, 3, wifiCol);
+    wt_display_set_pixel_xy(3, 4, wifiCol);
+    wt_display_set_pixel_xy(4, 3, wifiCol);
+    wt_display_set_pixel_xy(5, 2, wifiDim);
+    
+    // Third arc (outer)
+    wt_display_set_pixel_xy(0, 3, wifiDim);
+    wt_display_set_pixel_xy(1, 4, wifiCol);
+    wt_display_set_pixel_xy(2, 5, wifiCol);
+    wt_display_set_pixel_xy(3, 6, wifiCol);
+    wt_display_set_pixel_xy(4, 5, wifiCol);
+    wt_display_set_pixel_xy(5, 4, wifiCol);
+    wt_display_set_pixel_xy(6, 3, wifiDim);
+    
+    // Heart on the right side (9x7, starts at x=10)
     static const uint16_t HEART[7] = {
-        0b000100000,
-        0b000110000,
-        0b001111000,
-        0b011111100,
-        0b111111110,
-        0b111111110,
-        0b011001100,
+        0b011001100,  // row 0 (bottom): two bumps
+        0b111111110,  // row 1
+        0b111111110,  // row 2
+        0b011111100,  // row 3
+        0b001111000,  // row 4
+        0b000110000,  // row 5
+        0b000100000,  // row 6 (top): point
     };
     
-    // Draw cloud (offset to left)
-    float cloudPulse = 0.8f + 0.2f * sinf(now * 0.005f);
-    uint8_t cloudR = (uint8_t)(200 * cloudPulse);
-    uint8_t cloudG = (uint8_t)(220 * cloudPulse);
-    uint8_t cloudB = (uint8_t)(255 * cloudPulse);
-    uint32_t cloudCol = wt_color(cloudR, cloudG, cloudB);
+    uint8_t heartR = (uint8_t)(255 * pulse);
+    uint8_t heartG = (uint8_t)(60 * pulse);
+    uint8_t heartB = (uint8_t)(80 * pulse);
+    uint32_t heartCol = wt_color(heartR, heartG, heartB);
     
-    int8_t cloudX = 0;
-    int8_t cloudY = 1;
-
-    // Draw heart
+    int8_t heartX = 11;
+    int8_t heartY = 0;
+    
     for (int8_t row = 0; row < 7; ++row) {
-        uint16_t bits = HEART[6 - row];  // Flip vertically
+        uint16_t bits = HEART[row];
         for (int8_t col = 0; col < 9; ++col) {
             if (bits & (1 << (8 - col))) {
-                int8_t px = cloudX + col;
-                int8_t py = cloudY + row;
+                int8_t px = heartX + col;
+                int8_t py = heartY + row;
                 if (px >= 0 && px < WT_MATRIX_WIDTH && py >= 0 && py < WT_MATRIX_HEIGHT) {
-                    wt_display_set_pixel_xy(px, py, cloudCol);
+                    wt_display_set_pixel_xy(px, py, heartCol);
                 }
             }
         }
     }
 
-    // Timeline pulses with heartbeat
-    uint8_t tlBright = (uint8_t)(30 * cloudPulse);
+    // Timeline - gentle pulsing colors
     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
-        wt_timeline_set_pixel(i, wt_color(tlBright, tlBright/4, tlBright/3));
+        uint8_t hue = (now / 50 + i * 20) % 256;
+        uint8_t bright = (uint8_t)(40 * pulse);
+        wt_timeline_set_pixel(i, wt_color_hsv(hue, 200, bright));
     }
 }
 

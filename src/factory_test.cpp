@@ -339,19 +339,19 @@ bool factory_test_run()
             wt_timeline_clear();
             
             {
-                // Checkmark animation
+                // Checkmark animation (flipped upside down)
                 uint8_t frame = (elapsed / 50) % 20;
                 uint32_t green = wt_color(0, 255, 0);
                 
-                // Draw expanding checkmark
-                if (frame > 0) wt_display_set_pixel_xy(6, 2, green);
+                // Draw expanding checkmark (Y flipped: 6-y to invert)
+                if (frame > 0) wt_display_set_pixel_xy(6, 4, green);
                 if (frame > 1) wt_display_set_pixel_xy(7, 3, green);
-                if (frame > 2) wt_display_set_pixel_xy(8, 4, green);
-                if (frame > 3) wt_display_set_pixel_xy(9, 5, green);
-                if (frame > 4) wt_display_set_pixel_xy(10, 4, green);
+                if (frame > 2) wt_display_set_pixel_xy(8, 2, green);
+                if (frame > 3) wt_display_set_pixel_xy(9, 1, green);
+                if (frame > 4) wt_display_set_pixel_xy(10, 2, green);
                 if (frame > 5) wt_display_set_pixel_xy(11, 3, green);
-                if (frame > 6) wt_display_set_pixel_xy(12, 2, green);
-                if (frame > 7) wt_display_set_pixel_xy(13, 1, green);
+                if (frame > 6) wt_display_set_pixel_xy(12, 4, green);
+                if (frame > 7) wt_display_set_pixel_xy(13, 5, green);
                 
                 // Fill timeline green
                 for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
