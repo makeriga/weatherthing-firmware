@@ -1830,13 +1830,13 @@ static void renderBootAnimation(uint32_t now)
 
     // Heart shape bitmap (centered, 9x7)
     static const uint16_t HEART[7] = {
-        0b011001100,  // row 0 (bottom): two bumps
-        0b111111110,  // row 1
-        0b111111110,  // row 2
-        0b011111100,  // row 3
-        0b001111000,  // row 4
-        0b000110000,  // row 5
-        0b000100000,  // row 6 (top): point
+        0b011000110,  // row 0 (top lobes): two bumps
+        0b111101111,  // row 1: connect lobes
+        0b111111111,  // row 2: full width
+        0b011111110,  // row 3
+        0b001111100,  // row 4
+        0b000111000,  // row 5
+        0b000010000,  // row 6 (bottom): point
     };
     
     // Calculate beat phase (0-1 within each beat)
@@ -2072,39 +2072,37 @@ static void renderAPWelcomeScreen(uint32_t now)
     uint32_t wifiCol = wt_color((uint8_t)(100 * pulse), (uint8_t)(200 * pulse), (uint8_t)(255 * pulse));
     uint32_t wifiDim = wt_color((uint8_t)(50 * pulse), (uint8_t)(100 * pulse), (uint8_t)(150 * pulse));
     
-    // Bottom dot (access point)
+    // Bottom dot (antenna base)
     wt_display_set_pixel_xy(3, 0, wifiCol);
+    wt_display_set_pixel_xy(3, 1, wifiCol);
     
-    // First arc
-    wt_display_set_pixel_xy(2, 1, wifiDim);
-    wt_display_set_pixel_xy(3, 2, wifiCol);
-    wt_display_set_pixel_xy(4, 1, wifiDim);
+    // Arc 1 (smallest)
+    wt_display_set_pixel_xy(2, 2, wifiCol);
+    wt_display_set_pixel_xy(4, 2, wifiCol);
     
-    // Second arc
-    wt_display_set_pixel_xy(1, 2, wifiDim);
-    wt_display_set_pixel_xy(2, 3, wifiCol);
-    wt_display_set_pixel_xy(3, 4, wifiCol);
-    wt_display_set_pixel_xy(4, 3, wifiCol);
-    wt_display_set_pixel_xy(5, 2, wifiDim);
+    // Arc 2 (medium)
+    wt_display_set_pixel_xy(1, 3, wifiDim);
+    wt_display_set_pixel_xy(2, 4, wifiCol);
+    wt_display_set_pixel_xy(4, 4, wifiCol);
+    wt_display_set_pixel_xy(5, 3, wifiDim);
     
-    // Third arc (outer)
-    wt_display_set_pixel_xy(0, 3, wifiDim);
-    wt_display_set_pixel_xy(1, 4, wifiCol);
-    wt_display_set_pixel_xy(2, 5, wifiCol);
-    wt_display_set_pixel_xy(3, 6, wifiCol);
-    wt_display_set_pixel_xy(4, 5, wifiCol);
-    wt_display_set_pixel_xy(5, 4, wifiCol);
-    wt_display_set_pixel_xy(6, 3, wifiDim);
+    // Arc 3 (largest)
+    wt_display_set_pixel_xy(0, 4, wifiDim);
+    wt_display_set_pixel_xy(1, 5, wifiCol);
+    wt_display_set_pixel_xy(2, 6, wifiCol);
+    wt_display_set_pixel_xy(4, 6, wifiCol);
+    wt_display_set_pixel_xy(5, 5, wifiCol);
+    wt_display_set_pixel_xy(6, 4, wifiDim);
     
-    // Heart on the right side (9x7, starts at x=10)
+    // Heart on the right side (9x7, starts at x=11)
     static const uint16_t HEART[7] = {
-        0b011001100,  // row 0 (bottom): two bumps
-        0b111111110,  // row 1
-        0b111111110,  // row 2
-        0b011111100,  // row 3
-        0b001111000,  // row 4
-        0b000110000,  // row 5
-        0b000100000,  // row 6 (top): point
+        0b011000110,  // row 0 (top lobes): two bumps
+        0b111101111,  // row 1: connect lobes
+        0b111111111,  // row 2: full width
+        0b011111110,  // row 3
+        0b001111100,  // row 4
+        0b000111000,  // row 5
+        0b000010000,  // row 6 (bottom): point
     };
     
     uint8_t heartR = (uint8_t)(255 * pulse);
@@ -2116,7 +2114,7 @@ static void renderAPWelcomeScreen(uint32_t now)
     int8_t heartY = 0;
     
     for (int8_t row = 0; row < 7; ++row) {
-        uint16_t bits = HEART[row];
+        uint16_t bits = HEART[6 - row];  // Flip vertically for correct orientation
         for (int8_t col = 0; col < 9; ++col) {
             if (bits & (1 << (8 - col))) {
                 int8_t px = heartX + col;
