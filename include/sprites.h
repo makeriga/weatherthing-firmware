@@ -69,3 +69,6 @@ uint32_t sprites_get_digit_row(uint8_t digit, uint8_t row);
 
 // Helper: Get icon sprite row bits (for rendering)
 uint32_t sprites_get_icon_row(SpriteType icon, uint8_t row);
+
+// Helper: Get letter sprite row bits (A-Z, 5x5 font)
+uint8_t sprites_get_letter_row(uint8_t letter, uint8_t row);

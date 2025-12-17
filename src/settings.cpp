@@ -115,7 +115,7 @@ void settings_begin()
     // Enable: Weather(0), Clock(1), Network(4), Audio(5), Sparkle(6), Aurora(7), Countdown(12), Pomodoro(13), Sun(14), Stopwatch(15)
     // Disable: BTC(2), Stocks(3), Games(8), MQTT(9), RSS(10), YouTube(11)
     for(int i=0; i<16; ++i) {
-        bool enabled = (i == 0 || i == 1 || i == 4 || i == 5 || i == 6 || i == 7 || i >= 12);
+        bool enabled = (i == 0 || i == 1 || i == 4 || i == 5);
         g_settings.cardEnabled[i] = enabled;
         g_settings.cardOrder[i] = i;
         g_settings.presetEnabled[i] = 0xFFFFFFFFFFFFFFFFULL; // All presets enabled by default

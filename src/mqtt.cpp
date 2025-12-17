@@ -416,8 +416,6 @@ static void mqtt_send_ha_discovery()
     options.add("Stocks");
     options.add("Network");
     options.add("Audio");
-    options.add("Sparkle");
-    options.add("Aurora");
     options.add("Games");
     options.add("MQTT");
     

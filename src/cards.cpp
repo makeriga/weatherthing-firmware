@@ -13,6 +13,7 @@
 #include "settings.h"
 #include "mqtt.h"
 #include "http_worker.h"
+#include "namedays_lv.h"
 
 struct Card
 {
@@ -1379,7 +1380,7 @@ static void renderTitle(uint32_t now) {
 // Preset counts - IMPORTANT: Update these when adding new presets!
 // Also update the presetBtn() calls in net.cpp for the UI buttons
 static const uint8_t WEATHER_PRESET_COUNT = 40;  // Weather presets 0-39 (update in weather_render switch + net.cpp UI)
-static const uint8_t CLOCK_PRESET_COUNT = 24;    // Clock presets 0-23 (update in clock_render switch + net.cpp UI)
+static const uint8_t CLOCK_PRESET_COUNT = 29;    // Clock presets 0-28 (update in clock_render switch + net.cpp UI)
 static const uint8_t VU_PRESET_COUNT = 39;       // VU presets 0-38 (update in vu_render switch + net.cpp UI)
 
 static const uint8_t COUNTDOWN_PRESET_COUNT = 4;
@@ -1833,10 +1834,10 @@ static void renderBootAnimation(uint32_t now)
         0b011001100,  // row 0 (bottom): two bumps
         0b111111110,  // row 1
         0b111111110,  // row 2
-        0b011111100,  // row 3
-        0b001111000,  // row 4
-        0b000110000,  // row 5
-        0b000100000,  // row 6 (top): point
+        0b011111110,  // row 3
+        0b001111100,  // row 4
+        0b000111000,  // row 5
+        0b000010000,  // row 6 (top): point
     };
     
     // Calculate beat phase (0-1 within each beat)
@@ -2011,10 +2012,24 @@ void cards_notify_wifi_connected(const char* ip)
 void cards_switch_to(uint8_t cardIndex)
 {
     if (cardIndex >= g_cardCount) return;
-    g_currentCard = cardIndex;
+
+    uint8_t targetCard = cardIndex;
+    bool setVuPreset = false;
+    uint8_t targetVuPreset = 0;
+    if (cardIndex == CARD_SPARKLE) {
+        targetCard = CARD_VU;
+        setVuPreset = true;
+        targetVuPreset = 27;
+    } else if (cardIndex == CARD_AURORA) {
+        targetCard = CARD_VU;
+        setVuPreset = true;
+        targetVuPreset = 28;
+    }
+
+    g_currentCard = targetCard;
     g_weatherPreset = 0;
     g_clockPreset = 0;
-    g_vuPreset = 0;
+    g_vuPreset = setVuPreset ? (targetVuPreset % VU_PRESET_COUNT) : 0;
     g_gameMode = 0;
     g_countdownPreset = 0;
     g_pomodoroPreset = 0;
@@ -3400,6 +3415,242 @@ static void clock_render_orbit() {
      }
  }
 
+// Preset 24: Date display (DD.MM)
+static void clock_render_date() {
+    wt_display_clear();
+    wt_timeline_clear();
+    
+    int8_t tzOffset = settings_get().tzOffset;
+    int day = g_clockTime.tm_mday;
+    int month = g_clockTime.tm_mon + 1;
+    
+    uint32_t col = wt_color(100, 200, 255);
+    uint32_t dotCol = wt_color(255, 150, 50);
+    
+    uint8_t x = 1;
+    drawDigit(x, 0, day / 10, col); x += 4;
+    drawDigit(x, 0, day % 10, col); x += 4;
+    wt_display_set_pixel_xy(x, 5, dotCol);
+    x += 2;
+    drawDigit(x, 0, month / 10, col); x += 4;
+    drawDigit(x, 0, month % 10, col);
+    
+    // Show day of week on timeline
+    int dow = g_clockTime.tm_wday; // 0=Sun, 1=Mon...
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        uint8_t dayIdx = i / (WT_TIMELINE_PIXELS / 7);
+        if (dayIdx == dow) {
+            wt_timeline_set_pixel(i, wt_color(0, 255, 100));
+        } else {
+            wt_timeline_set_pixel(i, wt_color(30, 30, 30));
+        }
+    }
+}
+
+// Preset 25: Full date (DD.MM.YY)
+static void clock_render_fulldate() {
+    wt_display_clear();
+    wt_timeline_clear();
+    
+    int day = g_clockTime.tm_mday;
+    int month = g_clockTime.tm_mon + 1;
+    int year = (g_clockTime.tm_year + 1900) % 100;
+    
+    uint32_t col = wt_color(255, 200, 100);
+    uint32_t dotCol = wt_color(100, 100, 100);
+    
+    // Smaller layout: D D . M M . Y Y
+    uint8_t x = 0;
+    drawDigit(x, 0, day / 10, col); x += 4;
+    drawDigit(x, 0, day % 10, col); x += 3;
+    wt_display_set_pixel_xy(x, 5, dotCol);
+    x += 2;
+    drawDigit(x, 0, month / 10, col); x += 4;
+    drawDigit(x, 0, month % 10, col); x += 3;
+    wt_display_set_pixel_xy(x, 5, dotCol);
+    x += 2;
+    drawDigit(x, 0, year / 10, col); x += 4;
+    drawDigit(x, 0, year % 10, col);
+    
+    // Progress through year on timeline
+    int yday = g_clockTime.tm_yday;
+    uint8_t progress = (yday * WT_TIMELINE_PIXELS) / 365;
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        if (i <= progress) {
+            wt_timeline_set_pixel(i, wt_color(100, 255, 100));
+        }
+    }
+}
+
+// Preset 26: Weekday name
+static void clock_render_weekday() {
+    wt_display_clear();
+    wt_timeline_clear();
+    
+    static const char* days[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+    int dow = g_clockTime.tm_wday;
+    const char* dayName = days[dow];
+    
+    // Color based on day (weekend = warmer)
+    uint32_t col;
+    if (dow == 0 || dow == 6) {
+        col = wt_color(255, 100, 100); // Weekend red
+    } else {
+        col = wt_color(100, 200, 255); // Weekday blue
+    }
+    
+    // Draw 3 letters centered
+    uint8_t x = 3;
+    for (int i = 0; i < 3 && dayName[i]; ++i) {
+        uint8_t charIdx = dayName[i] - 'A';
+        if (charIdx < 26) {
+            // Simple letter drawing - use digit patterns for now
+            // Draw the letter index as visual pattern
+            for (uint8_t row = 0; row < 7; ++row) {
+                uint8_t pattern = sprites_get_letter_row(charIdx, row);
+                for (uint8_t col_i = 0; col_i < 5; ++col_i) {
+                    if (pattern & (1 << (4 - col_i))) {
+                        wt_display_set_pixel_xy(x + col_i, (WT_MATRIX_HEIGHT - 1 - row), col);
+                    }
+                }
+            }
+        }
+        x += 6;
+    }
+    
+    // Show day progress on timeline
+    int hour; uint8_t minute, second;
+    getClockTime(hour, minute, second);
+    uint16_t dayMins = hour * 60 + minute;
+    uint8_t progress = (dayMins * WT_TIMELINE_PIXELS) / (24 * 60);
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        if (i <= progress) wt_timeline_set_pixel(i, col);
+    }
+}
+
+// Preset 27: Latvian Nameday - scrolling names
+static int16_t g_namedayScrollX = 20;
+static uint32_t g_namedayLastScroll = 0;
+
+static void clock_render_nameday() {
+    wt_display_clear();
+    wt_timeline_clear();
+    
+    int day = g_clockTime.tm_mday;
+    int month = g_clockTime.tm_mon + 1;
+    
+    const char* names = namedays_get(month, day);
+    if (!names) names = "---";
+    
+    uint32_t now = millis();
+    
+    // Scroll speed - 50ms per pixel
+    if (now - g_namedayLastScroll > 50) {
+        g_namedayLastScroll = now;
+        g_namedayScrollX--;
+        
+        // Calculate text width (approx 4 pixels per char)
+        int textWidth = strlen(names) * 6 + 20;
+        if (g_namedayScrollX < -textWidth) {
+            g_namedayScrollX = 20;
+        }
+    }
+    
+    // Draw scrolling text
+    uint32_t col = wt_color(255, 220, 100); // Golden color for namedays
+    int16_t x = g_namedayScrollX;
+    for (int i = 0; names[i] && x < 25; ++i) {
+        char c = names[i];
+        if (c >= 'A' && c <= 'Z') {
+            uint8_t charIdx = c - 'A';
+            for (uint8_t row = 0; row < 7; ++row) {
+                uint8_t pattern = sprites_get_letter_row(charIdx, row);
+                for (uint8_t col_i = 0; col_i < 5; ++col_i) {
+                    if (pattern & (1 << (4 - col_i))) {
+                        int16_t px = x + col_i;
+                        if (px >= 0 && px < 20) {
+                            wt_display_set_pixel_xy(px, (WT_MATRIX_HEIGHT - 1 - row), col);
+                        }
+                    }
+                }
+            }
+            x += 6;
+        } else if (c >= 'a' && c <= 'z') {
+            uint8_t charIdx = c - 'a';
+            for (uint8_t row = 0; row < 7; ++row) {
+                uint8_t pattern = sprites_get_letter_row(charIdx, row);
+                for (uint8_t col_i = 0; col_i < 5; ++col_i) {
+                    if (pattern & (1 << (4 - col_i))) {
+                        int16_t px = x + col_i;
+                        if (px >= 0 && px < 20) {
+                            wt_display_set_pixel_xy(px, (WT_MATRIX_HEIGHT - 1 - row), col);
+                        }
+                    }
+                }
+            }
+            x += 6;
+        } else if (c == ' ' || c == ',' || c == '-' || c == '.') {
+            x += 3;
+        } else {
+            x += 3;
+        }
+    }
+    
+    // Heart pattern on timeline for nameday
+    static const uint16_t heartPattern = 0b011011011011;
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        if ((heartPattern >> (i % 12)) & 1) {
+            wt_timeline_set_pixel(i, wt_color(255, 50, 100));
+        }
+    }
+}
+
+// Preset 28: Week number
+static void clock_render_weeknum() {
+    wt_display_clear();
+    wt_timeline_clear();
+    
+    // Calculate ISO week number
+    int yday = g_clockTime.tm_yday;
+    int wday = g_clockTime.tm_wday;
+    // Adjust: ISO week starts Monday (wday: 0=Sun -> 6, 1=Mon -> 0, etc)
+    int isoWday = (wday + 6) % 7;
+    int week = (yday - isoWday + 10) / 7;
+    if (week < 1) week = 52;
+    if (week > 52) week = 1;
+    
+    uint32_t col = wt_color(150, 255, 150);
+    uint32_t labelCol = wt_color(100, 100, 100);
+    
+    // Draw "W" label
+    uint8_t x = 2;
+    for (uint8_t row = 0; row < 7; ++row) {
+        uint8_t pattern = sprites_get_letter_row('W' - 'A', row);
+        for (uint8_t col_i = 0; col_i < 5; ++col_i) {
+            if (pattern & (1 << (4 - col_i))) {
+                wt_display_set_pixel_xy(x + col_i, (WT_MATRIX_HEIGHT - 1 - row), labelCol);
+            }
+        }
+    }
+    x += 6;
+    
+    // Draw week number
+    drawDigit(x, 0, week / 10, col); x += 4;
+    drawDigit(x, 0, week % 10, col);
+    
+    // Week progress on timeline (7 days)
+    int dow = g_clockTime.tm_wday;
+    int isoDow = (dow + 6) % 7; // Monday = 0
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        uint8_t dayIdx = (i * 7) / WT_TIMELINE_PIXELS;
+        if (dayIdx < isoDow) {
+            wt_timeline_set_pixel(i, wt_color(50, 150, 50));
+        } else if (dayIdx == isoDow) {
+            wt_timeline_set_pixel(i, wt_color(150, 255, 150));
+        }
+    }
+}
+
 static void clock_render()
 {
     wt_display_clear();
@@ -3441,6 +3692,11 @@ static void clock_render()
         case 21: clock_render_scan(); break;
         case 22: clock_render_duo(); break;
         case 23: clock_render_frame(); break;
+        case 24: clock_render_date(); break;
+        case 25: clock_render_fulldate(); break;
+        case 26: clock_render_weekday(); break;
+        case 27: clock_render_nameday(); break;
+        case 28: clock_render_weeknum(); break;
         default: clock_render_digital(); break;
     }
 }

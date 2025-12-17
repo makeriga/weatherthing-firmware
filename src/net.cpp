@@ -182,8 +182,8 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
 <div class="container">)";
 
     // Card names and icons for 16 cards (12 original + 4 timers)
-    const char* cardNames[] = {"<span class='weather-title'>Weather</span>", "Clock", "BTC", "Stocks", "Network", "Audio", "Sparkle", "Aurora", "Games", "MQTT", "RSS", "YouTube", "Countdown", "Pomodoro", "Sun", "Stopwatch"};
-    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "&#x2728;", "&#x1F308;", "&#x1F3AE;", "&#x1F3E0;", "&#x1F4F0;", "&#x25B6;", "&#x23F1;", "&#x1F345;", "&#x2600;", "&#x23F1;"};
+    const char* cardNames[] = {"<span class='weather-title'>Weather</span>", "Clock", "BTC", "Stocks", "Network", "Audio", "(Audio)", "(Audio)", "Games", "MQTT", "RSS", "YouTube", "Countdown", "Pomodoro", "Sun", "Stopwatch"};
+    const char* cardIcons[] = {"&#x26C5;", "&#x1F551;", "&#x20BF;", "&#x1F4C8;", "&#x1F310;", "&#x1F3A4;", "", "", "&#x1F3AE;", "&#x1F3E0;", "&#x1F4F0;", "&#x25B6;", "&#x23F1;", "&#x1F345;", "&#x2600;", "&#x23F1;"};
     
     // ========== WiFi FIRST when in AP mode ==========
     if (g_isApMode) {
@@ -480,6 +480,8 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 presetBtn(1, 18, "Orbit");
                 presetBtn(1, 19, "Tally"); presetBtn(1, 20, "Cutout"); presetBtn(1, 21, "Scan");
                 presetBtn(1, 22, "Duo"); presetBtn(1, 23, "Frame");
+                presetBtn(1, 24, "Date"); presetBtn(1, 25, "FullDate"); presetBtn(1, 26, "Weekday");
+                presetBtn(1, 27, "Nameday"); presetBtn(1, 28, "WeekNum");
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
                 html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap\">";
                 html += "<label style=\"font-weight:bold\">Timezone:</label>";
