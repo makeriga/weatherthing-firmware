@@ -1834,10 +1834,10 @@ static void renderBootAnimation(uint32_t now)
         0b011001100,  // row 0 (bottom): two bumps
         0b111111110,  // row 1
         0b111111110,  // row 2
-        0b011111100,  // row 3
-        0b001111000,  // row 4
-        0b000110000,  // row 5
-        0b000100000,  // row 6 (top): point
+        0b011111110,  // row 3
+        0b001111100,  // row 4
+        0b000111000,  // row 5
+        0b000010000,  // row 6 (top): point
     };
     
     // Calculate beat phase (0-1 within each beat)
