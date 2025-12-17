@@ -3707,9 +3707,43 @@ static void clock_render_poland() {
     (void)hour;
     (void)minute;
 
+    Settings& cfg = settings_get();
+    static uint8_t s_polandBeat = 0;
+    static float s_polandAvg = 0.0f;
+    static uint32_t s_polandCooldownUntil = 0;
+
+    uint8_t trigThr = cfg.beatThreshold;
+    if (trigThr < 10) trigThr = 10;
+
+    // Exponential moving average of audio envelope (stable baseline)
+    // Fast enough to follow overall loudness, slow enough to ignore transient peaks.
+    s_polandAvg = s_polandAvg * 0.93f + (float)g_audioLevel * 0.07f;
+    float spike = (float)g_audioLevel - s_polandAvg;
+    float spikeThr = 8.0f + (float)trigThr / 14.0f;
+
+    if (cfg.beatHold > 0 && now >= s_polandCooldownUntil && s_polandBeat == 0) {
+        if (g_audioLevel >= trigThr && spike > spikeThr) {
+            s_polandBeat = cfg.beatHold;
+            s_polandCooldownUntil = now + 180;
+        }
+    }
+    float beat = 0.0f;
+    if (cfg.beatHold > 0) {
+        beat = (float)s_polandBeat / (float)cfg.beatHold;
+        if (beat < 0.0f) beat = 0.0f;
+        if (beat > 1.0f) beat = 1.0f;
+    }
+    if (s_polandBeat > 0) s_polandBeat--;
+
+    float audio = 0.0f;
+
     float t = (float)(now % 1000) / 1000.0f;
     float pulse = 0.5f - 0.5f * cosf(t * 6.2831853f);
-    uint8_t v = (uint8_t)(60 + pulse * 195.0f);
+    float base = 0.35f + 0.65f * pulse;
+    int vInt = (int)(75.0f + base * 150.0f + audio * 10.0f + beat * 35.0f);
+    if (vInt < 60) vInt = 60;
+    if (vInt > 255) vInt = 255;
+    uint8_t v = (uint8_t)vInt;
 
     uint32_t white = wt_color(v, v, v);
     uint32_t red = wt_color(v, 0, 0);
@@ -3723,12 +3757,81 @@ static void clock_render_poland() {
     drawDigit(x, 0, 3, white); x += 4;
     drawDigit(x, 0, 7, red);
 
+    if (beat > 0.0f) {
+        uint8_t litMask[WT_MATRIX_WIDTH * WT_MATRIX_HEIGHT];
+        for (uint8_t yy = 0; yy < WT_MATRIX_HEIGHT; ++yy) {
+            for (uint8_t xx = 0; xx < WT_MATRIX_WIDTH; ++xx) {
+                uint16_t idx = (uint16_t)yy * WT_MATRIX_WIDTH + xx;
+                litMask[idx] = (wt_display_get_pixel_xy(xx, yy) != 0) ? 1 : 0;
+            }
+        }
+
+        uint8_t boost = (uint8_t)(beat * 50.0f);
+        for (uint8_t yy = 0; yy < WT_MATRIX_HEIGHT; ++yy) {
+            for (uint8_t xx = 0; xx < WT_MATRIX_WIDTH; ++xx) {
+                uint16_t idx = (uint16_t)yy * WT_MATRIX_WIDTH + xx;
+                if (!litMask[idx]) continue;
+                uint32_t col = wt_display_get_pixel_xy(xx, yy);
+                uint8_t r = (col >> 16) & 0xFF;
+                uint8_t g = (col >> 8) & 0xFF;
+                uint8_t b = col & 0xFF;
+                r = (uint8_t)min(255, r + boost);
+                g = (uint8_t)min(255, g + boost);
+                b = (uint8_t)min(255, b + boost);
+                wt_display_set_pixel_xy(xx, yy, wt_color(r, g, b));
+            }
+        }
+
+        uint8_t glow = (uint8_t)(10 + beat * 60.0f);
+        if (glow > 90) glow = 90;
+        uint8_t glowG = (uint8_t)min(255, (int)(glow * 2));
+        uint32_t outline = wt_color(glow, glowG, 0);
+        for (uint8_t yy = 0; yy < WT_MATRIX_HEIGHT; ++yy) {
+            for (uint8_t xx = 0; xx < WT_MATRIX_WIDTH; ++xx) {
+                uint16_t idx = (uint16_t)yy * WT_MATRIX_WIDTH + xx;
+                if (litMask[idx]) continue;
+                bool near = false;
+                if (xx > 0 && litMask[(uint16_t)yy * WT_MATRIX_WIDTH + (xx - 1)]) near = true;
+                else if (xx + 1 < WT_MATRIX_WIDTH && litMask[(uint16_t)yy * WT_MATRIX_WIDTH + (xx + 1)]) near = true;
+                else if (yy > 0 && litMask[(uint16_t)(yy - 1) * WT_MATRIX_WIDTH + xx]) near = true;
+                else if (yy + 1 < WT_MATRIX_HEIGHT && litMask[(uint16_t)(yy + 1) * WT_MATRIX_WIDTH + xx]) near = true;
+                if (near) wt_display_set_pixel_xy(xx, yy, outline);
+            }
+        }
+    }
+
     uint8_t secFill = (uint8_t)((second * WT_TIMELINE_PIXELS) / 60);
     if (secFill >= WT_TIMELINE_PIXELS) secFill = WT_TIMELINE_PIXELS - 1;
+    float maxDist = (float)WT_TIMELINE_PIXELS / 2.0f;
+    float ringR = (1.0f - beat) * maxDist;
+    float ringW = 0.9f;
+    uint8_t centerL = (WT_TIMELINE_PIXELS - 1) / 2;
+    uint8_t centerR = WT_TIMELINE_PIXELS / 2;
     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
-        uint8_t hue = (uint8_t)((now / 8) + i * 21);
-        uint8_t br = (i <= secFill) ? 255 : 30;
-        wt_timeline_set_pixel(i, wt_color_hsv(hue, 255, br));
+        float d1 = fabsf((float)i - (float)centerL);
+        float d2 = fabsf((float)i - (float)centerR);
+        float dist = (d1 < d2) ? d1 : d2;
+
+        uint8_t brBase = (i <= secFill) ? (uint8_t)(130 + beat * 20.0f) : 25;
+        uint8_t br = brBase;
+        uint8_t shade = (uint8_t)(i * 23);
+
+        if (beat > 0.0f) {
+            float dd = fabsf(dist - ringR);
+            float ring = 1.0f - (dd / ringW);
+            if (ring < 0.0f) ring = 0.0f;
+            if (ring > 1.0f) ring = 1.0f;
+            uint8_t brRing = (uint8_t)(ring * (30.0f + beat * 140.0f));
+            if (brRing > br) {
+                br = brRing;
+                shade = (uint8_t)(shade + 90 + dist * 18.0f);
+            }
+        }
+
+        uint16_t gScale = (uint16_t)(140 + (shade >> 1));
+        if (gScale > 255) gScale = 255;
+        uint8_t g = (uint8_t)(((uint16_t)br * gScale) / 255);
+        wt_timeline_set_pixel(i, wt_color(br, g, 0));
     }
 }
 
