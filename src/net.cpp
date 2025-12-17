@@ -343,7 +343,7 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     
     // Weather presets - first half
     html += "<optgroup label=\"&#x1F321; Weather\">";
-    const char* wxPresets[] = {"Classic", "Bar", "Corner", "Anim", "Minimal", "Day/Nite", "Term", "Big", "Forecast", "Pixel", "LCD", "Mood", "Type", "Waves", "Split", "Count", "Thermo", "Icon", "Rain", "Cyber", "Particle", "Wave", "TempBar", "Aurora", "Radar", "Glitch", "Horizon", "Frost", "Map", "Grid", "Heat", "Compass", "Gauge", "Stars", "Seasons", "Half", "Edge", "PCB", "Stripe", "Scan"};
+    const char* wxPresets[] = {"Classic", "Bar", "Corner", "Anim", "Minimal", "Day/Nite", "Term", "Big", "Forecast", "Pixel", "LCD", "Mood", "Type", "Waves", "Split", "Count", "Thermo", "Icon", "Rain", "Cyber", "Particle", "Wave", "TempBar", "Aurora", "Radar", "Glitch", "Horizon", "Frost", "Map", "Grid", "Heat", "Compass", "Gauge", "Stars", "Seasons", "Half", "Edge", "PCB", "Stripe", "Scan", "Cine"};
     for (int p = 0; p < 20; ++p) {
         html += "<option value=\"0_" + String(p) + "\"";
         if (cfg.touchShortcutCard == 0 && cfg.touchShortcutPreset == p) html += " selected";
@@ -351,7 +351,7 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     }
     sendChunk();
     // Weather presets - second half
-    for (int p = 20; p < 40; ++p) {
+    for (int p = 20; p < 41; ++p) {
         html += "<option value=\"0_" + String(p) + "\"";
         if (cfg.touchShortcutCard == 0 && cfg.touchShortcutPreset == p) html += " selected";
         html += ">" + String(wxPresets[p]) + "</option>";
@@ -527,6 +527,7 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 wxPreset(37, "PCB", "Circuit");
                 wxPreset(38, "Stripe", "Stripes");
                 wxPreset(39, "Scan", "Scanline");
+                wxPreset(40, "Cine", "Ultra scene");
                 
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">"; // Close preset buttons, open settings
                 
