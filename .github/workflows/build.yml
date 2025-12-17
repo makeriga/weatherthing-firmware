@@ -60,16 +60,29 @@ jobs:
           cp .pio/build/esp32c3/partitions.bin firmware-build/
           
           # Create build info JSON
-          cat > firmware-build/build-info.json << EOF
-          {
-            "sha": "${{ github.sha }}",
-            "sha_short": "${{ steps.build_info.outputs.sha_short }}",
-            "commit_message": "${{ steps.build_info.outputs.commit_msg }}",
-            "commit_date": "${{ steps.build_info.outputs.commit_date }}",
-            "build_date": "${{ steps.build_info.outputs.build_date }}",
-            "branch": "${{ github.ref_name }}"
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import os
+          
+          info = {
+            "sha": os.environ.get("WT_SHA", ""),
+            "sha_short": os.environ.get("WT_SHA_SHORT", ""),
+            "commit_message": os.environ.get("WT_COMMIT_MSG", ""),
+            "commit_date": os.environ.get("WT_COMMIT_DATE", ""),
+            "build_date": os.environ.get("WT_BUILD_DATE", ""),
+            "branch": os.environ.get("WT_BRANCH", ""),
           }
-          EOF
+          
+          with open("firmware-build/build-info.json", "w", encoding="utf-8") as f:
+            json.dump(info, f, indent=2, ensure_ascii=False)
+          PYTHON_SCRIPT
+        env:
+          WT_SHA: ${{ github.sha }}
+          WT_SHA_SHORT: ${{ steps.build_info.outputs.sha_short }}
+          WT_COMMIT_MSG: ${{ steps.build_info.outputs.commit_msg }}
+          WT_COMMIT_DATE: ${{ steps.build_info.outputs.commit_date }}
+          WT_BUILD_DATE: ${{ steps.build_info.outputs.build_date }}
+          WT_BRANCH: ${{ github.ref_name }}
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
@@ -149,11 +162,14 @@ jobs:
               if build_dir.is_dir():
                   info_file = build_dir / "build-info.json"
                   if info_file.exists():
-                      with open(info_file) as f:
-                          info = json.load(f)
+                      try:
+                          with open(info_file, encoding="utf-8") as f:
+                              info = json.load(f)
                           info["path"] = build_dir.name
                           builds.append(info)
-          
+                      except json.JSONDecodeError:
+                          pass
+
           # Sort by build_date descending
           builds.sort(key=lambda x: x.get("build_date", ""), reverse=True)
           
