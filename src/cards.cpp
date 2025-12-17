@@ -1380,7 +1380,7 @@ static void renderTitle(uint32_t now) {
 // Preset counts - IMPORTANT: Update these when adding new presets!
 // Also update the presetBtn() calls in net.cpp for the UI buttons
 static const uint8_t WEATHER_PRESET_COUNT = 40;  // Weather presets 0-39 (update in weather_render switch + net.cpp UI)
-static const uint8_t CLOCK_PRESET_COUNT = 29;    // Clock presets 0-28 (update in clock_render switch + net.cpp UI)
+static const uint8_t CLOCK_PRESET_COUNT = 30;    // Clock presets 0-29 (update in clock_render switch + net.cpp UI)
 static const uint8_t VU_PRESET_COUNT = 39;       // VU presets 0-38 (update in vu_render switch + net.cpp UI)
 
 static const uint8_t COUNTDOWN_PRESET_COUNT = 4;
@@ -3697,6 +3697,41 @@ static void clock_render_weeknum() {
     }
 }
 
+static void clock_render_poland() {
+    wt_display_clear();
+    wt_timeline_clear();
+
+    uint32_t now = millis();
+    int hour; uint8_t minute, second;
+    getClockTime(hour, minute, second);
+    (void)hour;
+    (void)minute;
+
+    float t = (float)(now % 1000) / 1000.0f;
+    float pulse = 0.5f - 0.5f * cosf(t * 6.2831853f);
+    uint8_t v = (uint8_t)(60 + pulse * 195.0f);
+
+    uint32_t white = wt_color(v, v, v);
+    uint32_t red = wt_color(v, 0, 0);
+
+    uint8_t x = 2;
+    drawDigit(x, 0, 2, white); x += 4;
+    drawDigit(x, 0, 1, red); x += 4;
+    wt_display_set_pixel_xy(x, 2, white);
+    wt_display_set_pixel_xy(x, 4, white);
+    x += 2;
+    drawDigit(x, 0, 3, white); x += 4;
+    drawDigit(x, 0, 7, red);
+
+    uint8_t secFill = (uint8_t)((second * WT_TIMELINE_PIXELS) / 60);
+    if (secFill >= WT_TIMELINE_PIXELS) secFill = WT_TIMELINE_PIXELS - 1;
+    for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
+        uint8_t hue = (uint8_t)((now / 8) + i * 21);
+        uint8_t br = (i <= secFill) ? 255 : 30;
+        wt_timeline_set_pixel(i, wt_color_hsv(hue, 255, br));
+    }
+}
+
 static void clock_render()
 {
     wt_display_clear();
@@ -3743,6 +3778,7 @@ static void clock_render()
         case 26: clock_render_weekday(); break;
         case 27: clock_render_nameday(); break;
         case 28: clock_render_weeknum(); break;
+        case 29: clock_render_poland(); break;
         default: clock_render_digital(); break;
     }
 }

@@ -9,7 +9,7 @@ ESP32-C3 firmware for the WeatherThing LED matrix display.
 | Card | Description | Presets |
 |------|-------------|---------|
 | **Weather** | Current conditions, forecast timeline | 35 presets including Classic, Animated, Terminal, Cyber, Radar/Grid Maps, Heat Map, Compass, Gauge, Starfield, Seasons |
-| **Clock** | Time display with effects | 24 presets: Digital, Binary, Minimal, Bars, Nixie, Glitch, Pong, Word, Bounce, Matrix, Radar, Flip, Cyber, Analog, Countdown, DotMatrix, Gradient, Segment, Orbit, Tally, Cutout, Scan, Duo, Frame |
+| **Clock** | Time display with effects | 30 presets: Digital, Binary, Minimal, Bars, Nixie, Glitch, Pong, Word, Bounce, Matrix, Radar, Flip, Cyber, Analog, Countdown, DotMatrix, Gradient, Segment, Orbit, Tally, Cutout, Scan, Duo, Frame, Date, FullDate, Weekday, Nameday, WeekNum, Poland |
 | **Bitcoin** | Live BTC price with trend since last update | CoinGecko (BTC/USD) - *disabled by default* |
 | **Stocks** | Stock ticker with price tracking | Yahoo Finance symbol (no API key) - *disabled by default* |
 | **Network** | WiFi status, IP address display | - |

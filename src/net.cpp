@@ -361,14 +361,14 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     
     // Clock presets
     html += "<optgroup label=\"&#x1F552; Clock\">";
-    const char* clkPresets[] = {"Digital", "Binary", "Minimal", "Bars", "Nixie", "Glitch", "Pong", "Word", "Bounce", "Matrix", "Radar", "Flip", "Cyber", "Analog", "Countdown", "DotMatrix", "Gradient", "Segments", "Orbit", "Tally", "Cutout", "Scan", "Duo", "Frame", "Date", "FullDate", "Weekday", "Nameday", "WeekNum"};
+    const char* clkPresets[] = {"Digital", "Binary", "Minimal", "Bars", "Nixie", "Glitch", "Pong", "Word", "Bounce", "Matrix", "Radar", "Flip", "Cyber", "Analog", "Countdown", "DotMatrix", "Gradient", "Segments", "Orbit", "Tally", "Cutout", "Scan", "Duo", "Frame", "Date", "FullDate", "Weekday", "Nameday", "WeekNum", "Poland"};
     for (int p = 0; p < 15; ++p) {
         html += "<option value=\"1_" + String(p) + "\"";
         if (cfg.touchShortcutCard == 1 && cfg.touchShortcutPreset == p) html += " selected";
         html += ">" + String(clkPresets[p]) + "</option>";
     }
     sendChunk();
-    for (int p = 15; p < 29; ++p) {
+    for (int p = 15; p < 30; ++p) {
         html += "<option value=\"1_" + String(p) + "\"";
         if (cfg.touchShortcutCard == 1 && cfg.touchShortcutPreset == p) html += " selected";
         html += ">" + String(clkPresets[p]) + "</option>";
@@ -619,7 +619,7 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 presetBtn(1, 19, "Tally"); presetBtn(1, 20, "Cutout"); presetBtn(1, 21, "Scan");
                 presetBtn(1, 22, "Duo"); presetBtn(1, 23, "Frame");
                 presetBtn(1, 24, "Date"); presetBtn(1, 25, "FullDate"); presetBtn(1, 26, "Weekday");
-                presetBtn(1, 27, "Nameday"); presetBtn(1, 28, "WeekNum");
+                presetBtn(1, 27, "Nameday"); presetBtn(1, 28, "WeekNum"); presetBtn(1, 29, "Poland");
                 html += "</div><div style=\"margin-top:12px;padding-top:12px;border-top:2px dashed #ccc\">";
                 html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap\">";
                 html += "<label style=\"font-weight:bold\">Timezone:</label>";
