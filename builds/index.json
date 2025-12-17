@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "172f76e7dc59ff032b436a076429322590261291",
+      "sha_short": "172f76e",
+      "commit_message": "added watchdog timer to recover from freezes after 30sec",
+      "commit_date": "2025-12-17 16:09:12 +0200",
+      "build_date": "2025-12-17T14:10:26Z",
+      "branch": "main",
+      "path": "172f76e"
+    },
+    {
       "sha": "47da31111d0331c2580f39113df2fc3e8ba2baf3",
       "sha_short": "47da311",
       "commit_message": "clock #7 heap frag fix, array bounds fix in clock #9, float fix in clock #8",
