@@ -2760,7 +2760,7 @@ static void clock_render_word() {
     getClockTime(hour, minute, second);
     
     // Simplified word clock - scroll words
-    const char* hourWords[] = {"TWELVE", "ONE", "TWO", "THREE", "FOUR", "FIVE", 
+    static const char* const hourWords[] = {"TWELVE", "ONE", "TWO", "THREE", "FOUR", "FIVE", 
                                "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN"};
     
     uint8_t h12 = hour % 12;
@@ -2773,28 +2773,30 @@ static void clock_render_word() {
         lastScroll = millis();
     }
     
-    // Build phrase
-    String phrase;
+    // Build phrase using static buffer to avoid heap fragmentation
+    static char phrase[32];
     if (minBlock == 0) {
-        phrase = hourWords[h12];
+        strncpy(phrase, hourWords[h12], sizeof(phrase) - 1);
     } else if (minBlock == 1) {
-        phrase = String("QUARTER PAST ") + hourWords[h12];
+        snprintf(phrase, sizeof(phrase), "QUARTER PAST %s", hourWords[h12]);
     } else if (minBlock == 2) {
-        phrase = String("HALF PAST ") + hourWords[h12];
+        snprintf(phrase, sizeof(phrase), "HALF PAST %s", hourWords[h12]);
     } else {
-        phrase = String("QUARTER TO ") + hourWords[(h12 + 1) % 12];
+        snprintf(phrase, sizeof(phrase), "QUARTER TO %s", hourWords[(h12 + 1) % 12]);
     }
+    phrase[sizeof(phrase) - 1] = '\0';
     
     // Draw scrolling text
     uint32_t col = wt_color(255, 200, 100);
-    for (int i = 0; i < (int)phrase.length(); ++i) {
+    int phraseLen = strlen(phrase);
+    for (int i = 0; i < phraseLen; ++i) {
         int16_t x = scrollX + i * 5;
         if (x > -5 && x < WT_MATRIX_WIDTH) {
             drawChar3x5(x, 0, phrase[i], col);
         }
     }
     
-    int16_t totalW = phrase.length() * 5;
+    int16_t totalW = phraseLen * 5;
     if (scrollX < -totalW) scrollX = 20;
     
     // Seconds dots on timeline
@@ -2812,7 +2814,7 @@ static void clock_render_bounce() {
     uint32_t now = millis();
     
     // Each digit as a bouncing ball
-    static float y[4] = {3, 3, 3, 3};
+    static float y[4] = {3.0f, 3.0f, 3.0f, 3.0f};
     static float vy[4] = {0.1f, 0.15f, 0.12f, 0.08f};
     
     uint8_t digits[4] = {(uint8_t)(hour / 10), (uint8_t)(hour % 10), 
@@ -2825,11 +2827,15 @@ static void clock_render_bounce() {
             y[i] += vy[i];
             vy[i] += 0.03f; // Lighter gravity
             
-            if (y[i] >= 5) {
-                y[i] = 5;
+            if (y[i] >= 5.0f) {
+                y[i] = 5.0f;
                 vy[i] = -vy[i] * 0.75f; // Bounce
                 if (vy[i] > -0.08f) vy[i] = -0.2f - (second % 3) * 0.05f;
             }
+            // Sanity bounds to prevent float drift/NaN
+            if (y[i] < 0.0f || !isfinite(y[i])) y[i] = 3.0f;
+            if (y[i] > 6.0f) y[i] = 5.0f;
+            if (!isfinite(vy[i]) || vy[i] > 2.0f || vy[i] < -2.0f) vy[i] = 0.1f;
         }
     }
     
@@ -2863,7 +2869,8 @@ static void clock_render_matrix_clock() {
     static bool init = false;
     
     if (!init) {
-        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) drops[x] = random(7);
+        memset(trails, 0, sizeof(trails));
+        for (int x = 0; x < WT_MATRIX_WIDTH; ++x) drops[x] = random(WT_MATRIX_HEIGHT);
         init = true;
     }
     
@@ -2881,9 +2888,14 @@ static void clock_render_matrix_clock() {
         // Update drops - less frequently
         for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
             if (random(15) == 0) {
-                drops[x]--;
-                if (drops[x] > 200) drops[x] = 6;
-                trails[x][drops[x]] = 255;
+                if (drops[x] == 0) {
+                    drops[x] = WT_MATRIX_HEIGHT - 1;
+                } else {
+                    drops[x]--;
+                }
+                if (drops[x] < WT_MATRIX_HEIGHT) {
+                    trails[x][drops[x]] = 255;
+                }
             }
         }
     }
