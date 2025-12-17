@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "7a342d560d893e694b9a52e61b62660d9dd27be6",
+      "sha_short": "7a342d5",
+      "commit_message": "watchdog tweaks, update checker https moved to a task, added explainers in web page, added touch sho",
+      "commit_date": "2025-12-17 17:25:10 +0200",
+      "build_date": "2025-12-17T15:26:26Z",
+      "branch": "main",
+      "path": "7a342d5"
+    },
+    {
       "sha": "172f76e7dc59ff032b436a076429322590261291",
       "sha_short": "172f76e",
       "commit_message": "added watchdog timer to recover from freezes after 30sec",
