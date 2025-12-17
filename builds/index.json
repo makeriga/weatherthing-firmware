@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "ffdf429f28ca78ca4c1b34765b1b074f7a78f32d",
+      "sha_short": "ffdf429",
+      "commit_message": "updated workflow file to escape chars properly",
+      "commit_date": "2025-12-17 18:20:56 +0200",
+      "build_date": "2025-12-17T16:22:11Z",
+      "branch": "main",
+      "path": "ffdf429"
+    },
+    {
       "sha": "7a342d560d893e694b9a52e61b62660d9dd27be6",
       "sha_short": "7a342d5",
       "commit_message": "watchdog tweaks, update checker https moved to a task, added explainers in web page, added touch sho",

@@ -1,0 +1,8 @@
+{
+  "sha": "ffdf429f28ca78ca4c1b34765b1b074f7a78f32d",
+  "sha_short": "ffdf429",
+  "commit_message": "updated workflow file to escape chars properly",
+  "commit_date": "2025-12-17 18:20:56 +0200",
+  "build_date": "2025-12-17T16:22:11Z",
+  "branch": "main"
+}
