@@ -2197,6 +2197,42 @@ void cards_loop()
         return;
     }
     
+    // Touch shortcut handling - quick access to a favorite card/preset
+    // Only active when current card doesn't hijack touch for its own use
+    static bool g_lastTouchState = false;
+    bool touchNow = wt_cap_touch_active();
+    bool touchEdge = touchNow && !g_lastTouchState;
+    g_lastTouchState = touchNow;
+    
+    // Cards that use touch internally: Games(8), Countdown(12), Pomodoro(13), Stopwatch(15), MQTT(9), VU(5)
+    bool touchHijacked = (g_currentCard == CARD_GAMES || g_currentCard == CARD_COUNTDOWN || 
+                          g_currentCard == CARD_POMODORO || g_currentCard == CARD_STOPWATCH ||
+                          g_currentCard == CARD_MQTT || g_currentCard == CARD_VU);
+    
+    if (touchEdge && !touchHijacked && cfg.touchShortcutCard != 0xFF) {
+        uint8_t targetCard = cfg.touchShortcutCard;
+        uint8_t targetPreset = cfg.touchShortcutPreset;
+        
+        // Switch to the shortcut card
+        if (targetCard < 16 && targetCard != g_currentCard) {
+            g_currentCard = targetCard;
+            g_cards[g_currentCard].setup();
+            startTitleAnimation(now);
+            g_lastAutoCycle = now; // Reset auto-cycle timer
+        }
+        
+        // Set the preset for cards that have multiple presets
+        switch (targetCard) {
+            case CARD_WEATHER: g_weatherPreset = targetPreset; break;
+            case CARD_CLOCK: g_clockPreset = targetPreset; break;
+            case CARD_VU: g_vuPreset = targetPreset; break;
+            case CARD_COUNTDOWN: g_countdownPreset = targetPreset; break;
+            case CARD_POMODORO: g_pomodoroPreset = targetPreset; break;
+            case CARD_SUN: g_sunPreset = targetPreset; break;
+            // Other cards (BTC, Stock, Network, Games, MQTT, RSS, YouTube, Stopwatch) have single preset
+        }
+    }
+    
     // Demo mode - stunning preset showcase for video capture
     if (cfg.demoMode) {
         // Initialize demo mode on first run

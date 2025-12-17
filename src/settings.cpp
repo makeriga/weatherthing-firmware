@@ -140,6 +140,10 @@ void settings_begin()
     // Demo mode defaults
     g_settings.demoMode = false;            // Disabled by default
     
+    // Touch shortcut defaults (0xFF = disabled)
+    g_settings.touchShortcutCard = 0xFF;
+    g_settings.touchShortcutPreset = 0;
+    
     // Load from flash
     if (g_prefs.begin("wtsettings", true))
     {
@@ -306,6 +310,10 @@ void settings_begin()
         // Demo mode settings
         g_settings.demoMode = g_prefs.getBool("demoOn", false);
         
+        // Touch shortcut settings
+        g_settings.touchShortcutCard = g_prefs.getUChar("touchCard", 0xFF);
+        g_settings.touchShortcutPreset = g_prefs.getUChar("touchPreset", 0);
+        
         g_prefs.end();
     }
     
@@ -448,6 +456,10 @@ void settings_save()
         
         // Demo mode settings
         g_prefs.putBool("demoOn", g_settings.demoMode);
+        
+        // Touch shortcut settings
+        g_prefs.putUChar("touchCard", g_settings.touchShortcutCard);
+        g_prefs.putUChar("touchPreset", g_settings.touchShortcutPreset);
         
         g_prefs.end();
     }

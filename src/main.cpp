@@ -13,6 +13,7 @@
 static bool g_factoryTestMode = false;
 
 // Watchdog timeout in seconds - device will restart if loop doesn't run for this long
+// Increased to 30s to allow for slower web page generation with many presets
 static const uint32_t WDT_TIMEOUT_SEC = 30;
 
 void setup()

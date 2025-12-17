@@ -127,6 +127,10 @@ struct Settings
     
     // Demo Mode Settings
     bool demoMode;               // Enable demo mode for video capture
+    
+    // Touch Shortcut Settings
+    uint8_t touchShortcutCard;   // Card to show when touch button pressed (0xFF = disabled)
+    uint8_t touchShortcutPreset; // Preset within that card
 };
 
 // Initialize settings (load from flash)

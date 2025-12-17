@@ -17,6 +17,7 @@
 #include "http_worker.h"
 
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 
 enum NetState
 {
@@ -47,6 +48,7 @@ static void handleSettingsGet();
 static void handleCardSwitch();
 static void handleApiCardSwitch();
 static void handleApiSimulate();
+static void handleApiTouchShortcut();
 static void handleApiVersion();
 static void handleApiDiag();
 static void handleApiCheckUpdate();
@@ -64,6 +66,8 @@ static void sendChunk() {
         server.sendContent(g_html);
         g_html = "";
     }
+    // Feed watchdog during long HTML generation to prevent timeout
+    esp_task_wdt_reset();
 }
 
 static bool parseHexColor(const String& s, uint32_t* out)
@@ -156,6 +160,7 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
 <script>
 function showCard(c,p,el){if(el)el.style.background='#ffa500';fetch('/api/card?card='+c+'&preset='+p).then(function(r){return r.json();}).then(function(){if(el){el.style.background='#4ade80';setTimeout(function(){el.style.background='#fffacd';},500);}}).catch(function(){if(el)el.style.background='#f00';});}
 function showFirstPreset(btn,card){showCard(card,0,btn);}
+function saveTouchShortcut(){var sel=document.querySelector('select[name=touchShortcut]');var btn=event.target;btn.textContent='Saving...';fetch('/api/touch_shortcut?val='+sel.value).then(function(r){return r.json();}).then(function(){btn.textContent='\\u2705 Saved!';btn.style.background='#4ade80';setTimeout(function(){btn.textContent='\\uD83D\\uDCBE Save';btn.style.background='#4CAF50';},1500);}).catch(function(){btn.textContent='\\u274C Error';btn.style.background='#f00';});}
 window.addEventListener('DOMContentLoaded', function(){
 const lg=document.querySelector('.logo-svg linearGradient');
 if(lg && !lg.getAttribute('id')) lg.setAttribute('id','rg');
@@ -262,6 +267,50 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     html += "<div class=\"card\" style=\"margin-bottom:30px\">";
     html += "<div class=\"card-header\"><span class=\"card-icon\">&#x1F3AC;</span><span class=\"card-title\">Card Gallery</span></div>";
     
+    // ========== EXPLAINER BLOCK ==========
+    html += "<div style=\"background:linear-gradient(135deg,#e8f4fc,#f0f8e8);border:3px solid #2196F3;border-radius:12px;padding:20px;margin-bottom:20px\">";
+    html += "<div style=\"font-size:1.2em;font-weight:bold;margin-bottom:15px;color:#1565C0\">&#x1F4A1; How It Works</div>";
+    
+    // Visual guide with icons
+    html += "<div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:15px\">";
+    
+    // Cards explanation
+    html += "<div style=\"background:#fff;border:2px solid #4CAF50;border-radius:8px;padding:12px;text-align:center\">";
+    html += "<div style=\"font-size:2em\">&#x1F4E6;</div>";
+    html += "<div style=\"font-weight:bold;color:#2E7D32\">Cards</div>";
+    html += "<div style=\"font-size:0.85em;color:#555\">Different display modes like Weather, Clock, Bitcoin price</div>";
+    html += "</div>";
+    
+    // Presets explanation
+    html += "<div style=\"background:#fff;border:2px solid #FF9800;border-radius:8px;padding:12px;text-align:center\">";
+    html += "<div style=\"font-size:2em\">&#x1F3A8;</div>";
+    html += "<div style=\"font-weight:bold;color:#E65100\">Presets</div>";
+    html += "<div style=\"font-size:0.85em;color:#555\">Visual styles within each card - different looks for the same info</div>";
+    html += "</div>";
+    
+    // Rotation explanation
+    html += "<div style=\"background:#fff;border:2px solid #9C27B0;border-radius:8px;padding:12px;text-align:center\">";
+    html += "<div style=\"font-size:2em\">&#x1F503;</div>";
+    html += "<div style=\"font-weight:bold;color:#7B1FA2\">Auto-Rotate</div>";
+    html += "<div style=\"font-size:0.85em;color:#555\">Automatically cycles through your checked favorites</div>";
+    html += "</div>";
+    
+    html += "</div>"; // End grid
+    sendChunk();
+    
+    // Step by step instructions
+    html += "<div style=\"background:#fff;border-radius:8px;padding:15px;border:2px dashed #999\">";
+    html += "<div style=\"font-weight:bold;margin-bottom:10px\">&#x1F446; Quick Guide:</div>";
+    html += "<div style=\"display:flex;flex-wrap:wrap;gap:10px;font-size:0.9em\">";
+    html += "<span style=\"background:#E3F2FD;padding:5px 10px;border-radius:15px\">&#x2630; <b>Drag</b> cards to reorder</span>";
+    html += "<span style=\"background:#E8F5E9;padding:5px 10px;border-radius:15px\">&#x2611; <b>Check</b> to include in rotation</span>";
+    html += "<span style=\"background:#FFF3E0;padding:5px 10px;border-radius:15px\">&#x25B6; <b>Click preset</b> to preview</span>";
+    html += "<span style=\"background:#FCE4EC;padding:5px 10px;border-radius:15px\">&#x1F500; Use <b>buttons</b> to switch manually</span>";
+    html += "</div></div>";
+    
+    html += "</div>"; // End explainer block
+    sendChunk();
+    
     // Auto-cycle controls
     html += "<form method=\"POST\" action=\"/cards_config\" id=\"cardForm\">";
     html += "<div style=\"display:flex;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:15px;background:#f8f8f8;border:3px solid #000\">";
@@ -280,6 +329,95 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     html += "<label style=\"display:flex;align-items:center;gap:6px\"><input type=\"checkbox\" name=\"demoOn\" value=\"1\"" + String(cfg.demoMode ? " checked" : "") + " style=\"width:18px;height:18px\"> Enable</label>";
     html += "<span style=\"font-weight:bold\">Uses Auto-Cycle interval</span>";
     html += "</div>";
+    
+    // Touch Shortcut control
+    html += "<div style=\"display:flex;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:20px;padding:15px;background:#fff3e0;border:3px solid #FF9800\">";
+    html += "<span style=\"font-size:1.5em\">&#x1F446;</span>";
+    html += "<span style=\"font-weight:bold\">Touch Shortcut:</span>";
+    html += "<select name=\"touchShortcut\" style=\"padding:8px;min-width:200px;font-size:0.95em\">";
+    
+    // Disabled option
+    html += "<option value=\"255_0\"";
+    if (cfg.touchShortcutCard == 0xFF) html += " selected";
+    html += ">&#x274C; Disabled</option>";
+    
+    // Weather presets - first half
+    html += "<optgroup label=\"&#x1F321; Weather\">";
+    const char* wxPresets[] = {"Classic", "Bar", "Corner", "Anim", "Minimal", "Day/Nite", "Term", "Big", "Forecast", "Pixel", "LCD", "Mood", "Type", "Waves", "Split", "Count", "Thermo", "Icon", "Rain", "Cyber", "Particle", "Wave", "TempBar", "Aurora", "Radar", "Glitch", "Horizon", "Frost", "Map", "Grid", "Heat", "Compass", "Gauge", "Stars", "Seasons", "Half", "Edge", "PCB", "Stripe", "Scan"};
+    for (int p = 0; p < 20; ++p) {
+        html += "<option value=\"0_" + String(p) + "\"";
+        if (cfg.touchShortcutCard == 0 && cfg.touchShortcutPreset == p) html += " selected";
+        html += ">" + String(wxPresets[p]) + "</option>";
+    }
+    sendChunk();
+    // Weather presets - second half
+    for (int p = 20; p < 40; ++p) {
+        html += "<option value=\"0_" + String(p) + "\"";
+        if (cfg.touchShortcutCard == 0 && cfg.touchShortcutPreset == p) html += " selected";
+        html += ">" + String(wxPresets[p]) + "</option>";
+    }
+    html += "</optgroup>";
+    sendChunk();
+    
+    // Clock presets
+    html += "<optgroup label=\"&#x1F552; Clock\">";
+    const char* clkPresets[] = {"Digital", "Binary", "Minimal", "Bars", "Nixie", "Glitch", "Pong", "Word", "Bounce", "Matrix", "Radar", "Flip", "Cyber", "Analog", "Countdown", "DotMatrix", "Gradient", "Segments", "Orbit", "Tally", "Cutout", "Scan", "Duo", "Frame", "Date", "FullDate", "Weekday", "Nameday", "WeekNum"};
+    for (int p = 0; p < 15; ++p) {
+        html += "<option value=\"1_" + String(p) + "\"";
+        if (cfg.touchShortcutCard == 1 && cfg.touchShortcutPreset == p) html += " selected";
+        html += ">" + String(clkPresets[p]) + "</option>";
+    }
+    sendChunk();
+    for (int p = 15; p < 29; ++p) {
+        html += "<option value=\"1_" + String(p) + "\"";
+        if (cfg.touchShortcutCard == 1 && cfg.touchShortcutPreset == p) html += " selected";
+        html += ">" + String(clkPresets[p]) + "</option>";
+    }
+    html += "</optgroup>";
+    
+    // VU Meter presets
+    html += "<optgroup label=\"&#x1F3B5; VU Meter\">";
+    const char* vuPresets[] = {"Spectrum", "Waveform", "Fire", "Pulse", "Waterfall", "Strobe", "Plasma", "Balls", "Matrix", "Rainbow", "Mirror", "Laser", "Dancer", "Heartbeat", "Traffic", "Pacman", "Vortex", "EQ", "Disco", "Fireworks", "PixelRain", "Nyan", "Ocean", "Tetris", "Starfield", "Lava", "Geometry", "Sparkle", "Aurora", "Lightning", "Ripple", "DNA", "Kaleidoscope", "Snake", "Lissajous", "Barcode", "Orbitals", "Checker", "Shards"};
+    for (int p = 0; p < 20; ++p) {
+        html += "<option value=\"5_" + String(p) + "\"";
+        if (cfg.touchShortcutCard == 5 && cfg.touchShortcutPreset == p) html += " selected";
+        html += ">" + String(vuPresets[p]) + "</option>";
+    }
+    sendChunk();
+    for (int p = 20; p < 39; ++p) {
+        html += "<option value=\"5_" + String(p) + "\"";
+        if (cfg.touchShortcutCard == 5 && cfg.touchShortcutPreset == p) html += " selected";
+        html += ">" + String(vuPresets[p]) + "</option>";
+    }
+    html += "</optgroup>";
+    sendChunk();
+    
+    // Other cards (single preset each)
+    html += "<optgroup label=\"&#x1F4B0; Finance\">";
+    html += "<option value=\"2_0\"" + String(cfg.touchShortcutCard == 2 ? " selected" : "") + ">Bitcoin</option>";
+    html += "<option value=\"3_0\"" + String(cfg.touchShortcutCard == 3 ? " selected" : "") + ">Stock</option>";
+    html += "</optgroup>";
+    
+    html += "<optgroup label=\"&#x1F3AE; Other\">";
+    html += "<option value=\"4_0\"" + String(cfg.touchShortcutCard == 4 ? " selected" : "") + ">Network Info</option>";
+    html += "<option value=\"8_0\"" + String(cfg.touchShortcutCard == 8 ? " selected" : "") + ">Games</option>";
+    html += "<option value=\"9_0\"" + String(cfg.touchShortcutCard == 9 ? " selected" : "") + ">MQTT</option>";
+    html += "<option value=\"10_0\"" + String(cfg.touchShortcutCard == 10 ? " selected" : "") + ">RSS</option>";
+    html += "<option value=\"11_0\"" + String(cfg.touchShortcutCard == 11 ? " selected" : "") + ">YouTube</option>";
+    html += "</optgroup>";
+    
+    html += "<optgroup label=\"&#x23F1; Timers\">";
+    html += "<option value=\"12_0\"" + String(cfg.touchShortcutCard == 12 ? " selected" : "") + ">Countdown</option>";
+    html += "<option value=\"13_0\"" + String(cfg.touchShortcutCard == 13 ? " selected" : "") + ">Pomodoro</option>";
+    html += "<option value=\"14_0\"" + String(cfg.touchShortcutCard == 14 ? " selected" : "") + ">Sunrise/Sunset</option>";
+    html += "<option value=\"15_0\"" + String(cfg.touchShortcutCard == 15 ? " selected" : "") + ">Stopwatch</option>";
+    html += "</optgroup>";
+    
+    html += "</select>";
+    html += "<button type=\"button\" onclick=\"saveTouchShortcut()\" style=\"background:#4CAF50;color:#fff;border:2px solid #000;padding:8px 16px;font-weight:bold;cursor:pointer\">&#x1F4BE; Save</button>";
+    html += "<span style=\"font-size:0.85em;color:#666\">Quick access when you tap the touch sensor</span>";
+    html += "</div>";
+    sendChunk();
     
     // Card gallery grid
     html += "<p style=\"font-size:1em;margin-bottom:15px;padding:12px;background:#fffacd;border:3px solid #000;font-weight:bold\">&#x2630; Drag cards to reorder &bull; Click preset to show on display &bull; &#x1F503; Toggle to include in auto-cycle</p>";
@@ -1010,6 +1148,7 @@ static void startServer()
     server.on("/card", handleCardSwitch);
     server.on("/api/card", HTTP_GET, handleApiCardSwitch);
     server.on("/api/simulate", HTTP_GET, handleApiSimulate);
+    server.on("/api/touch_shortcut", HTTP_GET, handleApiTouchShortcut);
     server.on("/cards_config", HTTP_POST, handleCardsConfigPost);
     server.begin();
 }
@@ -1099,48 +1238,63 @@ static String g_latestSha = "";
 static String g_latestDate = "";
 static uint32_t g_lastUpdateCheck = 0;
 static bool g_updateAvailable = false;
+static bool g_updateCheckInFlight = false;
+
+// Background task to check for firmware updates (runs on http_worker thread)
+static void updateCheckJob(void* ctx)
+{
+    (void)ctx;
+    
+    HTTPClient http;
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(10000);
+    
+    http.begin(client, "https://makeriga.github.io/weatherthing-firmware/builds/index.json");
+    http.setTimeout(10000);
+    http.setConnectTimeout(10000);
+    
+    int code = http.GET();
+    
+    if (code == 200) {
+        String payload = http.getString();
+        const char* currentSha = wt_fw_git_sha_short();
+        
+        int shaIdx = payload.indexOf("\"sha_short\"");
+        if (shaIdx >= 0) {
+            int start = payload.indexOf("\"", shaIdx + 12) + 1;
+            int end = payload.indexOf("\"", start);
+            if (start > 0 && end > start) {
+                g_latestSha = payload.substring(start, end);
+            }
+        }
+        int dateIdx = payload.indexOf("\"build_date\"");
+        if (dateIdx >= 0) {
+            int start = payload.indexOf("\"", dateIdx + 13) + 1;
+            int end = payload.indexOf("\"", start);
+            if (start > 0 && end > start) {
+                g_latestDate = payload.substring(start, end);
+            }
+        }
+        if (g_latestSha.length() > 0 && strcmp(g_latestSha.c_str(), currentSha) != 0 && strcmp(currentSha, "unknown") != 0) {
+            g_updateAvailable = true;
+        }
+    }
+    http.end();
+    g_updateCheckInFlight = false;
+}
 
 static void handleApiCheckUpdate()
 {
     uint32_t now = millis();
     const char* currentSha = wt_fw_git_sha_short();
     
-    if (now - g_lastUpdateCheck > 300000 || g_lastUpdateCheck == 0) {
-        g_lastUpdateCheck = now;
-        g_updateAvailable = false;
-        
+    // Trigger background update check every 5 minutes
+    if (!g_updateCheckInFlight && (now - g_lastUpdateCheck > 300000 || g_lastUpdateCheck == 0)) {
         if (WiFi.status() == WL_CONNECTED && !g_isApMode) {
-            HTTPClient http;
-            WiFiClientSecure client;
-            client.setInsecure();
-            
-            http.begin(client, "https://makeriga.github.io/weatherthing-firmware/builds/index.json");
-            http.setTimeout(10000);
-            int code = http.GET();
-            
-            if (code == 200) {
-                String payload = http.getString();
-                int shaIdx = payload.indexOf("\"sha_short\"");
-                if (shaIdx >= 0) {
-                    int start = payload.indexOf("\"", shaIdx + 12) + 1;
-                    int end = payload.indexOf("\"", start);
-                    if (start > 0 && end > start) {
-                        g_latestSha = payload.substring(start, end);
-                    }
-                }
-                int dateIdx = payload.indexOf("\"build_date\"");
-                if (dateIdx >= 0) {
-                    int start = payload.indexOf("\"", dateIdx + 13) + 1;
-                    int end = payload.indexOf("\"", start);
-                    if (start > 0 && end > start) {
-                        g_latestDate = payload.substring(start, end);
-                    }
-                }
-                if (g_latestSha.length() > 0 && strcmp(g_latestSha.c_str(), currentSha) != 0 && strcmp(currentSha, "unknown") != 0) {
-                    g_updateAvailable = true;
-                }
-            }
-            http.end();
+            g_lastUpdateCheck = now;
+            g_updateCheckInFlight = true;
+            http_worker_enqueue(updateCheckJob, nullptr);
         }
     }
     
@@ -1717,6 +1871,22 @@ static void handleApiSimulate()
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// Save touch shortcut setting
+static void handleApiTouchShortcut()
+{
+    if (server.hasArg("val")) {
+        String val = server.arg("val");
+        int underscore = val.indexOf('_');
+        if (underscore > 0) {
+            Settings& cfg = settings_get();
+            cfg.touchShortcutCard = (uint8_t)val.substring(0, underscore).toInt();
+            cfg.touchShortcutPreset = (uint8_t)val.substring(underscore + 1).toInt();
+            settings_save();
+        }
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleCardsConfigPost()
 {
     Settings& cfg = settings_get();
@@ -1780,7 +1950,17 @@ static void handleCardsConfigPost()
     // 5. Demo Mode Settings
     cfg.demoMode = server.hasArg("demoOn");
     
-    // 6. Audio settings (from Audio card in gallery)
+    // 6. Touch Shortcut Settings (format: "card_preset")
+    if (server.hasArg("touchShortcut")) {
+        String val = server.arg("touchShortcut");
+        int underscore = val.indexOf('_');
+        if (underscore > 0) {
+            cfg.touchShortcutCard = (uint8_t)val.substring(0, underscore).toInt();
+            cfg.touchShortcutPreset = (uint8_t)val.substring(underscore + 1).toInt();
+        }
+    }
+    
+    // 7. Audio settings (from Audio card in gallery)
     if (server.hasArg("palette")) {
         cfg.vuPalette = (uint8_t)server.arg("palette").toInt();
     }
