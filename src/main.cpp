@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 #include "weatherthing_hw.h"
 #include "cards.h"
 #include "net.h"
@@ -11,10 +12,23 @@
 
 static bool g_factoryTestMode = false;
 
+// Watchdog timeout in seconds - device will restart if loop doesn't run for this long
+static const uint32_t WDT_TIMEOUT_SEC = 30;
+
 void setup()
 {
     Serial.begin(115200);
     delay(1000);
+
+    // Initialize watchdog timer to auto-recover from hangs
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = WDT_TIMEOUT_SEC * 1000,
+        .idle_core_mask = 0,
+        .trigger_panic = true
+    };
+    esp_task_wdt_reconfigure(&wdt_config);
+    esp_task_wdt_add(NULL);
+    Serial.printf("Watchdog timer initialized: %d seconds\n", WDT_TIMEOUT_SEC);
 
     Serial.println("WeatherThing firmware starting...");
 
@@ -53,6 +67,9 @@ void setup()
 
 void loop()
 {
+    // Feed watchdog at start of each loop iteration
+    esp_task_wdt_reset();
+
     // Factory test mode - run test sequence
     if (g_factoryTestMode)
     {
