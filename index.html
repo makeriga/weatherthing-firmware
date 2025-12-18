@@ -5,13 +5,94 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WeatherThing Firmware Updater</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <script>
+    // i18n translations
+    const TRANSLATIONS = {
+      en: {
+        title: "Firmware Updater",
+        browserWarningTitle: "⚠️ Browser Not Supported",
+        browserWarningText: "Web Serial requires Chrome, Edge, or Opera on desktop. Please open this page in a supported browser.",
+        howToUpdate: "How to Update",
+        step1: "Connect your WeatherThing device via USB",
+        step2: 'Click the <strong>"Install"</strong> button next to the firmware version you want',
+        step3: "Select the serial port for your device",
+        step4: "Wait for the installation to complete",
+        availableBuilds: "Available Builds",
+        loadingBuilds: "Loading builds...",
+        noBuilds: "No builds available yet.",
+        errorLoading: "Error loading builds",
+        errorHint: "Make sure GitHub Pages is enabled and a build has been deployed.",
+        install: "Install",
+        notSupported: "Not supported",
+        notAllowed: "Not allowed (use HTTPS)",
+        downloadBin: "📥 Download .bin",
+        poweredBy: "Powered by",
+        viewOnGitHub: "View on GitHub",
+        latestFirmware: "Latest available firmware",
+        loading: "loading…",
+        unknown: "unknown",
+        latest: "LATEST"
+      },
+      lv: {
+        title: "Programmatūras atjauninātājs",
+        browserWarningTitle: "⚠️ Pārlūks nav atbalstīts",
+        browserWarningText: "Web Serial nepieciešams Chrome, Edge vai Opera datorā. Lūdzu, atveriet šo lapu atbalstītā pārlūkā.",
+        howToUpdate: "Kā atjaunināt",
+        step1: "Savienojiet savu WeatherThing ierīci ar USB",
+        step2: 'Noklikšķiniet uz pogas <strong>"Instalēt"</strong> blakus vēlamajai programmatūras versijai',
+        step3: "Izvēlieties seriālo portu savai ierīcei",
+        step4: "Pagaidiet, līdz instalācija ir pabeigta",
+        availableBuilds: "Pieejamie būvējumi",
+        loadingBuilds: "Ielādē būvējumus...",
+        noBuilds: "Vēl nav pieejamu būvējumu.",
+        errorLoading: "Kļūda ielādējot būvējumus",
+        errorHint: "Pārliecinieties, ka GitHub Pages ir iespējots un būvējums ir izvietots.",
+        install: "Instalēt",
+        notSupported: "Nav atbalstīts",
+        notAllowed: "Nav atļauts (izmantojiet HTTPS)",
+        downloadBin: "📥 Lejupielādēt .bin",
+        poweredBy: "Darbina",
+        viewOnGitHub: "Skatīt GitHub",
+        latestFirmware: "Jaunākā pieejamā programmatūra",
+        loading: "ielādē…",
+        unknown: "nezināms",
+        latest: "JAUNĀKAIS"
+      }
+    };
+    
+    // Get language from URL param or localStorage
+    function getLang() {
+      const params = new URLSearchParams(window.location.search);
+      const urlLang = params.get('lang');
+      if (urlLang === 'lv' || urlLang === 'en') {
+        localStorage.setItem('wt_lang', urlLang);
+        return urlLang;
+      }
+      return localStorage.getItem('wt_lang') || 'en';
+    }
+    
+    function setLang(lang) {
+      localStorage.setItem('wt_lang', lang);
+      location.reload();
+    }
+    
+    const LANG = getLang();
+    const T = TRANSLATIONS[LANG] || TRANSLATIONS.en;
+    
+    // Update document title
+    document.title = "WeatherThing " + T.title;
+  </script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     :root{--bg:#f0f0f0;--card:#ffffff;--border:#000000;--text:#000000;--accent:#ffcc00;--success:#4ade80;--danger:#ff6b6b}
     body{font-family:'Courier New', Courier, monospace;background-color:var(--bg);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Cpath fill='%23d8eef5' opacity='0.6' d='M85,25c0-8-6-15-14-15c-2,0-3,0.2-5,0.5c-3-5-8-8-14-8c-5,0-9,2-12,5c-5-11-16-18-29-18c-13,0-24,8-29,19c-3-3-7-5-12-5c-9,0-16,7-16,16c0,1,0.1,2,0.3,3c-8,5-13,14-13,25c0,17,14,30,30,30h90c17,0,30-14,30-30c0-12-4-22-16-22z'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Cpath fill='%23c5e4ed' opacity='0.4' d='M85,25c0-8-6-15-14-15c-2,0-3,0.2-5,0.5c-3-5-8-8-14-8c-5,0-9,2-12,5c-5-11-16-18-29-18c-13,0-24,8-29,19c-3-3-7-5-12-5c-9,0-16,7-16,16c0,1,0.1,2,0.3,3c-8,5-13,14-13,25c0,17,14,30,30,30h90c17,0,30-14,30-30c0-12-4-22-16-22z'/%3E%3C/svg%3E");background-size:400px 200px,300px 150px;background-position:0 0,200px 80px;animation:drift 120s linear infinite;color:var(--text);min-height:100vh;line-height:1.5;padding-bottom:50px}
-    .header{background:#000;color:#fff;padding:15px 20px;text-align:center;border-bottom:6px solid #000;margin-bottom:30px;box-shadow:0 8px 0 rgba(0,0,0,0.2)}
+    .header{background:#000;color:#fff;padding:15px 20px;text-align:center;border-bottom:6px solid #000;margin-bottom:30px;box-shadow:0 8px 0 rgba(0,0,0,0.2);position:relative}
     .logo-svg{height:50px;width:auto}.logo-svg path{fill:#fff}
     .subtitle{color:#aaa;font-size:0.9em;margin-top:8px;text-transform:uppercase;letter-spacing:2px}
+    .lang-switch{position:absolute;top:15px;right:20px;display:flex;gap:4px}
+    .lang-btn{padding:6px 10px;border:2px solid #fff;background:transparent;color:#fff;font-weight:bold;cursor:pointer;font-size:0.8em;transition:all 0.2s;font-family:inherit}
+    .lang-btn:hover{background:rgba(255,255,255,0.2)}
+    .lang-btn.active{background:#fff;color:#000}
     @keyframes drift{0%{background-position:0 0,200px 80px}100%{background-position:400px 200px,600px 230px}}
     .container{max-width:800px;margin:0 auto;padding:0 20px}
     .card{background:var(--card);border:5px solid #000;padding:20px;box-shadow:10px 10px 0 #000;transition:transform 0.2s,box-shadow 0.2s;position:relative;margin-bottom:25px}
@@ -26,7 +107,7 @@
     .build-card{background:var(--card);border:5px solid #000;padding:20px;box-shadow:8px 8px 0 #000;transition:transform 0.2s,box-shadow 0.2s}
     .build-card:hover{transform:translate(-2px,-2px);box-shadow:12px 12px 0 #000}
     .build-card.latest{border-color:#4ade80;position:relative}
-    .build-card.latest::before{content:'LATEST';position:absolute;top:-12px;right:15px;background:#4ade80;color:#000;font-size:0.7rem;font-weight:900;padding:4px 10px;border:3px solid #000;box-shadow:3px 3px 0 #000}
+    .build-card.latest::before{content:var(--latest-label,'LATEST');position:absolute;top:-12px;right:15px;background:#4ade80;color:#000;font-size:0.7rem;font-weight:900;padding:4px 10px;border:3px solid #000;box-shadow:3px 3px 0 #000}
     .build-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:1rem}
     .build-sha{font-family:'Courier New',monospace;font-size:0.9rem;color:#000;background:#f0f0f0;padding:4px 8px;border:3px solid #000}
     .build-date{color:#666;font-size:0.85rem;font-weight:bold}
@@ -50,56 +131,82 @@
 </head>
 <body>
   <div class="header">
+    <div class="lang-switch">
+      <button class="lang-btn" id="langEn" onclick="setLang('en')">EN</button>
+      <button class="lang-btn" id="langLv" onclick="setLang('lv')">LV</button>
+    </div>
     <svg class="logo-svg" viewBox="0 0 243 29" xmlns="http://www.w3.org/2000/svg"><g><path d="M11.545,16.062c-0.922,1.893-1.746,3.842-2.795,5.662 c-0.932,1.616-1.973,3.216-3.22,4.593c-1.633,1.803-3.694,1.406-4.508-0.903c-0.614-1.742-1.06-3.664-1.02-5.493 c0.104-4.712,0.499-9.419,0.826-14.125c0.078-1.115,0.57-2.02,1.933-1.735c1.251,0.261,1.25,1.215,1.172,2.26 c-0.335,4.509-0.675,9.019-0.893,13.534c-0.063,1.31,0.274,2.64,0.428,3.961c0.129,0.03,0.259,0.062,0.389,0.093 c0.408-0.498,0.855-0.97,1.217-1.5c3.037-4.461,4.97-9.447,6.865-14.451c0.154-0.405,0.287-0.817,0.442-1.223 c0.326-0.853,0.854-1.426,1.858-1.172c1.028,0.259,1.316,0.947,1.176,1.974c-0.278,2.052-0.589,4.11-0.675,6.175 c-0.092,2.206,0.041,4.422,0.118,6.633c0.018,0.521,0.16,1.05,0.321,1.551c0.372,1.158,0.767,2.417,2.128,2.689 c1.407,0.282,2.219-0.828,2.897-1.795c2.464-3.51,3.708-7.51,4.212-11.71c0.256-2.133,0.175-4.321,0.063-6.476 c-0.047-0.915-0.628-1.791-0.841-2.714c-0.123-0.532-0.199-1.451,0.064-1.613c0.463-0.286,1.52-0.395,1.766-0.104 c0.747,0.885,1.468,1.931,1.761,3.031c0.794,2.979,0.568,6.018,0.081,9.039c-0.644,3.993-1.918,7.769-4.068,11.194 c-0.73,1.164-1.676,2.261-2.733,3.135c-2.494,2.062-5.679,1.462-6.979-1.475c-0.838-1.893-1.108-4.05-1.526-6.109 c-0.188-0.924-0.114-1.9-0.16-2.852C11.745,16.11,11.645,16.086,11.545,16.062z"/><path d="M125.396,10.28c-0.787,0.44-1.24,0.694-1.694,0.947 c-0.69,0.385-1.433,0.397-1.667-0.407c-0.164-0.562-0.069-1.456,0.292-1.854c0.519-0.567,1.405-0.783,2.099-1.209 c0.788-0.483,1.493-1.118,2.315-1.523c0.541-0.267,1.23-0.35,1.845-0.323c0.804,0.033,1.597,0.359,2.398,0.378 c2.59,0.062,5.184-0.028,7.769,0.094c0.76,0.036,1.583,0.465,2.221,0.927c1.071,0.775,1.444,1.874,0.917,3.186 c-0.835,2.08-2.523,3.387-4.287,4.554c-1.559,1.032-3.259,1.852-4.898,2.76c-0.443,0.245-0.897,0.474-1.188,0.626 c3.227,1.791,6.419,3.543,9.586,5.339c0.531,0.301,1.19,0.711,1.362,1.216c0.19,0.557,0.089,1.453-0.27,1.875 c-0.246,0.29-1.355,0.275-1.724-0.031c-4.106-3.407-8.894-5.3-14.237-6.572c-0.154,1.285-0.316,2.551-0.455,3.819 c-0.062,0.572-0.031,1.157-0.125,1.724c-0.157,0.952-0.248,2.033-1.692,1.751c-1.071-0.21-1.741-1.24-1.519-2.394 c0.777-4.016,1.576-8.026,2.369-12.038C124.979,12.285,125.156,11.449,125.396,10.28z M126.591,18.329 c1.874-0.944,3.375-1.573,4.742-2.419c2.283-1.413,4.518-2.913,6.682-4.502c0.479-0.351,0.92-1.348,0.748-1.818 c-0.164-0.452-1.136-0.828-1.768-0.853c-1.677-0.065-3.371-0.016-5.041,0.154c-3.257,0.33-3.263,0.374-4.028,3.572 C127.495,14.262,127.104,16.069,126.591,18.329z"/><path d="M35.61,7.394c2.665-0.47,5.451-0.999,8.251-1.429 c0.736-0.113,1.586-0.078,2.259,0.194c0.441,0.18,0.658,0.909,0.976,1.393c-0.44,0.268-0.849,0.677-1.325,0.781 c-3.281,0.724-6.581,1.357-9.863,2.076c-1.34,0.293-2.118,1.187-2.414,2.557c-0.26,1.203-0.638,2.382-1.045,3.867 c1.539-0.425,2.758-0.778,3.986-1.096c1.819-0.47,3.64-0.933,5.469-1.358c0.557-0.129,1.205-0.306,1.7-0.136 c0.54,0.185,0.951,0.746,1.418,1.144c-0.411,0.378-0.76,0.952-1.242,1.102c-3.356,1.041-6.71,2.115-10.125,2.925 c-1.862,0.441-2.158,1.558-2.146,3.107c0.012,1.518,0.567,2.299,2.067,2.09c2.074-0.289,4.111-0.896,6.135-1.47 c0.869-0.247,1.631-0.877,2.502-1.101c0.479-0.123,1.333,0.072,1.557,0.42c0.238,0.37,0.024,1.126-0.173,1.645 c-0.114,0.299-0.556,0.552-0.904,0.672c-2.808,0.973-5.572,2.179-8.46,2.788c-3.644,0.769-6.164-1.483-5.563-5.139 c0.793-4.823,2.118-9.563,3.33-14.308c0.151-0.593,0.94-1.272,1.553-1.422C34.109,6.562,34.826,7.1,35.61,7.394z"/><path d="M109.328,7.453c3.009-0.532,5.791-1.049,8.583-1.501 c0.653-0.105,1.438-0.197,1.986,0.068c0.59,0.284,0.973,0.996,1.445,1.522c-0.527,0.28-1.024,0.701-1.585,0.819 c-3.052,0.642-6.127,1.169-9.177,1.815c-1.744,0.371-2.857,1.437-3.182,3.28c-0.187,1.059-0.536,2.089-0.863,3.326 c2.985-0.785,5.662-1.521,8.355-2.183c0.927-0.229,1.915-0.433,2.843-0.339c0.493,0.05,0.919,0.762,1.375,1.174 c-0.389,0.342-0.724,0.855-1.175,0.996c-3.673,1.148-7.372,2.211-11.052,3.336c-1.109,0.338-1.481,1.494-1.243,3.403 c0.147,1.188,1.003,1.606,1.953,1.439c2.068-0.362,4.118-0.868,6.143-1.431c0.867-0.242,1.661-0.757,2.477-1.172 c0.753-0.384,1.563-0.386,1.808,0.442c0.156,0.532-0.104,1.579-0.516,1.823c-3.176,1.878-6.564,3.323-10.312,3.386 c-2.932,0.048-4.734-2.054-4.409-5.198c0.285-2.764,0.861-5.509,1.47-8.226c0.473-2.107,1.082-4.2,1.837-6.222 C106.771,6.188,108.283,6.077,109.328,7.453z"/><path d="M87.137,17.21c3.134-0.485,5.988-0.89,8.82-1.412 c0.337-0.063,0.698-0.732,0.806-1.179c0.54-2.247,0.995-4.514,1.49-6.771c0.113-0.517,0.237-1.033,0.401-1.534 c0.366-1.12,1.22-1.334,2.195-0.979c0.941,0.343,1.028,1.047,0.754,2.003c-0.765,2.668-1.412,5.369-2.027,7.753 c0.728,0.66,1.172,1.063,1.616,1.467c-0.472,0.404-0.96,0.792-1.41,1.219c-0.318,0.302-0.783,0.625-0.844,0.994 c-0.423,2.582-1.393,5.119-0.571,7.824c0.124,0.408-0.375,1.267-0.812,1.509c-0.409,0.226-1.371,0.115-1.64-0.214 c-0.476-0.582-0.873-1.457-0.835-2.185c0.106-2.011,0.453-4.009,0.705-6.013c0.041-0.322,0.083-0.646,0.166-1.291 c-3.114,0.646-6.063,1.234-8.992,1.902c-0.281,0.064-0.601,0.614-0.641,0.968c-0.208,1.841-0.229,3.708-0.547,5.525 c-0.095,0.538-0.896,1.261-1.454,1.343c-0.988,0.145-1.841-0.439-1.716-1.612c0.152-1.433,0.483-2.846,0.701-4.273 c0.052-0.346,0.106-0.879-0.084-1.043c-1.263-1.085-0.382-1.939,0.202-2.863c0.361-0.573,0.824-1.151,0.959-1.788 c0.602-2.825,1.13-5.667,1.621-8.514c0.179-1.038,0.614-1.639,1.716-1.405c1.065,0.227,1.354,1.035,1.162,1.991 c-0.461,2.313-0.981,4.616-1.47,6.925C87.314,16.014,87.256,16.479,87.137,17.21z"/><path d="M59.188,7.013c2.275,2.074,2.008,4.98,2.495,7.628 c0.195,1.06-0.071,2.208,1.64,2.295c0.795,0.041,0.784,1.396-0.134,1.719c-0.975,0.342-0.94,0.922-0.856,1.662 c0.206,1.817,0.399,3.636,0.625,5.451c0.115,0.919-0.063,1.833-1.071,1.81c-0.515-0.012-1.349-0.829-1.452-1.39 c-0.396-2.164-0.556-4.37-0.833-6.819c-2.279,0.649-4.447,1.426-6.682,1.859c-2.233,0.434-3.518,1.634-4.171,3.74 c-0.326,1.052-0.725,2.117-1.307,3.04c-0.304,0.481-1.126,0.994-1.625,0.917c-0.9-0.14-1.307-0.968-0.992-1.897 c0.37-1.091,0.74-2.2,1.281-3.209c2.181-4.068,4.391-8.122,6.664-12.139c1.265-2.236,2.68-4.387,4.017-6.583 c0.586-0.963,1.236-1.875,2.505-1.084c1.237,0.771,0.657,1.709,0.069,2.596C59.283,6.724,59.249,6.866,59.188,7.013z M57.671,9.776 c-0.187,0-0.374,0-0.561,0c-1.677,2.799-3.354,5.597-5.026,8.387c0.279,0.179,0.324,0.233,0.359,0.227 c1.276-0.227,2.547-0.484,3.827-0.687c3.012-0.472,3.074-0.471,2.573-3.441C58.586,12.744,58.07,11.271,57.671,9.776z"/><path d="M78.417,6.242c-0.179,1.172-0.291,2.067-0.456,2.952 c-0.81,4.357-1.674,8.705-2.424,13.072c-0.175,1.017,0.157,2.117,0.006,3.143c-0.125,0.848-0.494,1.738-1.014,2.408 c-0.192,0.248-1.409,0.14-1.658-0.188c-0.463-0.607-0.869-1.544-0.758-2.259c0.908-5.852,1.941-11.685,2.933-17.524 c0.04-0.235,0.043-0.477,0.081-0.927c-0.463,0.063-0.878,0.05-1.243,0.181c-2.49,0.895-4.977,1.801-7.447,2.751 c-0.633,0.243-1.226,0.742-1.769-0.053c-0.55-0.804-0.622-1.699,0.137-2.362c0.601-0.525,1.356-0.935,2.109-1.219 c6.859-2.584,14.009-3.458,21.287-3.519c1.113-0.01,1.916,0.538,1.868,1.726c-0.044,1.104-0.861,1.295-1.855,1.313 c-2.795,0.053-5.588,0.192-8.381,0.316C79.313,6.077,78.797,6.189,78.417,6.242z"/></g><g><path d="M147.869,5.977c0,0.828,0,1.504,0,2.299c-0.793,0-1.514,0-2.362,0 c0-0.699,0-1.421,0-2.299C146.204,5.977,146.97,5.977,147.869,5.977z"/><path d="M151.616,5.973c0,0.761,0,1.472,0,2.299c-0.791,0-1.498,0-2.36,0 c-0.034-0.743-0.067-1.455-0.107-2.299C150.026,5.973,150.786,5.973,151.616,5.973z"/><path d="M155.288,5.99c0,0.733,0,1.398,0,2.291c-0.691,0.039-1.399,0.077-2.222,0.125 c0-0.862,0-1.579,0-2.416C153.773,5.99,154.479,5.99,155.288,5.99z"/><path d="M159.11,8.287c-0.847,0-1.514,0-2.309,0c0-0.781,0-1.486,0-2.333 c0.767-0.033,1.478-0.063,2.309-0.103C159.11,6.71,159.11,7.421,159.11,8.287z"/><path d="M223.285,15.829c0-0.811,0-1.477,0-2.26c0.774,0,1.485,0,2.338,0 c0,0.716,0,1.421,0,2.26C224.9,15.829,224.192,15.829,223.285,15.829z"/><path d="M167.444,8.235c0-0.751,0-1.46,0-2.281c0.77,0,1.477,0,2.315,0 c0,0.697,0,1.409,0,2.281C169.04,8.235,168.292,8.235,167.444,8.235z"/><path d="M179.501,5.909c0.813,0,1.482,0,2.295,0c0,0.765,0,1.479,0,2.326 c-0.737,0-1.448,0-2.295,0C179.501,7.526,179.501,6.811,179.501,5.909z"/><path d="M175.341,17.279c0.813,0,1.486,0,2.313,0c0,0.761,0,1.523,0,2.39 c-0.747,0-1.468,0-2.313,0C175.341,18.912,175.341,18.197,175.341,17.279z"/><path d="M190.5,8.195c0-0.828,0-1.496,0-2.261c0.807,0,1.522,0,2.347,0 c0,0.777,0,1.486,0,2.261C191.993,8.195,191.244,8.195,190.5,8.195z"/><path d="M194.319,5.929c0.831,0,1.504,0,2.268,0c0,0.805,0,1.527,0,2.368 c-0.726,0-1.437,0-2.268,0C194.319,7.452,194.319,6.691,194.319,5.929z"/><path d="M214.65,17.316c0.04,0.758,0.077,1.475,0.123,2.319c-0.872,0-1.584,0-2.382,0 c0-0.809,0-1.524,0-2.319C213.16,17.316,213.822,17.316,214.65,17.316z"/><path d="M216.118,8.235c0-0.772,0-1.484,0-2.289c0.805,0,1.521,0,2.36,0 c0,0.729,0,1.438,0,2.289C217.765,8.235,217.054,8.235,216.118,8.235z"/><path d="M228.999,8.303c-0.741,0-1.409,0-2.237,0c0-0.747,0-1.506,0-2.384 c0.678,0,1.391,0,2.237,0C228.999,6.651,228.999,7.369,228.999,8.303z"/><path d="M216.124,19.596c0-0.83,0-1.498,0-2.249c0.807,0,1.522,0,2.354,0 c0,0.783,0,1.49,0,2.249C217.628,19.596,216.871,19.596,216.124,19.596z"/><path d="M223.283,19.569c0-0.757,0-1.42,0-2.248c0.757-0.044,1.468-0.084,2.324-0.134 c0,0.818,0,1.526,0,2.382C224.906,19.569,224.202,19.569,223.283,19.569z"/><path d="M181.823,27.261c-0.823,0-1.494,0-2.309,0c0-0.785,0-1.542,0-2.385 c0.759,0,1.472,0,2.309,0C181.823,25.657,181.823,26.366,181.823,27.261z"/><path d="M153.048,27.179c0-0.798,0-1.514,0-2.316c0.803,0,1.52,0,2.362,0 c0,0.764,0,1.477,0,2.316C154.699,27.179,153.984,27.179,153.048,27.179z"/><path d="M167.424,24.849c0.793,0,1.512,0,2.402,0c0.035,0.753,0.069,1.475,0.111,2.356 c-0.854,0-1.622,0-2.514,0C167.424,26.458,167.424,25.697,167.424,24.849z"/><path d="M240.325,27.269c-0.813,0-1.48,0-2.265,0c0-0.785,0-1.504,0-2.349 c0.713,0,1.424,0,2.265,0C240.325,25.63,240.325,26.343,240.325,27.269z"/><path d="M203.649,12.102c-0.784,0-1.404,0-2.174,0c0-0.735,0-1.448,0-2.318 c0.668-0.036,1.383-0.075,2.174-0.117C203.649,10.54,203.649,11.297,203.649,12.102z"/><path d="M207.49,12.088c-0.816,0-1.484,0-2.345,0c-0.042-0.747-0.081-1.465-0.129-2.353 c0.838,0,1.597,0,2.474,0C207.49,10.444,207.49,11.164,207.49,12.088z"/><path d="M190.596,24.864c0.786,0,1.452,0,2.288,0c0.038,0.759,0.072,1.479,0.111,2.335 c-0.832,0-1.547,0-2.399,0C190.596,26.506,190.596,25.79,190.596,24.864z"/><path d="M225.668,9.747c0,0.807,0,1.473,0,2.263c-0.789,0-1.502,0-2.343,0 c0-0.715,0-1.43,0-2.263C224.019,9.747,224.735,9.747,225.668,9.747z"/><path d="M194.359,24.839c0.765,0,1.427,0,2.243,0c0,0.745,0,1.504,0,2.378 c-0.693,0-1.402,0-2.243,0C194.359,26.44,194.359,25.679,194.359,24.839z"/><path d="M167.442,13.473c0.843,0,1.511,0,2.293,0c0,0.765,0,1.47,0,2.318 c-0.763,0-1.47,0-2.293,0C167.442,15.067,167.442,14.358,167.442,13.473z"/><path d="M179.528,13.456c0.751,0,1.36,0,2.207,0c0.034,0.77,0.067,1.515,0.105,2.379 c-0.841,0-1.496,0-2.313,0C179.528,15.063,179.528,14.265,179.528,13.456z"/><path d="M167.331,9.785c0.749,0,1.359,0,2.206,0c0.035,0.769,0.067,1.514,0.107,2.378 c-0.843,0-1.498,0-2.313,0C167.331,11.393,167.331,10.594,167.331,9.785z"/><path d="M203.741,13.548c0,0.811,0,1.479,0,2.271c-0.775,0-1.484,0-2.303,0 c0-0.721,0-1.436,0-2.271C202.159,13.548,202.871,13.548,203.741,13.548z"/><path d="M208.658,13.446c0.838,0,1.512,0,2.285,0c0,0.795,0,1.517,0,2.368 c-0.803,0-1.521,0-2.285,0C208.658,15.006,208.658,14.247,208.658,13.446z"/><path d="M160.385,5.915c0.954,0,1.681,0,2.479,0c0.036,0.776,0.071,1.51,0.111,2.356 c-0.814,0-1.54,0-2.476,0C160.466,7.58,160.431,6.858,160.385,5.915z"/><path d="M189.094,5.931c0,0.791,0,1.512,0,2.354c-0.816,0-1.586,0-2.389,0 c0-0.765,0-1.5,0-2.354C187.443,5.931,188.156,5.931,189.094,5.931z"/><path d="M203.661,8.289c-0.834,0-1.444,0-2.245,0c-0.039-0.745-0.075-1.456-0.117-2.299 c0.821,0,1.53,0,2.362,0C203.661,6.686,203.661,7.389,203.661,8.289z"/><path d="M203.766,27.238c-0.789,0-1.514,0-2.382,0c-0.036-0.73-0.071-1.454-0.111-2.298 c0.858,0,1.625,0,2.493,0C203.766,25.693,203.766,26.416,203.766,27.238z"/><path d="M153.026,19.596c0-0.811,0-1.48,0-2.231c0.787,0,1.502,0,2.356,0 c0,0.735,0,1.435,0,2.231C154.627,19.596,153.915,19.596,153.026,19.596z"/><path d="M186.706,27.225c0-0.801,0-1.581,0-2.436c0.795,0,1.524,0,2.385,0 c0,0.776,0,1.546,0,2.436C188.311,27.225,187.541,27.225,186.706,27.225z"/><path d="M190.584,21.109c0.786,0,1.448,0,2.236,0c0,0.773,0,1.475,0,2.273 c-0.745,0-1.406,0-2.236,0C190.584,22.709,190.584,22.01,190.584,21.109z"/><path d="M190.546,12.185c0-0.903,0-1.567,0-2.39c0.721-0.042,1.379-0.081,2.195-0.131 c0,0.797,0,1.512,0,2.382C192.114,12.086,191.449,12.127,190.546,12.185z"/><path d="M201.473,17.343c0.785,0,1.509,0,2.303,0c0,0.741,0,1.41,0,2.217 c-0.727,0-1.438,0-2.303,0C201.473,18.924,201.473,18.219,201.473,17.343z"/><path d="M169.739,19.604c-0.342,0.054-0.58,0.125-0.818,0.123 c-0.429-0.004-0.858-0.05-1.427-0.089c0-0.749,0-1.457,0-2.281c0.707,0,1.415,0,2.245,0 C169.739,18.113,169.739,18.77,169.739,19.604z"/><path d="M155.418,15.809c-0.342,0.054-0.58,0.125-0.816,0.123 c-0.432-0.004-0.86-0.049-1.429-0.087c0-0.751,0-1.458,0-2.283c0.707,0,1.414,0,2.245,0 C155.418,14.318,155.418,14.977,155.418,15.809z"/><path d="M190.541,13.49c0.878,0,1.498,0,2.257,0c0,0.755,0,1.469,0,2.318 c-0.718,0-1.427,0-2.257,0C190.541,15.058,190.541,14.347,190.541,13.49z"/><path d="M155.422,21.1c0,0.797,0,1.454,0,2.295c-0.791,0.035-1.498,0.067-2.36,0.107 c-0.052-0.771-0.098-1.423-0.159-2.285C153.761,21.177,154.556,21.142,155.422,21.1z"/><path d="M214.671,23.627c-0.745,0-1.456,0-2.291,0c0-0.737,0-1.438,0-2.257 c0.741,0,1.455,0,2.291,0C214.671,22.087,214.671,22.79,214.671,23.627z"/><path d="M218.385,15.795c-0.747,0-1.457,0-2.291,0c0-0.737,0-1.438,0-2.259 c0.739,0,1.452,0,2.291,0C218.385,14.255,218.385,14.959,218.385,15.795z"/><path d="M218.385,12c-0.747,0-1.457,0-2.291,0c0-0.737,0-1.438,0-2.257 c0.739,0,1.452,0,2.291,0C218.385,10.461,218.385,11.164,218.385,12z"/><path d="M192.799,19.619c-0.772,0-1.429,0-2.209,0c0-0.788,0-1.494,0-2.288 c0.753,0,1.41,0,2.209,0C192.799,18.026,192.799,18.733,192.799,19.619z"/><path d="M173.625,19.619c-0.771,0-1.429,0-2.21,0c0-0.788,0-1.494,0-2.288 c0.755,0,1.411,0,2.21,0C173.625,18.026,173.625,18.733,173.625,19.619z"/><path d="M181.662,19.619c-0.771,0-1.429,0-2.209,0c0-0.788,0-1.494,0-2.288 c0.755,0,1.412,0,2.209,0C181.662,18.026,181.662,18.733,181.662,19.619z"/><path d="M216.086,27.209c0-0.769,0-1.494,0-2.36c0.818,0.036,1.55,0.069,2.407,0.107 c0.038,0.776,0.07,1.446,0.107,2.253C217.735,27.209,216.96,27.209,216.086,27.209z"/><path d="M232.677,5.813c0,0.97,0,1.692,0,2.499c-0.786,0-1.446,0-2.261,0 c-0.046-0.788-0.083-1.508-0.131-2.39C231.142,5.883,231.859,5.852,232.677,5.813z"/><path d="M234.039,17.216c0.749,0,1.427,0,2.253,0c0,0.792,0,1.569,0,2.463 c-0.743,0-1.454,0-2.253,0C234.039,18.885,234.039,18.155,234.039,17.216z"/><path d="M228.875,27.263c-0.736,0-1.402,0-2.201,0c0-0.789,0-1.558,0-2.426 c0.724,0,1.389,0,2.201,0C228.875,25.619,228.875,26.393,228.875,27.263z"/><path d="M181.798,9.854c0,0.691,0,1.354,0,2.138c-0.774,0-1.486,0-2.307,0 c-0.041-0.725-0.079-1.391-0.121-2.138C180.209,9.854,180.955,9.854,181.798,9.854z"/><path d="M223.294,21.227c0.776,0,1.502,0,2.334,0c0,0.718,0,1.371,0,2.261 c-0.721,0.036-1.476,0.076-2.334,0.117C223.294,22.719,223.294,22.008,223.294,21.227z"/><path d="M234.257,5.907c0.751,0,1.414,0,2.163,0c0,0.801,0,1.527,0,2.372 c-0.719,0-1.372,0-2.163,0C234.257,7.536,234.257,6.814,234.257,5.907z"/><path d="M201.285,21.282c0.95,0,1.667,0,2.523,0c-0.044,0.735-0.08,1.381-0.121,2.112 c-0.785,0-1.44,0-2.279,0C201.373,22.745,201.333,22.099,201.285,21.282z"/><path d="M179.498,23.374c0-0.727,0-1.37,0-2.098c0.735-0.031,1.403-0.062,2.331-0.102 c-0.034,0.771-0.063,1.448-0.098,2.199C180.911,23.374,180.261,23.374,179.498,23.374z"/><path d="M218.451,23.408c-0.785,0-1.502,0-2.325,0c0-0.667,0-1.266,0-1.999 c0.751,0,1.469,0,2.325,0C218.451,22.018,218.451,22.661,218.451,23.408z"/><path d="M240.162,19.638c-0.793,0-1.4,0-2.201,0c-0.036-0.762-0.067-1.469-0.105-2.293 c0.829,0,1.488,0,2.307,0C240.162,18.05,240.162,18.755,240.162,19.638z"/><path d="M153.122,10.012c0.809,0,1.473,0,2.249,0c0.028,0.667,0.056,1.266,0.088,2.021 c-0.795,0-1.502,0-2.337,0C153.122,11.396,153.122,10.711,153.122,10.012z"/><path d="M237.997,8.239c0-0.783,0-1.494,0-2.313c0.734,0,1.381,0,2.151,0 c0,0.743,0,1.452,0,2.313C239.504,8.239,238.861,8.239,237.997,8.239z"/><path d="M169.683,23.428c-0.772,0-1.442,0-2.243,0c0-0.713,0-1.36,0-2.117 c0.741-0.032,1.413-0.063,2.243-0.102C169.683,21.938,169.683,22.58,169.683,23.428z"/><path d="M232.62,24.856c0,0.851,0,1.563,0,2.372c-0.736,0-1.389,0-2.191,0 c0-0.757,0-1.51,0-2.372C231.098,24.856,231.746,24.856,232.62,24.856z"/><path d="M236.472,27.259c-0.868,0-1.472,0-2.239,0c0-0.787,0-1.544,0-2.402 c0.67,0,1.317,0,2.116,0C236.387,25.623,236.424,26.341,236.472,27.259z"/><path d="M238.014,23.349c0-0.701,0-1.287,0-1.984c0.739-0.04,1.395-0.076,2.199-0.119 c0,0.723,0,1.356,0,2.104C239.548,23.349,238.894,23.349,238.014,23.349z"/></g></svg>
-    <p class="subtitle">Firmware Updater</p>
+    <p class="subtitle" id="subtitle">Firmware Updater</p>
   </div>
   <div class="container">
 
     <div class="browser-warning" id="browserWarning">
-      <strong>⚠️ Browser Not Supported</strong>
-      <p>Web Serial requires Chrome, Edge, or Opera on desktop. Please open this page in a supported browser.</p>
+      <strong id="browserWarningTitle">⚠️ Browser Not Supported</strong>
+      <p id="browserWarningText">Web Serial requires Chrome, Edge, or Opera on desktop. Please open this page in a supported browser.</p>
     </div>
 
     <div class="card instructions">
       <div class="card-header">
         <span class="card-icon">📋</span>
-        <span class="card-title">How to Update</span>
+        <span class="card-title" id="howToUpdateTitle">How to Update</span>
       </div>
       <ol>
-        <li>Connect your WeatherThing device via USB</li>
-        <li>Click the <strong>"Install"</strong> button next to the firmware version you want</li>
-        <li>Select the serial port for your device</li>
-        <li>Wait for the installation to complete</li>
+        <li id="step1">Connect your WeatherThing device via USB</li>
+        <li id="step2">Click the <strong>"Install"</strong> button next to the firmware version you want</li>
+        <li id="step3">Select the serial port for your device</li>
+        <li id="step4">Wait for the installation to complete</li>
       </ol>
     </div>
 
-    <h2 class="section-title">Available Builds</h2>
+    <h2 class="section-title" id="availableBuildsTitle">Available Builds</h2>
     
     <div id="buildsContainer" class="builds-list">
       <div class="loading">
         <div class="spinner"></div>
-        <p>Loading builds...</p>
+        <p id="loadingText">Loading builds...</p>
       </div>
     </div>
 
     <div class="footer">
       <p>
-        Powered by <a href="https://esphome.github.io/esp-web-tools/" target="_blank">ESP Web Tools</a>
+        <span id="poweredByText">Powered by</span> <a href="https://esphome.github.io/esp-web-tools/" target="_blank">ESP Web Tools</a>
         &bull;
-        <a href="https://github.com/makeriga/weatherthing-firmware" target="_blank">View on GitHub</a>
+        <a href="https://github.com/makeriga/weatherthing-firmware" target="_blank" id="viewOnGitHub">View on GitHub</a>
       </p>
       <p id="versionInfo" class="version-info">Latest available firmware: loading…</p>
     </div>
   </div>
 
   <script>
+    // Apply translations to static elements
+    function applyTranslations() {
+      document.getElementById('subtitle').textContent = T.title;
+      document.getElementById('browserWarningTitle').textContent = T.browserWarningTitle;
+      document.getElementById('browserWarningText').textContent = T.browserWarningText;
+      document.getElementById('howToUpdateTitle').textContent = T.howToUpdate;
+      document.getElementById('step1').textContent = T.step1;
+      document.getElementById('step2').innerHTML = T.step2;
+      document.getElementById('step3').textContent = T.step3;
+      document.getElementById('step4').textContent = T.step4;
+      document.getElementById('availableBuildsTitle').textContent = T.availableBuilds;
+      document.getElementById('loadingText').textContent = T.loadingBuilds;
+      document.getElementById('poweredByText').textContent = T.poweredBy;
+      document.getElementById('viewOnGitHub').textContent = T.viewOnGitHub;
+      document.getElementById('versionInfo').textContent = T.latestFirmware + ': ' + T.loading;
+      
+      // Highlight active language button
+      document.getElementById('langEn').classList.toggle('active', LANG === 'en');
+      document.getElementById('langLv').classList.toggle('active', LANG === 'lv');
+    }
+    applyTranslations();
+
     if (!('serial' in navigator)) {
       document.getElementById('browserWarning').classList.add('show');
     }
 
     function formatDate(dateString) {
       const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', {
+      return date.toLocaleDateString(LANG === 'lv' ? 'lv-LV' : 'en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
@@ -119,9 +226,9 @@
       if (!el) return;
 
       if (commitUrl) {
-        el.innerHTML = `Latest available firmware: <a href="${escapeHtml(commitUrl)}" target="_blank">${escapeHtml(text)}</a>`;
+        el.innerHTML = `${T.latestFirmware}: <a href="${escapeHtml(commitUrl)}" target="_blank">${escapeHtml(text)}</a>`;
       } else {
-        el.textContent = `Latest available firmware: ${text}`;
+        el.textContent = `${T.latestFirmware}: ${text}`;
       }
     }
 
@@ -148,7 +255,7 @@
         const text = msg ? `${shaShort} — ${msg}` : shaShort;
         setVersionInfo(text, c.html_url);
       } catch (e) {
-        setVersionInfo('unknown');
+        setVersionInfo(T.unknown);
       }
     }
 
@@ -165,7 +272,7 @@
         const builds = data.builds;
         
         if (!builds || builds.length === 0) {
-          container.innerHTML = '<div class="error"><p>No builds available yet.</p></div>';
+          container.innerHTML = `<div class="error"><p>${escapeHtml(T.noBuilds)}</p></div>`;
           await loadVersionFromGitHubApi();
           return;
         }
@@ -180,7 +287,7 @@
         }
         
         container.innerHTML = builds.map((build, index) => `
-          <div class="build-card ${index === 0 ? 'latest' : ''}">
+          <div class="build-card ${index === 0 ? 'latest' : ''}" ${index === 0 ? `style="--latest-label:'${T.latest}'"` : ''}>
             <div class="build-header">
               <span class="build-sha">${escapeHtml(build.sha_short)}</span>
               <span class="build-date">${formatDate(build.build_date)}</span>
@@ -188,12 +295,12 @@
             <p class="build-message">${escapeHtml(build.commit_message)}</p>
             <div class="build-actions">
               <esp-web-install-button manifest="builds/${build.path}/manifest.json">
-                <button slot="activate">Install</button>
-                <span slot="unsupported">Not supported</span>
-                <span slot="not-allowed">Not allowed (use HTTPS)</span>
+                <button slot="activate">${escapeHtml(T.install)}</button>
+                <span slot="unsupported">${escapeHtml(T.notSupported)}</span>
+                <span slot="not-allowed">${escapeHtml(T.notAllowed)}</span>
               </esp-web-install-button>
               <a href="builds/${build.path}/firmware.bin" class="download-link" download>
-                📥 Download .bin
+                ${T.downloadBin}
               </a>
             </div>
           </div>
@@ -203,10 +310,10 @@
         console.error('Error loading builds:', error);
         container.innerHTML = `
           <div class="error">
-            <p><strong>Error loading builds</strong></p>
+            <p><strong>${escapeHtml(T.errorLoading)}</strong></p>
             <p>${escapeHtml(error.message)}</p>
             <p style="margin-top: 1rem; font-size: 0.85rem;">
-              Make sure GitHub Pages is enabled and a build has been deployed.
+              ${escapeHtml(T.errorHint)}
             </p>
           </div>
         `;
