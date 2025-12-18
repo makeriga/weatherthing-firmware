@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "b891c4ea264838a7f405469e3728124267633f8b",
+      "sha_short": "b891c4e",
+      "commit_message": "update readme",
+      "commit_date": "2025-12-18 19:57:17 +0200",
+      "build_date": "2025-12-18T17:58:44Z",
+      "branch": "main",
+      "path": "b891c4e"
+    },
+    {
       "sha": "6f0f9347ae09300db43a43735a3726452ad4fbb6",
       "sha_short": "6f0f934",
       "commit_message": "added Latvian language for web panel, by default LV",
@@ -170,15 +179,6 @@
       "build_date": "2025-12-14T15:51:11Z",
       "branch": "main",
       "path": "d035eff"
-    },
-    {
-      "sha": "2d0fdd37a7ead9fb0ec91bd2b260ac6382393c9a",
-      "sha_short": "2d0fdd3",
-      "commit_message": "audio responsiveness improvements, CI build workflow/updater",
-      "commit_date": "2025-12-14 16:37:42 +0200",
-      "build_date": "2025-12-14T14:39:39Z",
-      "branch": "main",
-      "path": "2d0fdd3"
     }
   ]
 }
