@@ -1,0 +1,8 @@
+{
+  "sha": "7b363c9cb6e45551977dbcd12f45a832aa815184",
+  "sha_short": "7b363c9",
+  "commit_message": "added http API for drawing directly to the screen",
+  "commit_date": "2025-12-18 03:27:32 +0200",
+  "build_date": "2025-12-18T01:28:51Z",
+  "branch": "main"
+}
