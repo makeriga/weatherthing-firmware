@@ -13,6 +13,7 @@
 #include "settings.h"
 #include "mqtt.h"
 #include "http_worker.h"
+#include "custom_overlay.h"
 #include "namedays_lv.h"
 
 struct Card
@@ -2362,6 +2363,8 @@ void cards_loop()
     card.render();
 
     applySoundReactiveOverlay(now);
+
+    custom_overlay_apply(now);
 
     wt_leds_show();
 }

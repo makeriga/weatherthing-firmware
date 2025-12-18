@@ -5,6 +5,7 @@
 #include <ESPmDNS.h>
 #include <WebServer.h>
 #include <Preferences.h>
+#include <ArduinoJson.h>
 #include <time.h>
 #include "net.h"
 #include "weather.h"
@@ -15,6 +16,7 @@
 #include "mqtt.h"
 #include "build_info.h"
 #include "http_worker.h"
+#include "custom_overlay.h"
 
 #include <esp_heap_caps.h>
 #include <esp_task_wdt.h>
@@ -59,6 +61,12 @@ static void handleApiSpriteGet();
 static void handleApiSpriteSave();
 static void handleApiSpriteReset();
 
+static void handleApiOverlayGet();
+static void handleApiOverlayClear();
+static void handleApiOverlayMatrix();
+static void handleApiOverlayTimeline();
+static void handleApiOverlayText();
+
 // Helper to send HTML chunk and clear buffer
 static String g_html;
 static void sendChunk() {
@@ -81,6 +89,41 @@ static bool parseHexColor(const String& s, uint32_t* out)
     uint8_t b = (uint8_t)strtoul(String(p).substring(4, 6).c_str(), nullptr, 16);
     *out = wt_color(r, g, b);
     return true;
+}
+
+static bool parseJsonColor(const JsonVariantConst& v, uint32_t* out)
+{
+    if (!out) return false;
+
+    if (v.is<const char*>())
+    {
+        String s = v.as<const char*>();
+        return parseHexColor(s, out);
+    }
+
+    if (v.is<uint32_t>())
+    {
+        *out = v.as<uint32_t>();
+        return true;
+    }
+
+    if (v.is<long>())
+    {
+        *out = (uint32_t)v.as<long>();
+        return true;
+    }
+
+    return false;
+}
+
+static void apiSendError(int code, const char* msg)
+{
+    String json;
+    json.reserve(96);
+    json += "{\"error\":\"";
+    json += msg ? msg : "error";
+    json += "\"}";
+    server.send(code, "application/json", json);
 }
 
 static void handleRoot()
@@ -1151,7 +1194,388 @@ static void startServer()
     server.on("/api/simulate", HTTP_GET, handleApiSimulate);
     server.on("/api/touch_shortcut", HTTP_GET, handleApiTouchShortcut);
     server.on("/cards_config", HTTP_POST, handleCardsConfigPost);
+
+    server.on("/api/overlay", HTTP_GET, handleApiOverlayGet);
+    server.on("/api/overlay/clear", HTTP_POST, handleApiOverlayClear);
+    server.on("/api/overlay/matrix", HTTP_POST, handleApiOverlayMatrix);
+    server.on("/api/overlay/timeline", HTTP_POST, handleApiOverlayTimeline);
+    server.on("/api/overlay/text", HTTP_POST, handleApiOverlayText);
     server.begin();
+}
+
+static void handleApiOverlayGet()
+{
+    uint32_t now = millis();
+    String json;
+    json.reserve(256);
+    json += "{";
+    json += "\"ok\":true";
+    json += ",\"matrix_active\":";
+    json += custom_overlay_matrix_active(now) ? "true" : "false";
+    json += ",\"matrix_remaining_ms\":";
+    json += String(custom_overlay_matrix_remaining_ms(now));
+    json += ",\"timeline_active\":";
+    json += custom_overlay_timeline_active(now) ? "true" : "false";
+    json += ",\"timeline_remaining_ms\":";
+    json += String(custom_overlay_timeline_remaining_ms(now));
+    json += ",\"text_active\":";
+    json += custom_overlay_text_active(now) ? "true" : "false";
+    json += ",\"text_remaining_ms\":";
+    json += String(custom_overlay_text_remaining_ms(now));
+    json += "}";
+    server.send(200, "application/json", json);
+}
+
+static void handleApiOverlayClear()
+{
+    String body = server.arg("plain");
+    String target = "all";
+
+    if (body.length() > 0)
+    {
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, body);
+        if (!err)
+        {
+            target = (const char*)(doc["target"] | "all");
+        }
+    }
+
+    if (server.hasArg("target"))
+    {
+        target = server.arg("target");
+    }
+
+    if (target == "matrix") custom_overlay_clear_matrix();
+    else if (target == "timeline") custom_overlay_clear_timeline();
+    else if (target == "text") custom_overlay_clear_text();
+    else custom_overlay_clear_all();
+
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleApiOverlayMatrix()
+{
+    uint32_t now = millis();
+    String body = server.arg("plain");
+    uint32_t timeoutMs = 0;
+    bool clear = false;
+    bool clearUnder = false;
+
+    if (server.hasArg("timeout_ms")) timeoutMs = (uint32_t)server.arg("timeout_ms").toInt();
+    if (server.hasArg("clear")) clear = server.arg("clear").toInt() != 0;
+    if (server.hasArg("clear_under")) clearUnder = server.arg("clear_under").toInt() != 0;
+
+    if (body.length() > 0)
+    {
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, body);
+        if (err)
+        {
+            apiSendError(400, "invalid json");
+            return;
+        }
+
+        timeoutMs = (uint32_t)(doc["timeout_ms"] | (uint32_t)timeoutMs);
+        clear = (bool)(doc["clear"] | clear);
+        clearUnder = (bool)(doc["clear_under"] | clearUnder);
+
+        if (clear) custom_overlay_clear_matrix();
+        if (clearUnder) custom_overlay_set_matrix_clear_under(true);
+
+        JsonArrayConst pixels = doc["pixels"].as<JsonArrayConst>();
+        if (!pixels.isNull())
+        {
+            for (JsonObjectConst p : pixels)
+            {
+                int x = p["x"] | -1;
+                int yTop = p["y"] | -1;
+                uint32_t col;
+                if (x < 0 || yTop < 0) continue;
+                if (!parseJsonColor(p["color"], &col)) continue;
+
+                uint8_t y = (uint8_t)(WT_MATRIX_HEIGHT - 1 - (uint8_t)yTop);
+                custom_overlay_set_matrix_pixel((uint8_t)x, y, col);
+            }
+        }
+        else
+        {
+            int x = doc["x"] | (server.hasArg("x") ? server.arg("x").toInt() : -1);
+            int yTop = doc["y"] | (server.hasArg("y") ? server.arg("y").toInt() : -1);
+            uint32_t col;
+            if (x >= 0 && yTop >= 0 && parseJsonColor(doc["color"], &col))
+            {
+                uint8_t y = (uint8_t)(WT_MATRIX_HEIGHT - 1 - (uint8_t)yTop);
+                custom_overlay_set_matrix_pixel((uint8_t)x, y, col);
+            }
+        }
+    }
+    else
+    {
+        if (clear) custom_overlay_clear_matrix();
+
+        if (clearUnder) custom_overlay_set_matrix_clear_under(true);
+
+        if (server.hasArg("x") && server.hasArg("y") && server.hasArg("color"))
+        {
+            int x = server.arg("x").toInt();
+            int yTop = server.arg("y").toInt();
+            uint32_t col;
+            if (!parseHexColor(server.arg("color"), &col))
+            {
+                apiSendError(400, "invalid color");
+                return;
+            }
+            uint8_t y = (uint8_t)(WT_MATRIX_HEIGHT - 1 - (uint8_t)yTop);
+            custom_overlay_set_matrix_pixel((uint8_t)x, y, col);
+        }
+        else
+        {
+            apiSendError(400, "missing pixels" );
+            return;
+        }
+    }
+
+    custom_overlay_set_matrix_timeout_ms(now, timeoutMs);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleApiOverlayTimeline()
+{
+    uint32_t now = millis();
+    String body = server.arg("plain");
+    uint32_t timeoutMs = 0;
+    bool clear = false;
+    bool clearUnder = false;
+
+    if (server.hasArg("timeout_ms")) timeoutMs = (uint32_t)server.arg("timeout_ms").toInt();
+    if (server.hasArg("clear")) clear = server.arg("clear").toInt() != 0;
+    if (server.hasArg("clear_under")) clearUnder = server.arg("clear_under").toInt() != 0;
+
+    if (body.length() > 0)
+    {
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, body);
+        if (err)
+        {
+            apiSendError(400, "invalid json");
+            return;
+        }
+
+        timeoutMs = (uint32_t)(doc["timeout_ms"] | (uint32_t)timeoutMs);
+        clear = (bool)(doc["clear"] | clear);
+        clearUnder = (bool)(doc["clear_under"] | clearUnder);
+        if (clear) custom_overlay_clear_timeline();
+        if (clearUnder) custom_overlay_set_timeline_clear_under(true);
+
+        JsonArrayConst colors = doc["colors"].as<JsonArrayConst>();
+        if (!colors.isNull())
+        {
+            uint8_t i = 0;
+            for (JsonVariantConst v : colors)
+            {
+                if (i >= WT_TIMELINE_PIXELS) break;
+                uint32_t col;
+                if (parseJsonColor(v, &col))
+                {
+                    custom_overlay_set_timeline_pixel(i, col);
+                }
+                i++;
+            }
+        }
+
+        JsonArrayConst pixels = doc["pixels"].as<JsonArrayConst>();
+        if (!pixels.isNull())
+        {
+            for (JsonObjectConst p : pixels)
+            {
+                int idx = p["i"] | p["index"] | -1;
+                uint32_t col;
+                if (idx < 0) continue;
+                if (!parseJsonColor(p["color"], &col)) continue;
+                custom_overlay_set_timeline_pixel((uint8_t)idx, col);
+            }
+        }
+        else if (colors.isNull())
+        {
+            int idx = doc["i"] | doc["index"] | (server.hasArg("i") ? server.arg("i").toInt() : -1);
+            uint32_t col;
+            if (idx >= 0 && parseJsonColor(doc["color"], &col))
+            {
+                custom_overlay_set_timeline_pixel((uint8_t)idx, col);
+            }
+        }
+    }
+    else
+    {
+        if (clear) custom_overlay_clear_timeline();
+
+        if (clearUnder) custom_overlay_set_timeline_clear_under(true);
+
+        if (server.hasArg("i") && server.hasArg("color"))
+        {
+            int idx = server.arg("i").toInt();
+            uint32_t col;
+            if (!parseHexColor(server.arg("color"), &col))
+            {
+                apiSendError(400, "invalid color");
+                return;
+            }
+            custom_overlay_set_timeline_pixel((uint8_t)idx, col);
+        }
+        else
+        {
+            apiSendError(400, "missing pixels" );
+            return;
+        }
+    }
+
+    custom_overlay_set_timeline_timeout_ms(now, timeoutMs);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleApiOverlayText()
+{
+    uint32_t now = millis();
+    String body = server.arg("plain");
+    body.trim();
+
+    bool gotJson = body.length() > 0;
+    JsonDocument doc;
+    DeserializationError err = gotJson ? deserializeJson(doc, body) : DeserializationError::EmptyInput;
+
+    if (gotJson && err)
+    {
+        int first = -1;
+        for (int i = 0; i < (int)body.length(); ++i)
+        {
+            char c = body[i];
+            if (c == '{' || c == '[') { first = i; break; }
+        }
+        if (first > 0)
+        {
+            String body2 = body.substring(first);
+            body2.trim();
+
+            if (body2.length() >= 2 && ((body2[0] == '\'' && body2[body2.length() - 1] == '\'') || (body2[0] == '"' && body2[body2.length() - 1] == '"')))
+            {
+                body2 = body2.substring(1, body2.length() - 1);
+                body2.trim();
+            }
+
+            err = deserializeJson(doc, body2);
+            if (!err) {
+                body = body2;
+            }
+        }
+    }
+
+    // If JSON didn't parse, allow query/form parameters as a fallback:
+    // /api/overlay/text?text=HELLO%20WORLD&x=0&y=0&color=%2300FF00&timeout_ms=10000&scroll=0
+    if (err)
+    {
+        if (server.hasArg("text") || server.hasArg("msg"))
+        {
+            String textS = server.hasArg("text") ? server.arg("text") : server.arg("msg");
+            bool scroll = server.hasArg("scroll") ? (server.arg("scroll").toInt() != 0) : false;
+            bool clearUnder = server.hasArg("clear_under") ? (server.arg("clear_under").toInt() != 0) : false;
+
+            int16_t x = scroll ? (int16_t)WT_MATRIX_WIDTH : 0;
+            if (server.hasArg("x")) x = (int16_t)server.arg("x").toInt();
+            int16_t yTop = server.hasArg("y") ? (int16_t)server.arg("y").toInt() : 0;
+            uint32_t timeoutMs = server.hasArg("timeout_ms") ? (uint32_t)server.arg("timeout_ms").toInt() : 0;
+            uint16_t scrollSpeedMs = server.hasArg("scroll_speed_ms") ? (uint16_t)server.arg("scroll_speed_ms").toInt() : (uint16_t)50;
+
+            uint32_t col = wt_color(255, 255, 255);
+            if (server.hasArg("color"))
+            {
+                if (!parseHexColor(server.arg("color"), &col))
+                {
+                    apiSendError(400, "invalid color");
+                    return;
+                }
+            }
+
+            if (clearUnder) custom_overlay_set_matrix_clear_under(true);
+            custom_overlay_set_text(now, textS.c_str(), x, yTop, col, timeoutMs, scroll, scrollSpeedMs, nullptr, 0);
+            server.send(200, "application/json", "{\"ok\":true}");
+            return;
+        }
+
+        String preview = body;
+        if (preview.length() > 80) preview = preview.substring(0, 80);
+        preview.replace("\\", "\\\\");
+        preview.replace("\"", "\\\"");
+        preview.replace("\r", "\\r");
+        preview.replace("\n", "\\n");
+
+        String json;
+        json.reserve(220);
+        json += "{\"error\":\"invalid json: ";
+        json += err.c_str();
+        json += "\",\"len\":";
+        json += String(body.length());
+        json += ",\"preview\":\"";
+        json += preview;
+        json += "\"}";
+        server.send(400, "application/json", json);
+        return;
+    }
+
+    const char* text = doc["text"] | doc["msg"] | "";
+    if (!text || text[0] == '\0')
+    {
+        apiSendError(400, "missing text");
+        return;
+    }
+
+    bool scroll = (bool)(doc["scroll"] | false);
+    bool clearUnder = (bool)(doc["clear_under"] | false);
+
+    int16_t x;
+    if (doc["x"].is<int>() || doc["x"].is<long>()) x = (int16_t)doc["x"].as<int>();
+    else x = scroll ? (int16_t)WT_MATRIX_WIDTH : 0;
+
+    int16_t yTop = (int16_t)(doc["y"] | 0);
+    uint32_t timeoutMs = (uint32_t)(doc["timeout_ms"] | (uint32_t)0);
+    uint16_t scrollSpeedMs = (uint16_t)(doc["scroll_speed_ms"] | (uint16_t)50);
+
+    uint32_t col = wt_color(255, 255, 255);
+    if (doc["color"].is<const char*>() || doc["color"].is<uint32_t>() || doc["color"].is<long>())
+    {
+        uint32_t parsed;
+        if (!parseJsonColor(doc["color"], &parsed))
+        {
+            apiSendError(400, "invalid color");
+            return;
+        }
+        col = parsed;
+    }
+
+    uint32_t perCharColors[96];
+    size_t perCharColorsLen = 0;
+    JsonArrayConst colors = doc["colors"].as<JsonArrayConst>();
+    if (!colors.isNull())
+    {
+        for (JsonVariantConst v : colors)
+        {
+            if (perCharColorsLen >= 96) break;
+            uint32_t c2;
+            if (parseJsonColor(v, &c2))
+            {
+                perCharColors[perCharColorsLen++] = c2;
+            }
+            else
+            {
+                perCharColors[perCharColorsLen++] = col;
+            }
+        }
+    }
+
+    if (clearUnder) custom_overlay_set_matrix_clear_under(true);
+
+    custom_overlay_set_text(now, text, x, yTop, col, timeoutMs, scroll, scrollSpeedMs, perCharColorsLen ? perCharColors : nullptr, perCharColorsLen);
+    server.send(200, "application/json", "{\"ok\":true}");
 }
 
 static void handleApiVersion()

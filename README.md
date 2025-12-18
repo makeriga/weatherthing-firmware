@@ -180,12 +180,234 @@ data:
 
 ---
 
+## Custom Overlay HTTP API (pixels + text)
+
+This firmware exposes an HTTP API that lets you draw **custom content on top of the normal cards**.
+
+Typical uses:
+- Build server status (success/fail)
+- Alerts from a script
+- Temporary messages during demos/streams
+
+The overlay supports:
+- **Matrix pixels** (20x7) with per-pixel RGB color
+- **Timeline pixels** (12 LEDs) with per-pixel RGB color
+- **Text strings** (digits + letters) with a single color or **per-character colors**
+
+All overlay types support a **timeout** (TTL). When the timeout expires, the overlay is automatically removed.
+
+### Coordinate system
+
+- Matrix `x`: 0..19 (left to right)
+- Matrix `y`: 0..6 (top to bottom)
+- Timeline `i` / `index`: 0..11
+
+### Color format
+
+Colors are accepted as:
+- Hex strings: `"#RRGGBB"`
+- 24-bit integers: `0xRRGGBB`
+
+### Timeout behavior
+
+- `timeout_ms` is a **TTL**, relative to when the request is received.
+- If you omit `timeout_ms` or set it to `0`, the default is **10 seconds**.
+- To keep an overlay permanently visible, re-send the same request periodically (for example, every 5 seconds).
+
+### Endpoints
+
+#### GET `/api/overlay`
+
+Returns whether any overlay content is active and how long remains.
+
+Example:
+```bash
+curl http://weatherthing.local/api/overlay
+```
+
+#### POST `/api/overlay/clear`
+
+Clears overlays.
+
+Body (optional):
+```json
+{ "target": "all" }
+```
+
+Valid `target` values:
+- `all`
+- `matrix`
+- `timeline`
+- `text`
+
+Example:
+```bash
+curl -X POST http://weatherthing.local/api/overlay/clear \
+  -H "Content-Type: application/json" \
+  -d '{"target":"all"}'
+```
+
+#### POST `/api/overlay/matrix`
+
+Sets one or more **matrix pixels**.
+
+Body:
+```json
+{
+  "timeout_ms": 15000,
+  "clear": true,
+  "clear_under": false,
+  "pixels": [
+    {"x": 0, "y": 0, "color": "#FF0000"},
+    {"x": 1, "y": 0, "color": "#00FF00"},
+    {"x": 2, "y": 0, "color": "#0000FF"}
+  ]
+}
+```
+
+Notes:
+- If `clear` is `true`, the previous matrix overlay pixels are cleared first.
+- If `clear_under` is `true`, the **normal card rendering is blanked** while the overlay is active (so your overlay has full control).
+
+Example:
+```bash
+curl -X POST http://weatherthing.local/api/overlay/matrix \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_ms":10000,"clear":true,"pixels":[{"x":10,"y":3,"color":"#FF00FF"}]}'
+```
+
+#### POST `/api/overlay/timeline`
+
+Sets the **timeline LEDs**.
+
+Option A: send the full bar as a color array (`colors[0]` goes to timeline LED 0):
+```json
+{
+  "timeout_ms": 20000,
+  "clear": true,
+  "colors": [
+    "#00FF00", "#00FF00", "#00FF00", "#00FF00",
+    "#00FF00", "#00FF00", "#00FF00", "#00FF00",
+    "#00FF00", "#00FF00", "#00FF00", "#00FF00"
+  ]
+}
+```
+
+Option B: set specific LEDs:
+```json
+{
+  "timeout_ms": 10000,
+  "pixels": [
+    {"i": 0, "color": "#00FF00"},
+    {"i": 1, "color": "#FFFF00"},
+    {"i": 2, "color": "#FF0000"}
+  ]
+}
+```
+
+Notes:
+- `clear_under` behaves the same as on the matrix: it blanks the normal timeline rendering while the timeline overlay is active.
+
+#### POST `/api/overlay/text`
+
+Draws a text string on the matrix.
+
+Body:
+```json
+{
+  "text": "BUILD OK",
+  "x": 0,
+  "y": 0,
+  "color": "#00FF00",
+  "timeout_ms": 15000,
+  "scroll": false,
+  "scroll_speed_ms": 60,
+  "clear_under": true
+}
+```
+
+Per-character colors (optional):
+```json
+{
+  "text": "RGB",
+  "x": 0,
+  "y": 0,
+  "color": "#FFFFFF",
+  "colors": ["#FF0000", "#00FF00", "#0000FF"],
+  "timeout_ms": 8000
+}
+```
+
+If you have trouble sending JSON (some clients/shells), `/api/overlay/text` also accepts **query/form parameters** as a fallback:
+
+- `text` (or `msg`)
+- `x`, `y`
+- `color` (hex like `#00FF00`)
+- `timeout_ms`
+- `scroll` (0/1)
+- `scroll_speed_ms`
+- `clear_under` (0/1)
+
+Supported characters:
+- `0-9`
+- `A-Z` (lowercase is accepted too)
+- `:` `.` `-` and space
+
+Windows PowerShell examples (use `curl.exe`):
+
+Clear all overlays:
+```powershell
+curl.exe -X POST http://weatherthing.local/api/overlay/clear `
+  -H "Content-Type: application/json" `
+  -d '{"target":"all"}'
+```
+
+Write a static message (top-left) for 10 seconds:
+```powershell
+$body = @{
+  text = "HELLO WORLD"
+  x = 0
+  y = 0
+  color = "#00FF00"
+  timeout_ms = 10000
+  scroll = $false
+  clear_under = $true
+} | ConvertTo-Json -Compress
+
+curl.exe --noproxy "*" -X POST http://weatherthing.local/api/overlay/text `
+  -H "Content-Type: application/json" `
+  --data-binary $body
+```
+
+Scroll `HELLO WORLD` across the display for 15 seconds:
+```powershell
+$body = @{
+  text = "HELLO WORLD"
+  y = 0
+  color = "#00FF00"
+  timeout_ms = 15000
+  scroll = $true
+  scroll_speed_ms = 60
+  clear_under = $true
+} | ConvertTo-Json -Compress
+
+curl.exe --noproxy "*" -X POST http://weatherthing.local/api/overlay/text `
+  -H "Content-Type: application/json" `
+  --data-binary $body
+```
+
+If JSON still fails on your setup, use the query-parameter fallback (note the URL must be quoted in PowerShell, and `#` must be encoded as `%23`):
+```powershell
+curl.exe --noproxy "*" -X POST "http://192.168.88.101/api/overlay/text?text=HELLO%20WORLD&x=0&y=0&color=%2300FF00&timeout_ms=10000&scroll=0&clear_under=1"
+```
+
+---
+
 ## Developer Guide: Adding Custom Cards
 
 ### Card Architecture
 
 Each card is a struct with three function pointers:
-
 ```cpp
 struct Card {
     void (*setup)();                      // Called once when card activates
