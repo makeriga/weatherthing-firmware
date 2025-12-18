@@ -144,6 +144,9 @@ void settings_begin()
     g_settings.touchShortcutCard = 0xFF;
     g_settings.touchShortcutPreset = 0;
     
+    // UI Language defaults
+    g_settings.uiLang = 1;  // Latvian by default
+    
     // Load from flash
     if (g_prefs.begin("wtsettings", true))
     {
@@ -314,6 +317,9 @@ void settings_begin()
         g_settings.touchShortcutCard = g_prefs.getUChar("touchCard", 0xFF);
         g_settings.touchShortcutPreset = g_prefs.getUChar("touchPreset", 0);
         
+        // UI Language settings
+        g_settings.uiLang = g_prefs.getUChar("uiLang", 0);
+        
         g_prefs.end();
     }
     
@@ -460,6 +466,9 @@ void settings_save()
         // Touch shortcut settings
         g_prefs.putUChar("touchCard", g_settings.touchShortcutCard);
         g_prefs.putUChar("touchPreset", g_settings.touchShortcutPreset);
+        
+        // UI Language settings
+        g_prefs.putUChar("uiLang", g_settings.uiLang);
         
         g_prefs.end();
     }

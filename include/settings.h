@@ -131,6 +131,9 @@ struct Settings
     // Touch Shortcut Settings
     uint8_t touchShortcutCard;   // Card to show when touch button pressed (0xFF = disabled)
     uint8_t touchShortcutPreset; // Preset within that card
+    
+    // UI Language Settings
+    uint8_t uiLang;              // 0=English, 1=Latvian
 };
 
 // Initialize settings (load from flash)
