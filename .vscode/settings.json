@@ -1,3 +1,18 @@
 {
-    "idf.portWin": "COM5"
+    "idf.portWin": "COM5",
+    "files.associations": {
+        "array": "cpp",
+        "atomic": "cpp",
+        "*.tcc": "cpp",
+        "bitset": "cpp",
+        "chrono": "cpp",
+        "exception": "cpp",
+        "iosfwd": "cpp",
+        "new": "cpp",
+        "ostream": "cpp",
+        "sstream": "cpp",
+        "streambuf": "cpp",
+        "cmath": "cpp",
+        "typeinfo": "cpp"
+    }
 }

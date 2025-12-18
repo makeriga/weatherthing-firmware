@@ -1411,6 +1411,19 @@ static uint8_t getRandomEnabledPreset(uint8_t card, uint8_t maxPresets) {
     return enabledList[random(count)];
 }
 
+// Select a random enabled preset for cards used in auto-cycle
+static uint8_t pickAutoCyclePreset(uint8_t card) {
+    switch (card) {
+        case CARD_WEATHER:   return getRandomEnabledPreset(CARD_WEATHER, WEATHER_PRESET_COUNT);
+        case CARD_CLOCK:     return getRandomEnabledPreset(CARD_CLOCK,   CLOCK_PRESET_COUNT);
+        case CARD_VU:        return getRandomEnabledPreset(CARD_VU,      VU_PRESET_COUNT);
+        case CARD_COUNTDOWN: return getRandomEnabledPreset(CARD_COUNTDOWN, COUNTDOWN_PRESET_COUNT);
+        case CARD_POMODORO:  return getRandomEnabledPreset(CARD_POMODORO,  POMODORO_PRESET_COUNT);
+        case CARD_SUN:       return getRandomEnabledPreset(CARD_SUN,       SUN_PRESET_COUNT);
+        default:             return 0; // Single-preset cards
+    }
+}
+
 // Count total items (cards + presets)
 static uint8_t getTotalItems()
 {
@@ -2325,11 +2338,15 @@ void cards_loop()
             // Switch to next card
             uint8_t next = getNextEnabledCard(g_currentCard);
             if (next != g_currentCard) {
-                // Reset presets for consistency
-                g_weatherPreset = 0; 
-                g_clockPreset = 0;
-                g_vuPreset = 0;
-                
+                // Pick a random enabled preset for the next card
+                uint8_t nextPreset = pickAutoCyclePreset(next);
+                if (next == CARD_WEATHER) g_weatherPreset = nextPreset;
+                else if (next == CARD_CLOCK) g_clockPreset = nextPreset;
+                else if (next == CARD_VU) g_vuPreset = nextPreset;
+                else if (next == CARD_COUNTDOWN) g_countdownPreset = nextPreset;
+                else if (next == CARD_POMODORO) g_pomodoroPreset = nextPreset;
+                else if (next == CARD_SUN) g_sunPreset = nextPreset;
+
                 g_currentCard = next;
                 g_cards[g_currentCard].setup();
                 startTitleAnimation(now);

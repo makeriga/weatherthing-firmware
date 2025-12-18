@@ -634,6 +634,14 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
         
         // Collapsible content wrapper
         html += "<div class=\"card-body\" style=\"margin-top:10px\">";
+        // Quick action row
+        html += "<div style=\"display:flex;align-items:center;gap:10px;margin:6px 0 12px\">";
+        html += "<button type=\"button\" onclick=\"clearPresets(" + String(cardIdx) + ",this)\" style=\"background:#fff;color:#000;border:2px solid #000;padding:6px 10px;font-weight:bold;box-shadow:3px 3px 0 #000;cursor:pointer\">&#x274C; ";
+        html += TR("Uncheck all presets", "Noņemt atzīmes visiem stiliem");
+        html += "</button>";
+        html += "<span style=\"font-size:0.85em;color:#444;max-width:360px;line-height:1.4\">";
+        html += TR("Clears every box so this card stays out of auto-rotation until you pick presets again.", "Noņem visas atzīmes, lai šī karte nerādītos rotācijā, līdz atkal izvēlēsies stilus.");
+        html += "</span></div>";
         // Preset buttons with checkboxes for rotation inclusion
         html += "<div style=\"display:flex;flex-wrap:wrap;gap:8px\">";
         
@@ -1317,6 +1325,14 @@ function saveOrder() {
     let order = [];
     items.forEach(item => order.push(item.getAttribute('data-idx')));
     document.getElementById('orderInput').value = order.join(',');
+}
+
+function clearPresets(card, btn) {
+    const cardEl = btn.closest('.gallery-card');
+    if (!cardEl) return;
+    cardEl.querySelectorAll('input[type=checkbox][name^=\"p' + card + '_\"]').forEach(cb => cb.checked = false);
+    btn.textContent = '✓ ' + (btn.textContent.includes('Noņemt') ? 'Notīrīts' : 'Cleared');
+    setTimeout(() => { btn.textContent = '✖ ' + (btn.textContent.includes('Notīrīts') ? 'Noņemt atzīmes visiem stiliem' : 'Uncheck all presets'); }, 1200);
 }
 
 // Collapse/expand cards
