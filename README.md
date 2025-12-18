@@ -1,7 +1,7 @@
 # WeatherThing Firmware
-
+![Weatherthing photo](/img/weatherthing.jpg)
 ESP32-C3 firmware for the WeatherThing LED matrix display.
-
+View hardware files [here>](https://github.com/makeriga/weatherthing-hardware) 
 ## Features
 
 ### Display Cards
