@@ -1,6 +1,7 @@
 {
   "name": "WeatherThing Firmware",
-  "version": "83f9918",
+  "version": "ccef743",
+  "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-C3",
