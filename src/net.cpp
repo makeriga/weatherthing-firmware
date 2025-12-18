@@ -214,7 +214,29 @@ input:focus,select:focus{background:#000;color:#fff;transform:scale(1.02)}
 <script>
 function showCard(c,p,el){if(el)el.style.background='#ffa500';fetch('/api/card?card='+c+'&preset='+p).then(function(r){return r.json();}).then(function(){if(el){el.style.background='#4ade80';setTimeout(function(){el.style.background='#fffacd';},500);}}).catch(function(){if(el)el.style.background='#f00';});}
 function showFirstPreset(btn,card){showCard(card,0,btn);}
-function saveTouchShortcut(){var sel=document.querySelector('select[name=touchShortcut]');var btn=event.target;btn.textContent='Saving...';fetch('/api/touch_shortcut?val='+sel.value).then(function(r){return r.json();}).then(function(){btn.textContent='\\u2705 Saved!';btn.style.background='#4ade80';setTimeout(function(){btn.textContent='\\uD83D\\uDCBE Save';btn.style.background='#4CAF50';},1500);}).catch(function(){btn.textContent='\\u274C Error';btn.style.background='#f00';});}
+function saveTouchShortcut(){
+    const sel=document.querySelector('select[name=touchShortcut]');
+    const lock=document.querySelector('#touchLock');
+    const btn=event.target.closest('button') || event.target;
+    btn.textContent='Saving...';
+    const params = new URLSearchParams();
+    params.set('val', sel.value);
+    params.set('lock', lock && lock.checked ? '1' : '0');
+    fetch('/api/touch_shortcut?'+params.toString())
+    .then(function(r){return r.ok?r.json():Promise.reject();})
+    .then(function(){
+        btn.textContent='✅ Saved!';
+        btn.style.background='#4ade80';
+        setTimeout(function(){
+            btn.textContent='💾 Save';
+            btn.style.background='#4CAF50';
+        },1200);
+    })
+    .catch(function(){
+        btn.textContent='❌ Error';
+        btn.style.background='#f00';
+    });
+}
 function setLang(lang){fetch('/api/lang?lang='+lang).then(function(r){return r.json();}).then(function(){location.reload();}).catch(function(){alert('Error changing language');});}
 window.addEventListener('DOMContentLoaded', function(){
 const lg=document.querySelector('.logo-svg linearGradient');
@@ -500,7 +522,7 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     html += "<div style=\"display:flex;gap:15px;align-items:center;flex-wrap:wrap;margin-bottom:20px;padding:15px;background:#fff3e0;border:3px solid #FF9800\">";
     html += "<span style=\"font-size:1.5em\">&#x1F446;</span>";
     html += "<span style=\"font-weight:bold\">";
-    html += TR("Touch Shortcut:", "Pieskāriena sa\u012bsne:");
+    html += TR("Touch Shortcut:", "Pieskāriena saīsne:");
     html += "</span>";
     html += "<select name=\"touchShortcut\" style=\"padding:8px;min-width:200px;font-size:0.95em\">";
     
@@ -584,9 +606,15 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     html += "</optgroup>";
     
     html += "</select>";
+    html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px\">";
+    html += "<label style=\"display:flex;align-items:center;gap:8px;font-weight:bold\">";
+    html += "<input type=\"checkbox\" id=\"touchLock\" name=\"touchLock\" value=\"1\"" + String(cfg.touchShortcutLocksCycle ? " checked" : "") + " style=\"width:18px;height:18px\">";
+    html += TR("Pause auto-rotation after shortcut until a button is pressed", "Apturēt auto-rotāciju pēc saīsnes, līdz nospiesta poga");
+    html += "</label>";
     html += "<button type=\"button\" onclick=\"saveTouchShortcut()\" style=\"background:#4CAF50;color:#fff;border:2px solid #000;padding:8px 16px;font-weight:bold;cursor:pointer\">&#x1F4BE; ";
     html += TR("Save", "Saglabāt");
     html += "</button>";
+    html += "</div>";
     html += "<span style=\"font-size:0.85em;color:#666\">";
     html += TR("Quick access when you tap the touch sensor", "Ātra piekļuve, pieskaroties sensora pogai");
     html += "</span>";
@@ -2739,6 +2767,7 @@ static void handleApiTouchShortcut()
             Settings& cfg = settings_get();
             cfg.touchShortcutCard = (uint8_t)val.substring(0, underscore).toInt();
             cfg.touchShortcutPreset = (uint8_t)val.substring(underscore + 1).toInt();
+            cfg.touchShortcutLocksCycle = server.hasArg("lock") && server.arg("lock") == "1";
             settings_save();
         }
     }

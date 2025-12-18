@@ -131,6 +131,7 @@ struct Settings
     // Touch Shortcut Settings
     uint8_t touchShortcutCard;   // Card to show when touch button pressed (0xFF = disabled)
     uint8_t touchShortcutPreset; // Preset within that card
+    bool touchShortcutLocksCycle; // If true, touch shortcut pauses auto-rotation until manual button switch
     
     // UI Language Settings
     uint8_t uiLang;              // 0=English, 1=Latvian

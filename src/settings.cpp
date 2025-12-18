@@ -143,6 +143,7 @@ void settings_begin()
     // Touch shortcut defaults (0xFF = disabled)
     g_settings.touchShortcutCard = 0xFF;
     g_settings.touchShortcutPreset = 0;
+    g_settings.touchShortcutLocksCycle = false;
     
     // UI Language defaults
     g_settings.uiLang = 1;  // Latvian by default
@@ -316,6 +317,7 @@ void settings_begin()
         // Touch shortcut settings
         g_settings.touchShortcutCard = g_prefs.getUChar("touchCard", 0xFF);
         g_settings.touchShortcutPreset = g_prefs.getUChar("touchPreset", 0);
+        g_settings.touchShortcutLocksCycle = g_prefs.getBool("touchLock", false);
         
         // UI Language settings
         g_settings.uiLang = g_prefs.getUChar("uiLang", 0);
@@ -466,6 +468,7 @@ void settings_save()
         // Touch shortcut settings
         g_prefs.putUChar("touchCard", g_settings.touchShortcutCard);
         g_prefs.putUChar("touchPreset", g_settings.touchShortcutPreset);
+        g_prefs.putBool("touchLock", g_settings.touchShortcutLocksCycle);
         
         // UI Language settings
         g_prefs.putUChar("uiLang", g_settings.uiLang);

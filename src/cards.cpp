@@ -1442,6 +1442,7 @@ static bool g_inGameMenu = true;
 
 // Title animation variables
 static uint32_t g_lastAutoCycle = 0;
+static bool g_touchCycleLocked = false;
 
 // Forward declaration
 static void startTitleAnimation(uint32_t now);
@@ -1627,6 +1628,7 @@ static void handleButtons(uint32_t now)
     // Reset auto cycle on interaction
     if (b1 || b2) {
         g_lastAutoCycle = now;
+        g_touchCycleLocked = false; // Manual button press unlocks touch lock
     }
     
     // Games card: buttons control the game, not navigation
@@ -2227,6 +2229,7 @@ void cards_loop()
     if (touchEdge && !touchHijacked && cfg.touchShortcutCard != 0xFF) {
         uint8_t targetCard = cfg.touchShortcutCard;
         uint8_t targetPreset = cfg.touchShortcutPreset;
+        g_touchCycleLocked = cfg.touchShortcutLocksCycle;
         
         // Switch to the shortcut card
         if (targetCard < 16 && targetCard != g_currentCard) {
@@ -2333,7 +2336,7 @@ void cards_loop()
     }
     
     // Auto cycle (skip if demo mode active)
-    if (!cfg.demoMode && cfg.cycleEnabled && cfg.cycleDuration > 0 && g_currentCard != CARD_GAMES) {
+    if (!cfg.demoMode && cfg.cycleEnabled && cfg.cycleDuration > 0 && g_currentCard != CARD_GAMES && !g_touchCycleLocked) {
         if (now - g_lastAutoCycle > (uint32_t)cfg.cycleDuration * 1000) {
             // Switch to next card
             uint8_t next = getNextEnabledCard(g_currentCard);
