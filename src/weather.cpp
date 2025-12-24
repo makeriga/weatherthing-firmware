@@ -11,6 +11,7 @@
 #include "freertos/portmacro.h"
 
 static WeatherType codeToType(int code);
+static String url_encode(const String& in);
 
 static float g_lat = 56.9496f;  // Default: Riga, Latvia
 static float g_lon = 24.1052f;
@@ -50,6 +51,35 @@ static WeatherType symbolToType(const String& symbol)
     }
 
     return WEATHER_CLOUDY;
+}
+
+// Minimal URL encoder for query parameters
+static String url_encode(const String& in)
+{
+    String out;
+    const char hex[] = "0123456789ABCDEF";
+    for (size_t i = 0; i < in.length(); ++i)
+    {
+        unsigned char c = (unsigned char)in[i];
+        if ((c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~')
+        {
+            out += (char)c;
+        }
+        else if (c == ' ')
+        {
+            out += "%20";
+        }
+        else
+        {
+            out += '%';
+            out += hex[(c >> 4) & 0xF];
+            out += hex[c & 0xF];
+        }
+    }
+    return out;
 }
 
 static bool fetch_open_meteo(WeatherData* outCurrent, ForecastSlot outForecast[12])
@@ -655,7 +685,7 @@ bool weather_set_city(const char* city)
     
     // Use Open-Meteo geocoding API
     String url = "http://geocoding-api.open-meteo.com/v1/search?name=";
-    url += city;
+    url += url_encode(String(city));
     url += "&count=1&language=en&format=json";
     
     Serial.print("Geocoding: ");
@@ -672,19 +702,21 @@ bool weather_set_city(const char* city)
         String payload = http.getString();
         
         // Parse: {"results":[{"latitude":51.5074,"longitude":-0.1278,...}]}
-        int latIdx = payload.indexOf("\"latitude\":");
-        int lonIdx = payload.indexOf("\"longitude\":");
+        int resultsIdx = payload.indexOf("\"results\"");
+        int latIdx = resultsIdx >= 0 ? payload.indexOf("\"latitude\":", resultsIdx) : -1;
+        int lonIdx = resultsIdx >= 0 ? payload.indexOf("\"longitude\":", resultsIdx) : -1;
         
         if (latIdx >= 0 && lonIdx >= 0)
         {
             int latStart = latIdx + 11;
             int latEnd = payload.indexOf(",", latStart);
-            float lat = payload.substring(latStart, latEnd).toFloat();
+            if (latEnd < 0) latEnd = payload.indexOf("}", latStart);
+            float lat = (latEnd > latStart) ? payload.substring(latStart, latEnd).toFloat() : 0.0f;
             
             int lonStart = lonIdx + 12;
             int lonEnd = payload.indexOf(",", lonStart);
             if (lonEnd < 0) lonEnd = payload.indexOf("}", lonStart);
-            float lon = payload.substring(lonStart, lonEnd).toFloat();
+            float lon = (lonEnd > lonStart) ? payload.substring(lonStart, lonEnd).toFloat() : 0.0f;
             
             if (lat != 0 || lon != 0)
             {

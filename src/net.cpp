@@ -54,6 +54,8 @@ static void handleApiTouchShortcut();
 static void handleApiVersion();
 static void handleApiDiag();
 static void handleApiCheckUpdate();
+static void handleApiCityLookup();
+static void handleApiCitySuggest();
 static void handleCardsConfigPost();
 static void handleEditor();
 static void handleApiSprites();
@@ -67,6 +69,35 @@ static void handleApiOverlayMatrix();
 static void handleApiOverlayTimeline();
 static void handleApiOverlayText();
 static void handleApiLang();
+
+// Minimal URL encoder for API queries (keep here to avoid cross-file coupling)
+static String url_encode_city(const String& in)
+{
+    String out;
+    const char hex[] = "0123456789ABCDEF";
+    for (size_t i = 0; i < in.length(); ++i)
+    {
+        unsigned char c = (unsigned char)in[i];
+        if ((c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~')
+        {
+            out += (char)c;
+        }
+        else if (c == ' ')
+        {
+            out += "%20";
+        }
+        else
+        {
+            out += '%';
+            out += hex[(c >> 4) & 0xF];
+            out += hex[c & 0xF];
+        }
+    }
+    return out;
+}
 
 // ============== TRANSLATION SYSTEM ==============
 // Returns English or Latvian string based on settings
@@ -339,19 +370,27 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     html += TR("Default: Riga, Latvia", "Noklusējums: Rīga, Latvija");
     html += ")</p>";
     html += "<div style=\"display:flex;gap:10px;flex-wrap:wrap;align-items:center\">";
-    html += "<input name=\"city\" placeholder=\"";
+    html += "<input id=\"cityInput\" name=\"city\" placeholder=\"";
     html += TR("Enter city name", "Ievadiet pilsētas nosaukumu");
-    html += "\" style=\"flex:1;min-width:150px;padding:10px\">";
+    html += "\" style=\"flex:1;min-width:150px;padding:10px\" oninput=\"suggestCity(event)\">";
+    html += "<button type=\"button\" onclick=\"lookupCity(this)\" class=\"btn btn-secondary\" style=\"padding:10px 12px;border:2px solid #000\">&#x1F50D; ";
+    html += TR("Lookup", "Meklēt");
+    html += "</button>";
     html += "<span style=\"font-weight:bold\">";
     html += TR("OR", "VAI");
     html += "</span>";
-    html += "<input name=\"lat\" type=\"number\" step=\"0.0001\" placeholder=\"";
+    html += "<input id=\"latInput\" name=\"lat\" type=\"number\" step=\"0.0001\" placeholder=\"";
     html += TR("Latitude", "Platums");
     html += "\" value=\"" + String(lat, 4) + "\" style=\"width:100px;padding:10px\">";
-    html += "<input name=\"lon\" type=\"number\" step=\"0.0001\" placeholder=\"";
+    html += "<input id=\"lonInput\" name=\"lon\" type=\"number\" step=\"0.0001\" placeholder=\"";
     html += TR("Longitude", "Garums");
     html += "\" value=\"" + String(lon, 4) + "\" style=\"width:100px;padding:10px\">";
-    html += "</div></div>";
+    html += "</div>";
+    html += "<div style=\"margin-top:8px\">";
+    html += "<div id=\"cityStatus\" style=\"font-size:0.9em;color:#444;margin-bottom:6px\"></div>";
+    html += "<div id=\"citySuggest\" style=\"display:flex;flex-direction:column;gap:8px;width:100%;\"></div>";
+    html += "</div>";
+    html += "</div>";
     
     // WiFi Section (if not in AP mode)
     if (!g_isApMode) {
@@ -1565,6 +1604,89 @@ window.addEventListener('DOMContentLoaded', function(){
     if(act==='/settings' || act==='/cards_config' || act==='/simulate' || act==='/card') ajaxifyForm(f);
   });
 });
+
+async function lookupCity(btn){
+  const cityEl=document.getElementById('cityInput');
+  const latEl=document.getElementById('latInput');
+  const lonEl=document.getElementById('lonInput');
+  const statusEl=document.getElementById('cityStatus');
+  const suggestEl=document.getElementById('citySuggest');
+  if(!cityEl||!latEl||!lonEl||!statusEl) return;
+  const city=cityEl.value.trim();
+  if(city.length<2){
+    statusEl.style.color='#d14334';
+    statusEl.textContent='Enter at least 2 characters.';
+    if(suggestEl) suggestEl.innerHTML='';
+    return;
+  }
+  statusEl.style.color='#444';
+  statusEl.textContent='Looking up...';
+  if(suggestEl) suggestEl.innerHTML='';
+  btn.disabled=true;
+  try{
+    const resp=await fetch('/api/city_lookup?city='+encodeURIComponent(city));
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const data=await resp.json();
+    if(data.ok){
+      latEl.value=data.lat.toFixed(4);
+      lonEl.value=data.lon.toFixed(4);
+      statusEl.style.color='#2e7d32';
+      statusEl.textContent=data.msg||'City found. Coordinates filled.';
+    }else{
+      statusEl.style.color='#d14334';
+      statusEl.textContent=data.msg||'City not found.';
+    }
+  }catch(e){
+    statusEl.style.color='#d14334';
+    statusEl.textContent='Lookup failed. Check connection.';
+  }finally{
+    btn.disabled=false;
+  }
+}
+
+let suggestTimer=null;
+async function suggestCity(ev){
+  const cityEl=document.getElementById('cityInput');
+  const suggestEl=document.getElementById('citySuggest');
+  if(!cityEl||!suggestEl) return;
+  const city=cityEl.value.trim();
+  if(city.length<3){
+    suggestEl.innerHTML='';
+    return;
+  }
+  if(suggestTimer) clearTimeout(suggestTimer);
+  suggestTimer=setTimeout(async ()=>{
+    try{
+      const resp=await fetch('/api/city_suggest?city='+encodeURIComponent(city));
+      if(!resp.ok) return;
+      const data=await resp.json();
+      if(!data.ok || !Array.isArray(data.items)){suggestEl.innerHTML='';return;}
+      suggestEl.innerHTML='';
+      data.items.slice(0,5).forEach(item=>{
+        const btn=document.createElement('button');
+        btn.type='button';
+        btn.textContent=item.name;
+        btn.style.cssText='text-align:left;padding:10px 12px;border:2px solid #000;background:linear-gradient(135deg,#fff,#eef6ff);cursor:pointer;border-radius:10px;box-shadow:2px 2px 0 #000;width:100%';
+        btn.onmouseenter=()=>{btn.style.background='linear-gradient(135deg,#e0f3ff,#d8eaff)';};
+        btn.onmouseleave=()=>{btn.style.background='linear-gradient(135deg,#fff,#eef6ff)';};
+        btn.onclick=()=>{
+          document.getElementById('cityInput').value=item.name;
+          document.getElementById('latInput').value=item.lat.toFixed(4);
+          document.getElementById('lonInput').value=item.lon.toFixed(4);
+          const statusEl=document.getElementById('cityStatus');
+          if(statusEl){
+            statusEl.style.color='#2e7d32';
+            statusEl.textContent=item.msg||'City selected from suggestions.';
+          }
+          suggestEl.innerHTML='';
+        };
+        suggestEl.appendChild(btn);
+      });
+    }catch(e){
+      suggestEl.innerHTML='';
+    }
+  }, 250);
+}
 </script>
 </body></html>)";
 
@@ -1593,6 +1715,8 @@ static void startServer()
     server.on("/api/simulate", HTTP_GET, handleApiSimulate);
     server.on("/api/touch_shortcut", HTTP_GET, handleApiTouchShortcut);
     server.on("/cards_config", HTTP_POST, handleCardsConfigPost);
+    server.on("/api/city_lookup", HTTP_GET, handleApiCityLookup);
+    server.on("/api/city_suggest", HTTP_GET, handleApiCitySuggest);
 
     server.on("/api/overlay", HTTP_GET, handleApiOverlayGet);
     server.on("/api/overlay/clear", HTTP_POST, handleApiOverlayClear);
@@ -1652,6 +1776,120 @@ static void handleApiOverlayClear()
     else custom_overlay_clear_all();
 
     server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// City lookup helper for UI
+static void handleApiCityLookup()
+{
+    String city = server.hasArg("city") ? server.arg("city") : "";
+    city.trim();
+    JsonDocument doc;
+    if (city.length() < 2) {
+        doc["ok"] = false;
+        doc["msg"] = TR("City name required", "Nepieciešams pilsētas nosaukums");
+        String out;
+        serializeJson(doc, out);
+        server.send(400, "application/json", out);
+        return;
+    }
+
+    bool found = weather_set_city(city.c_str());
+    doc["ok"] = found;
+    doc["msg"] = found ? TR("City found and saved", "Pilsēta atrasta un saglabāta")
+                       : TR("City not found", "Pilsēta nav atrasta");
+    if (found) {
+        float lat, lon;
+        weather_get_location(&lat, &lon);
+        doc["lat"] = lat;
+        doc["lon"] = lon;
+    }
+    String out;
+    serializeJson(doc, out);
+    server.send(found ? 200 : 404, "application/json", out);
+}
+
+// City suggestion for autocomplete (returns up to 5)
+static void handleApiCitySuggest()
+{
+    String city = server.hasArg("city") ? server.arg("city") : "";
+    city.trim();
+    JsonDocument doc;
+    JsonArray items = doc["items"].to<JsonArray>();
+    if (city.length() < 3) {
+        doc["ok"] = false;
+        doc["msg"] = TR("Type at least 3 characters", "Ievadiet vismaz 3 simbolus");
+        String out; serializeJson(doc, out);
+        server.send(400, "application/json", out);
+        return;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        doc["ok"] = false;
+        doc["msg"] = TR("Not connected to WiFi", "Nav savienojuma ar WiFi");
+        String out; serializeJson(doc, out);
+        server.send(503, "application/json", out);
+        return;
+    }
+
+    HTTPClient http;
+    String url = "http://geocoding-api.open-meteo.com/v1/search?name=";
+    url += url_encode_city(city);
+    url += "&count=5&language=en&format=json";
+
+    http.begin(url);
+    http.setTimeout(10000);
+    int code = http.GET();
+
+    doc["ok"] = false;
+    if (code == 200) {
+        String payload = http.getString();
+        int resIdx = payload.indexOf("\"results\"");
+        int arrStart = payload.indexOf("[", resIdx);
+        int arrEnd = payload.indexOf("]", arrStart);
+        if (arrStart > 0 && arrEnd > arrStart) {
+            String arr = payload.substring(arrStart + 1, arrEnd);
+            int start = 0;
+            int added = 0;
+            while (start < (int)arr.length() && added < 5) {
+                int next = arr.indexOf("},{", start);
+                if (next < 0) next = arr.length();
+                String entry = arr.substring(start, next);
+                int nameIdx = entry.indexOf("\"name\":\"");
+                int latIdx = entry.indexOf("\"latitude\":");
+                int lonIdx = entry.indexOf("\"longitude\":");
+                if (nameIdx >= 0 && latIdx >= 0 && lonIdx >= 0) {
+                    int nameStart = nameIdx + 8;
+                    int nameEnd = entry.indexOf("\"", nameStart);
+                    String name = entry.substring(nameStart, nameEnd);
+                    int latStart = latIdx + 11;
+                    int latEnd = entry.indexOf(",", latStart); if (latEnd < 0) latEnd = entry.length();
+                    int lonStart = lonIdx + 12;
+                    int lonEnd = entry.indexOf(",", lonStart); if (lonEnd < 0) lonEnd = entry.length();
+                    float lat = entry.substring(latStart, latEnd).toFloat();
+                    float lon = entry.substring(lonStart, lonEnd).toFloat();
+                    JsonObject obj = items.add<JsonObject>();
+                    obj["name"] = name;
+                    obj["lat"] = lat;
+                    obj["lon"] = lon;
+                    added++;
+                }
+                start = next + 3;
+            }
+            if (added > 0) {
+                doc["ok"] = true;
+            } else {
+                doc["msg"] = TR("No matches", "Nav rezultātu");
+            }
+        } else {
+            doc["msg"] = TR("No matches", "Nav rezultātu");
+        }
+    } else {
+        doc["msg"] = TR("Lookup failed", "Meklēšana neizdevās");
+    }
+    http.end();
+
+    String out; serializeJson(doc, out);
+    server.send(doc["ok"] == true ? 200 : 404, "application/json", out);
 }
 
 static void handleApiOverlayMatrix()
