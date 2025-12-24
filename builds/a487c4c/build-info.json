@@ -1,0 +1,8 @@
+{
+  "sha": "a487c4c8f5a4e06fb311b35eb7b7047eaab9b632",
+  "sha_short": "a487c4c",
+  "commit_message": "location lookup encoding fix, added auto suggestions and lookup button",
+  "commit_date": "2025-12-24 23:13:00 +0200",
+  "build_date": "2025-12-24T21:14:19Z",
+  "branch": "main"
+}
