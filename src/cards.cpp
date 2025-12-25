@@ -223,6 +223,18 @@ static uint32_t g_clockLastUpdate = 0;
 static bool g_clockTimeValid = false;
 static tm g_clockTime;
 
+// Return clock time adjusted by configured timezone offset (hours)
+static tm getClockLocalTime()
+{
+    tm local = g_clockTime;
+    if (!g_clockTimeValid) return local;
+
+    time_t utc = mktime(&local); // g_clockTime is kept in UTC
+    utc += (time_t)settings_get().tzOffset * 3600;
+    localtime_r(&utc, &local);
+    return local;
+}
+
 // VU meter state
 static const uint8_t VU_SAMPLES = 64;
 static int16_t g_vuSamples[VU_SAMPLES];
@@ -2501,12 +2513,10 @@ static void drawDigitGradient(uint8_t x, uint8_t y, uint8_t d, uint32_t cTop, ui
 
 // Get adjusted clock time
 static void getClockTime(int& hour, uint8_t& minute, uint8_t& second) {
-    int8_t tzOffset = settings_get().tzOffset;
-    hour = g_clockTime.tm_hour + tzOffset;
-    if (hour < 0) hour += 24;
-    if (hour >= 24) hour -= 24;
-    minute = g_clockTime.tm_min;
-    second = g_clockTime.tm_sec;
+    tm local = getClockLocalTime();
+    hour = local.tm_hour;
+    minute = local.tm_min;
+    second = local.tm_sec;
 }
 
 // Watchface 0: Digital (gradient with cycle)
@@ -3490,9 +3500,9 @@ static void clock_render_date() {
     wt_display_clear();
     wt_timeline_clear();
     
-    int8_t tzOffset = settings_get().tzOffset;
-    int day = g_clockTime.tm_mday;
-    int month = g_clockTime.tm_mon + 1;
+    tm local = getClockLocalTime();
+    int day = local.tm_mday;
+    int month = local.tm_mon + 1;
     
     uint32_t col = wt_color(100, 200, 255);
     uint32_t dotCol = wt_color(255, 150, 50);
@@ -3506,7 +3516,7 @@ static void clock_render_date() {
     drawDigit(x, 0, month % 10, col);
     
     // Show day of week on timeline
-    int dow = g_clockTime.tm_wday; // 0=Sun, 1=Mon...
+    int dow = local.tm_wday; // 0=Sun, 1=Mon...
     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
         uint8_t dayIdx = i / (WT_TIMELINE_PIXELS / 7);
         if (dayIdx == dow) {
@@ -3522,9 +3532,10 @@ static void clock_render_fulldate() {
     wt_display_clear();
     wt_timeline_clear();
     
-    int day = g_clockTime.tm_mday;
-    int month = g_clockTime.tm_mon + 1;
-    int year = (g_clockTime.tm_year + 1900) % 100;
+    tm local = getClockLocalTime();
+    int day = local.tm_mday;
+    int month = local.tm_mon + 1;
+    int year = (local.tm_year + 1900) % 100;
     
     uint32_t col = wt_color(255, 200, 100);
     uint32_t dotCol = wt_color(100, 100, 100);
@@ -3543,7 +3554,7 @@ static void clock_render_fulldate() {
     drawDigit(x, 0, year % 10, col);
     
     // Progress through year on timeline
-    int yday = g_clockTime.tm_yday;
+    int yday = local.tm_yday;
     uint8_t progress = (yday * WT_TIMELINE_PIXELS) / 365;
     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
         if (i <= progress) {
@@ -3558,7 +3569,8 @@ static void clock_render_weekday() {
     wt_timeline_clear();
     
     static const char* days[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
-    int dow = g_clockTime.tm_wday;
+    tm local = getClockLocalTime();
+    int dow = local.tm_wday;
     const char* dayName = days[dow];
     
     // Color based on day (weekend = warmer)
@@ -3606,8 +3618,9 @@ static void clock_render_nameday() {
     wt_display_clear();
     wt_timeline_clear();
     
-    int day = g_clockTime.tm_mday;
-    int month = g_clockTime.tm_mon + 1;
+    tm local = getClockLocalTime();
+    int day = local.tm_mday;
+    int month = local.tm_mon + 1;
     
     const char* names = namedays_get(month, day);
     if (!names) names = "---";
@@ -3681,8 +3694,9 @@ static void clock_render_weeknum() {
     wt_timeline_clear();
     
     // Calculate ISO week number
-    int yday = g_clockTime.tm_yday;
-    int wday = g_clockTime.tm_wday;
+    tm local = getClockLocalTime();
+    int yday = local.tm_yday;
+    int wday = local.tm_wday;
     // Adjust: ISO week starts Monday (wday: 0=Sun -> 6, 1=Mon -> 0, etc)
     int isoWday = (wday + 6) % 7;
     int week = (yday - isoWday + 10) / 7;
