@@ -1,0 +1,8 @@
+{
+  "sha": "8c170847233802f9f5c28461ce5680c5df708b82",
+  "sha_short": "8c17084",
+  "commit_message": "fixed auto brightness bug due to mic i2s dma adc congestion. Added dark/bright tresholds and live br",
+  "commit_date": "2025-12-27 00:13:40 +0200",
+  "build_date": "2025-12-26T22:15:00Z",
+  "branch": "main"
+}

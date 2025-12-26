@@ -1,8 +1,0 @@
-{
-  "sha": "c7b380a023138e48f2c641d3f917085644d41dd6",
-  "sha_short": "c7b380a",
-  "commit_message": "moved http/s to a separate task, heap management/readout, rss memory optimizations",
-  "commit_date": "2025-12-15 21:22:20 +0200",
-  "build_date": "2025-12-15T19:24:06Z",
-  "branch": "main"
-}
