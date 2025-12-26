@@ -79,13 +79,15 @@ void settings_begin()
     g_settings.tzOffset = 2;  // GMT+2 (Riga, Latvia) by default
     g_settings.btcUpdateMins = 5;    // 5 minute default
     g_settings.stockUpdateMins = 5;  // 5 minute default
-    g_settings.brightMin = 2;         // Minimum brightness (absolute min)
+    g_settings.brightMin = 1;         // Minimum brightness (absolute min)
     g_settings.brightMax = 80;        // Light room brightness (max 127 safe, 255 with highPower)
     g_settings.brightMode = 0;        // Auto by default
     g_settings.brightManual = 50;     // Manual brightness level
     g_settings.brightBlanking = false; // Blanking disabled by default
     g_settings.brightBlankSecs = 30;  // 30 second blanking interval
     g_settings.highPowerMode = false; // Safe mode by default
+    g_settings.brightCalDark = 300;   // Default ADC for dark room
+    g_settings.brightCalBright = 2800; // Default ADC for bright room
     g_settings.forecastHours = 12;   // 12 hour forecast default
     g_settings.wxTimelineSunny = wt_color(255, 180, 0);    // Warm yellow-orange
     g_settings.wxTimelineCloudy = wt_color(140, 140, 160);  // Visible gray-blue tint
@@ -188,13 +190,15 @@ void settings_begin()
         g_settings.cryptoSymbol[sizeof(g_settings.cryptoSymbol) - 1] = '\0';
         
         // Brightness settings
-        g_settings.brightMin = g_prefs.getUChar("brightMin", 2);
+        g_settings.brightMin = g_prefs.getUChar("brightMin", 1);
         g_settings.brightMax = g_prefs.getUChar("brightMax", 80);
         g_settings.brightMode = g_prefs.getUChar("brightMode", 0);
         g_settings.brightManual = g_prefs.getUChar("brightMan", 50);
         g_settings.brightBlanking = g_prefs.getBool("brightBlk", false);
         g_settings.brightBlankSecs = g_prefs.getUChar("blankSec", 30);
         g_settings.highPowerMode = g_prefs.getBool("hiPower", false);
+        g_settings.brightCalDark = g_prefs.getUShort("bCalD", 300);
+        g_settings.brightCalBright = g_prefs.getUShort("bCalB", 2800);
         g_settings.forecastHours = g_prefs.getUChar("fcstHours", 12);
         g_settings.wxTimelineSunny = g_prefs.getUInt("wxTlSun", wt_color(255, 180, 0));
         g_settings.wxTimelineCloudy = g_prefs.getUInt("wxTlCld", wt_color(100, 100, 120));
@@ -357,7 +361,7 @@ void settings_begin()
     if (g_settings.btcUpdateMins > 60) g_settings.btcUpdateMins = 60;
     if (g_settings.stockUpdateMins < 1) g_settings.stockUpdateMins = 1;
     if (g_settings.stockUpdateMins > 60) g_settings.stockUpdateMins = 60;
-    if (g_settings.brightMin < 5) g_settings.brightMin = 5;
+    if (g_settings.brightMin < 1) g_settings.brightMin = 1;
     if (g_settings.brightMin > 40) g_settings.brightMin = 40;
     // Brightness limits depend on high power mode
     uint8_t maxAllowed = g_settings.highPowerMode ? 255 : 127;
@@ -365,6 +369,11 @@ void settings_begin()
     if (g_settings.brightMax > maxAllowed) g_settings.brightMax = maxAllowed;
     if (g_settings.brightManual < 5) g_settings.brightManual = 5;
     if (g_settings.brightManual > maxAllowed) g_settings.brightManual = maxAllowed;
+    if (g_settings.brightCalDark > 4095) g_settings.brightCalDark = 4095;
+    if (g_settings.brightCalBright > 4095) g_settings.brightCalBright = 4095;
+    if (g_settings.brightCalBright <= g_settings.brightCalDark + 10) {
+        g_settings.brightCalBright = g_settings.brightCalDark + 10;
+    }
     if (g_settings.weatherProvider > 2) g_settings.weatherProvider = 0;
     if (g_settings.forecastHours != 12 && g_settings.forecastHours != 24 && g_settings.forecastHours != 48) {
         g_settings.forecastHours = 12;
@@ -416,6 +425,8 @@ void settings_save()
         g_prefs.putBool("brightBlk", g_settings.brightBlanking);
         g_prefs.putUChar("blankSec", g_settings.brightBlankSecs);
         g_prefs.putBool("hiPower", g_settings.highPowerMode);
+        g_prefs.putUShort("bCalD", g_settings.brightCalDark);
+        g_prefs.putUShort("bCalB", g_settings.brightCalBright);
         g_prefs.putUChar("fcstHours", g_settings.forecastHours);
         g_prefs.putUInt("wxTlSun", g_settings.wxTimelineSunny);
         g_prefs.putUInt("wxTlCld", g_settings.wxTimelineCloudy);

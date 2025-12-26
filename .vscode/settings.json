@@ -13,6 +13,8 @@
         "sstream": "cpp",
         "streambuf": "cpp",
         "cmath": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "random": "cpp",
+        "stop_token": "cpp"
     }
 }

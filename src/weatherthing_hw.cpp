@@ -1,5 +1,6 @@
 #include <Adafruit_NeoPixel.h>
 #include "weatherthing_hw.h"
+#include "settings.h"
 #include "driver/gpio.h"
 #include "esp_rom_gpio.h"
 #include "soc/gpio_sig_map.h"
@@ -69,6 +70,8 @@ static WtButtonState g_button2 = {WT_BUTTON2_PIN, true, true, true, 0};
 static uint32_t g_micAvg = 2048;   // approximate mid-scale for biased mic
 static uint32_t g_micLevel = 0;
 static uint32_t g_lightLevel = 0;
+static uint32_t g_stableLightLevel = 0;
+static bool g_lightInitialized = false;
 static uint8_t g_brightness = 32;
 
 // ADC Continuous mode for microphone
@@ -228,6 +231,10 @@ void wt_hw_begin()
     pinMode(WT_BUTTON1_PIN, INPUT_PULLUP);
     pinMode(WT_BUTTON2_PIN, INPUT_PULLUP);
     pinMode(WT_CAP_TOUCH_PIN, INPUT);
+    pinMode(WT_LIGHT_PIN, INPUT);
+    analogReadResolution(12);            // 12-bit ADC
+    analogSetAttenuation(ADC_11db);      // default to 0-3.3V span
+    analogSetPinAttenuation(WT_LIGHT_PIN, ADC_11db); // per-pin override to 0-3.3V span
 
     g_button1.stable = wt_read_button(g_button1);
     g_button1.lastStable = g_button1.stable;
@@ -414,7 +421,27 @@ uint16_t wt_mic_read_samples(uint16_t* buffer, uint16_t maxCount)
 
 uint16_t wt_light_read_raw()
 {
-    return analogRead(WT_LIGHT_PIN);
+    bool wasRunning = g_adcRunning;
+    if (wasRunning) {
+        adc_continuous_stop(g_adcHandle);
+        g_adcRunning = false;
+    }
+    uint16_t val = analogRead(WT_LIGHT_PIN);
+    if (wasRunning) {
+        adc_continuous_start(g_adcHandle);
+        g_adcRunning = true;
+    }
+    return val;
+}
+
+uint16_t wt_light_level_stable()
+{
+    return (uint16_t)g_stableLightLevel;
+}
+
+uint8_t wt_current_brightness()
+{
+    return g_brightness;
 }
 
 uint16_t wt_mic_level()
@@ -452,9 +479,6 @@ static uint32_t g_blankingStart = 0;
 static uint16_t g_blankingReading = 0;
 static bool g_blankingValid = false;
 
-// Stable light level with heavy hysteresis
-static uint32_t g_stableLightLevel = 2048;
-
 void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t manual, bool useBlanking, uint8_t blankIntervalSecs)
 {
     static uint32_t lastUpdate = 0;
@@ -472,61 +496,47 @@ void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t
         return;
     }
     
-    // Blanking mode - periodically blank display to measure ambient light
-    // Interval is configurable in seconds (10-120), blank for 10ms to read sensor
-    uint32_t blankIntervalMs = (uint32_t)blankIntervalSecs * 1000UL;
-    if (blankIntervalMs < 10000) blankIntervalMs = 10000; // Minimum 10 seconds
-    
-    if (useBlanking && !g_blankingActive && (now - lastBlankingMs > blankIntervalMs)) {
-        // Start blanking - turn off all LEDs briefly
-        g_blankingActive = true;
-        g_blankingStart = now;
-        matrixStrip.clear();
-        timelineStrip.clear();
-        matrixStrip.show();
-        fixGpioMatrix(WT_MATRIX_PIN);
-        timelineStrip.show();
-        fixGpioMatrix(WT_TIMELINE_PIN);
-        return;
-    }
-    
-    if (g_blankingActive) {
-        // Wait 10ms for capacitor to settle, then read
-        if (now - g_blankingStart >= 10) {
-            // Take reading with LEDs off
-            g_blankingReading = analogRead(WT_LIGHT_PIN);
-            g_blankingValid = true;
-            g_blankingActive = false;
-            lastBlankingMs = now;
-            
-            // Restore display by calling show (will apply current brightness)
-            wt_leds_show();
-        }
-        return;
-    }
-    
+    // Blanking disabled (sensor is behind PCB now); keep compatibility by ignoring useBlanking
+    (void)useBlanking;
+    (void)blankIntervalSecs;
+    g_blankingActive = false;
+    g_blankingValid = false;
+
     // Normal update rate
-    if (now - lastUpdate < 200) {
+    if (now - lastUpdate < 500) {
         return;
     }
     lastUpdate = now;
 
-    // Get light level - use blanking reading if available and enabled
-    uint16_t level;
-    if (useBlanking && g_blankingValid) {
-        level = g_blankingReading;
+    // Get light level - direct raw read then filtered
+    uint16_t level = wt_light_read_raw();
+    
+    // Initialize stable value on first run
+    if (!g_lightInitialized) {
+        g_stableLightLevel = level;
+        g_lightInitialized = true;
     } else {
-        level = wt_light_level();
+        // Very slow IIR filter for stable level (reduces hunting)
+        g_stableLightLevel = (g_stableLightLevel * 31 + level) / 32;
     }
     
-    // Very slow IIR filter for stable level (reduces hunting)
-    g_stableLightLevel = (g_stableLightLevel * 31 + level) / 32;
-    
-    // Calculate target brightness
-    uint8_t target = minB;
-    if (g_stableLightLevel > 0) {
-        target = minB + (uint8_t)((g_stableLightLevel * (maxB - minB)) / 4095U);
+    // Calculate target brightness using calibrated range
+    uint16_t calDark = settings_get().brightCalDark;
+    uint16_t calBright = settings_get().brightCalBright;
+    if (calBright <= calDark + 10) {
+        calBright = calDark + 10; // prevent divide by zero and ensure span
     }
+
+    int32_t span = (int32_t)calBright - (int32_t)calDark;
+    int32_t norm = (int32_t)g_stableLightLevel - (int32_t)calDark;
+    if (norm < 0) norm = 0;
+    if (norm > span) norm = span;
+
+    // Perceptual-ish curve: square the normalized fraction
+    uint32_t norm255 = (uint32_t)(norm * 255U / (uint32_t)span);
+    uint32_t eased = (norm255 * norm255 + 255U) / 255U; // 0-255
+
+    uint8_t target = minB + (uint8_t)((eased * (uint32_t)(maxB - minB)) / 255U);
     if (target > maxB) target = maxB;
     if (target < minB) target = minB;
 

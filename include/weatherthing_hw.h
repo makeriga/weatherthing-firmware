@@ -37,6 +37,8 @@ uint32_t wt_color(uint8_t r, uint8_t g, uint8_t b);
 uint32_t wt_color_hsv(uint8_t h, uint8_t s, uint8_t v);  // HSV to RGB
 void wt_set_brightness(uint8_t brightness);
 void wt_update_brightness_auto(uint8_t minB, uint8_t maxB, uint8_t mode, uint8_t manual, bool useBlanking, uint8_t blankIntervalSecs);
+uint16_t wt_light_level_stable();
+uint8_t wt_current_brightness();
 
 // Input helpers
 bool wt_button1_pressed();

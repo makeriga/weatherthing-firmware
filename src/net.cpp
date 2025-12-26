@@ -53,6 +53,7 @@ static void handleApiSimulate();
 static void handleApiTouchShortcut();
 static void handleApiVersion();
 static void handleApiDiag();
+static void handleApiLight();
 static void handleApiCheckUpdate();
 static void handleApiCityLookup();
 static void handleApiCitySuggest();
@@ -1460,38 +1461,85 @@ function toggleCollapse(btn) {
     html += "<div class=\"form-group\"><label>";
     html += TR("Auto Min (dark room)", "Autom\u0101tiskais min (tum\u0161a istaba)");
     html += ": " + String(cfg.brightMin) + "</label>";
-    html += "<input type=\"range\" name=\"brightMin\" min=\"5\" max=\"40\" value=\"" + String(cfg.brightMin) + "\"></div>";
+    html += "<input type=\"range\" name=\"brightMin\" min=\"1\" max=\"40\" value=\"" + String(cfg.brightMin) + "\"></div>";
     html += "<div class=\"form-group\"><label>";
     html += TR("Auto Max (bright room)", "Autom\u0101tiskais maks (gai\u0161a istaba)");
     html += ": " + String(cfg.brightMax) + "</label>";
     html += "<input type=\"range\" name=\"brightMax\" min=\"20\" max=\"" + String(maxBright) + "\" value=\"" + String(cfg.brightMax) + "\"></div>";
-    html += "<div class=\"form-group\"><label><input type=\"checkbox\" name=\"brightBlank\" value=\"1\"";
-    if (cfg.brightBlanking) html += " checked";
-    html += "> ";
-    html += TR("Use blanking for cleaner readings", "Izmantot tuk\u0161umu prec\u012bz\u0101kiem nolas\u012bjumiem");
-    html += "</label></div>";
+    html += "<div class=\"form-group\"><label>";
+    html += TR("Dark reference (ADC)", "Tum\u0161uma atsauce (ADC)");
+    html += ": <span id='bCalDVal'>" + String(cfg.brightCalDark) + "</span></label>";
+    html += "<input type=\"range\" name=\"bCalD\" id=\"bCalD\" min=\"0\" max=\"4095\" value=\"" + String(cfg.brightCalDark) + "\"></div>";
+    html += "<div class=\"form-group\"><label>";
+    html += TR("Bright reference (ADC)", "Gai\u0161uma atsauce (ADC)");
+    html += ": <span id='bCalBVal'>" + String(cfg.brightCalBright) + "</span></label>";
+    html += "<input type=\"range\" name=\"bCalB\" id=\"bCalB\" min=\"0\" max=\"4095\" value=\"" + String(cfg.brightCalBright) + "\"></div>";
+    html += "<div class=\"form-group\" id=\"lightLive\" style=\"border:1px solid #000;padding:10px;background:#fffacd\">";
+    html += "<div><b>";
+    html += TR("Live light & brightness", "Tie\u0161raides gaisma un spilgtums");
+    html += "</b></div>";
+    html += "<div>";
+    html += TR("Raw", "Neapstr.");
+    html += ": <span id='lightRaw'>-</span></div>";
+    html += "<div>";
+    html += TR("Filtered", "Filtr.");
+    html += ": <span id='lightStable'>-</span></div>";
+    html += "<div>";
+    html += TR("Current Brightness", "Pa\u0161reiz\u0113jais spilgtums");
+    html += ": <span id='lightB'>-</span></div>";
+    html += "<div style='margin-top:8px;display:flex;gap:8px;flex-wrap:wrap'>";
+    html += "<button type='button' class='btn btn-secondary' onclick='setCal(\"dark\")'>";
+    html += TR("Use current as Dark", "Iestat\u012bt k\u0101 Tum\u0161u");
+    html += "</button>";
+    html += "<button type='button' class='btn btn-secondary' onclick='setCal(\"bright\")'>";
+    html += TR("Use current as Bright", "Iestat\u012bt k\u0101 Gai\u0161u");
+    html += "</button>";
+    html += "</div>";
+    html += "</div>";
+    html += R"(<script>
+function refreshLight(){
+  fetch('/api/light').then(r=>r.json()).then(d=>{
+    const raw=document.getElementById('lightRaw');
+    const st=document.getElementById('lightStable');
+    const b=document.getElementById('lightB');
+    if(raw) raw.textContent=d.raw;
+    if(st) st.textContent=d.stable;
+    if(b) b.textContent=d.brightness;
+  }).catch(()=>{});
+}
+function setCal(which){
+  fetch('/api/light').then(r=>r.json()).then(d=>{
+    const dark=document.querySelector('input[name=\"bCalD\"]');
+    const bright=document.querySelector('input[name=\"bCalB\"]');
+    if(which==='dark' && dark){ dark.value=d.stable; }
+    if(which==='bright' && bright){ bright.value=d.stable; }
+    refreshLight();
+  }).catch(()=>{});
+}
+refreshLight();
+setInterval(refreshLight, 500);
+const bCalD=document.getElementById('bCalD');
+const bCalDVal=document.getElementById('bCalDVal');
+const bCalB=document.getElementById('bCalB');
+const bCalBVal=document.getElementById('bCalBVal');
+if(bCalD&&bCalDVal){ bCalDVal.textContent=bCalD.value; bCalD.addEventListener('input',()=>{bCalDVal.textContent=bCalD.value;}); }
+if(bCalB&&bCalBVal){ bCalBVal.textContent=bCalB.value; bCalB.addEventListener('input',()=>{bCalBVal.textContent=bCalB.value;}); }
+</script>)";
     html += "<div class=\"form-group\" style=\"margin-top:12px;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px\">";
     html += "<label style=\"color:#856404\"><input type=\"checkbox\" name=\"highPower\" value=\"1\"";
     if (cfg.highPowerMode) html += " checked";
     html += "> &#x26A0; ";
-    html += TR("High Power Mode (128-255)", "Augstas jaudas re\u017e\u012bms (128-255)");
+    html += TR("High Power Mode (128-255)", "Augstas jaudas režīms (128-255)");
     html += "</label>";
     html += "<p style=\"font-size:0.75em;color:#856404;margin:6px 0 0\"><b>";
-    html += TR("WARNING:", "BR\u012aDIN\u0100JUMS:");
+    html += TR("WARNING:", "BRĪDINĀJUMS:");
     html += "</b> ";
-    html += TR("High brightness causes heat! Use only with bare PCB, no plastic enclosure. May trip USB power protection.", "Augsts spilgtums rada siltumu! Izmantojiet tikai ar kailu PCB, bez plastmasas korpusa. Var izrais\u012bt USB baro\u0161anas aizsardz\u012bbu.");
+    html += TR("High brightness causes heat! Use only with bare PCB, no plastic enclosure. May trip USB power protection.", "Augsts spilgtums rada siltumu! Izmantojiet tikai ar kailu PCB, bez plastmasas korpusa. Var izraisīt USB barošanas aizsardzību.");
     html += "</p></div>";
-    html += "<div class=\"form-group\"><label>";
-    html += TR("Blanking Interval", "Tuk\u0161uma interv\u0101ls");
-    html += ": " + String(cfg.brightBlankSecs) + " ";
-    html += TR("sec", "sek");
-    html += "</label>";
-    html += "<input type=\"range\" name=\"blankSec\" min=\"10\" max=\"120\" step=\"10\" value=\"" + String(cfg.brightBlankSecs) + "\"></div>";
     html += "<button type=\"submit\" class=\"btn btn-primary btn-full\">&#x1F4BE; ";
-    html += TR("Save Brightness", "Saglab\u0101t spilgtumu");
+    html += TR("Save Brightness", "Saglabāt spilgtumu");
     html += "</button>";
     html += "</form></details>";
-    
     html += "</div>"; // End card
 
     // Tools Card
@@ -1704,6 +1752,7 @@ static void startServer()
     server.on("/api/settings", HTTP_GET, handleSettingsGet);
     server.on("/api/version", HTTP_GET, handleApiVersion);
     server.on("/api/diag", HTTP_GET, handleApiDiag);
+    server.on("/api/light", HTTP_GET, handleApiLight);
     server.on("/api/check_update", HTTP_GET, handleApiCheckUpdate);
     server.on("/editor", handleEditor);
     server.on("/api/sprites", HTTP_GET, handleApiSprites);
@@ -1746,6 +1795,30 @@ static void handleApiOverlayGet()
     json += custom_overlay_text_active(now) ? "true" : "false";
     json += ",\"text_remaining_ms\":";
     json += String(custom_overlay_text_remaining_ms(now));
+    json += "}";
+    server.send(200, "application/json", json);
+}
+
+static void handleApiLight()
+{
+    uint16_t raw = wt_light_read_raw();
+    uint16_t stable = wt_light_level_stable();
+    uint8_t b = wt_current_brightness();
+    Settings& cfg = settings_get();
+
+    String json;
+    json.reserve(120);
+    json += "{";
+    json += "\"raw\":";
+    json += String(raw);
+    json += ",\"stable\":";
+    json += String(stable);
+    json += ",\"brightness\":";
+    json += String(b);
+    json += ",\"cal_dark\":";
+    json += String(cfg.brightCalDark);
+    json += ",\"cal_bright\":";
+    json += String(cfg.brightCalBright);
     json += "}";
     server.send(200, "application/json", json);
 }
@@ -2820,12 +2893,14 @@ static void handleSettingsPost()
         if (cfg.brightManual < 5) cfg.brightManual = 5;
         if (cfg.brightManual > maxAllowed) cfg.brightManual = maxAllowed;
     }
-    // Checkbox: if not present, it means unchecked
-    cfg.brightBlanking = server.hasArg("brightBlank");
-    if (server.hasArg("blankSec")) {
-        cfg.brightBlankSecs = (uint8_t)server.arg("blankSec").toInt();
-        if (cfg.brightBlankSecs < 10) cfg.brightBlankSecs = 10;
-        if (cfg.brightBlankSecs > 120) cfg.brightBlankSecs = 120;
+    // Blanking removed: ignore legacy args
+    cfg.brightBlanking = false;
+    cfg.brightBlankSecs = 30;
+    if (server.hasArg("bCalD")) {
+        cfg.brightCalDark = (uint16_t)server.arg("bCalD").toInt();
+    }
+    if (server.hasArg("bCalB")) {
+        cfg.brightCalBright = (uint16_t)server.arg("bCalB").toInt();
     }
     
     // MQTT settings

@@ -73,6 +73,8 @@ struct Settings
     bool brightBlanking;     // Use blanking frame for light measurement
     uint8_t brightBlankSecs; // Blanking interval in seconds (10-120)
     bool highPowerMode;      // Allow brightness >127 (WARNING: heat risk, bare PCB only)
+    uint16_t brightCalDark;  // ADC reading considered "dark room"
+    uint16_t brightCalBright; // ADC reading considered "bright room"
     
     // Timeline settings
     uint8_t forecastHours;   // 12, 24, or 48 hours forecast
