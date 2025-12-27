@@ -4867,7 +4867,7 @@ static void weather_render_pixel_art() {
     WeatherData current = weather_get_current();
     uint32_t now = millis();
     
-    // Check if night
+    // Check if night with smoother transitions
     int hour = 12;
     if (g_clockTimeValid) {
         time_t rawTime = time(nullptr);
@@ -4875,28 +4875,51 @@ static void weather_render_pixel_art() {
         hour = ti->tm_hour;
     }
     bool isNight = (hour >= 21 || hour < 6);
+    bool isDusk = (hour >= 19 && hour < 21) || (hour >= 5 && hour < 6);
+    bool isDawn = (hour >= 6 && hour < 8);
     
-    // Sky gradient based on time and weather
+    // Enhanced sky gradient with weather and time variations
     for (int y = 2; y < 7; ++y) {
         uint8_t skyR, skyG, skyB;
         float yNorm = (y - 2) / 4.0f;  // 0 at bottom, 1 at top
         
         if (isNight) {
-            skyR = 5 + (uint8_t)(15 * yNorm);
-            skyG = 5 + (uint8_t)(10 * yNorm);
-            skyB = 30 + (uint8_t)(30 * yNorm);
+            // Deep night sky with subtle gradient
+            skyR = 3 + (uint8_t)(8 * yNorm);
+            skyG = 3 + (uint8_t)(6 * yNorm);
+            skyB = 15 + (uint8_t)(25 * yNorm);
+        } else if (isDusk) {
+            // Sunset colors
+            float duskFactor = (hour >= 19) ? (21.0f - hour) / 2.0f : hour / 6.0f;
+            skyR = 80 + (uint8_t)(60 * yNorm) - (uint8_t)(20 * duskFactor);
+            skyG = 40 + (uint8_t)(30 * yNorm) + (uint8_t)(15 * duskFactor);
+            skyB = 60 + (uint8_t)(40 * yNorm) - (uint8_t)(10 * duskFactor);
+        } else if (isDawn) {
+            // Sunrise colors
+            float dawnFactor = (hour - 6) / 2.0f;
+            skyR = 60 + (uint8_t)(50 * yNorm) + (uint8_t)(30 * dawnFactor);
+            skyG = 50 + (uint8_t)(40 * yNorm) + (uint8_t)(40 * dawnFactor);
+            skyB = 80 + (uint8_t)(60 * yNorm) + (uint8_t)(20 * dawnFactor);
         } else if (current.type == WEATHER_SUNNY) {
-            skyR = 60 + (uint8_t)(40 * yNorm);
-            skyG = 120 + (uint8_t)(60 * yNorm);
-            skyB = 200 + (uint8_t)(55 * yNorm);
-        } else if (current.type >= WEATHER_RAIN && current.type <= WEATHER_HEAVY_RAIN) {
-            skyR = 50 + (uint8_t)(20 * yNorm);
-            skyG = 55 + (uint8_t)(25 * yNorm);
-            skyB = 70 + (uint8_t)(40 * yNorm);
-        } else {
+            // Bright clear blue sky
             skyR = 70 + (uint8_t)(30 * yNorm);
-            skyG = 90 + (uint8_t)(40 * yNorm);
-            skyB = 130 + (uint8_t)(50 * yNorm);
+            skyG = 140 + (uint8_t)(50 * yNorm);
+            skyB = 220 + (uint8_t)(35 * yNorm);
+        } else if (current.type >= WEATHER_RAIN && current.type <= WEATHER_HEAVY_RAIN) {
+            // Stormy gray-blue sky
+            skyR = 35 + (uint8_t)(15 * yNorm);
+            skyG = 40 + (uint8_t)(20 * yNorm);
+            skyB = 55 + (uint8_t)(30 * yNorm);
+        } else if (current.type == WEATHER_CLOUDY || current.type == WEATHER_PARTLY_CLOUDY) {
+            // Overcast but lighter sky
+            skyR = 90 + (uint8_t)(25 * yNorm);
+            skyG = 100 + (uint8_t)(35 * yNorm);
+            skyB = 120 + (uint8_t)(40 * yNorm);
+        } else {
+            // Default pleasant sky
+            skyR = 80 + (uint8_t)(35 * yNorm);
+            skyG = 110 + (uint8_t)(45 * yNorm);
+            skyB = 160 + (uint8_t)(45 * yNorm);
         }
         
         for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
@@ -4904,18 +4927,113 @@ static void weather_render_pixel_art() {
         }
     }
     
-    // Ground
-    uint32_t groundCol = (current.temp < 0) ? wt_color(200, 210, 220) : wt_color(50, 120, 50);
-    uint32_t groundCol2 = (current.temp < 0) ? wt_color(180, 190, 200) : wt_color(40, 90, 40);
+    // Weather-specific cloud animations with better visibility
+    if (current.type == WEATHER_CLOUDY || current.type == WEATHER_PARTLY_CLOUDY) {
+        float cloudPhase = now * 0.0006f; // Slower movement
+        for (int cloud = 0; cloud < 3; ++cloud) {
+            float cloudX = (cloudPhase + cloud * 7.0f) / 3.0f;
+            int baseX = (int)cloudX % (WT_MATRIX_WIDTH + 6) - 3;
+            int cloudY = 4 + cloud;
+            
+            // Draw fluffy cloud pixels with better contrast
+            for (int i = -2; i <= 3; ++i) {
+                for (int j = -1; j <= 2; ++j) {
+                    int px = baseX + i;
+                    int py = cloudY + j;
+                    if (px >= 0 && px < WT_MATRIX_WIDTH && py >= 2 && py < 7) {
+                        // Create cloud shape with varying brightness
+                        uint8_t brightness = 255;
+                        uint8_t alpha = 255 - (abs(i) * 30 + abs(j) * 40);
+                        if (alpha > 80) {
+                            if (isNight) {
+                                // Darker clouds at night but still visible
+                                wt_display_set_pixel_xy(px, py, wt_color(
+                                    (uint8_t)(60 * alpha / 255),
+                                    (uint8_t)(60 * alpha / 255),
+                                    (uint8_t)(80 * alpha / 255)
+                                ));
+                            } else {
+                                // Bright white clouds during day
+                                wt_display_set_pixel_xy(px, py, wt_color(
+                                    (uint8_t)(brightness * alpha / 255),
+                                    (uint8_t)(brightness * alpha / 255),
+                                    (uint8_t)((brightness + 10) * alpha / 255)
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Enhanced ground with weather effects
+    uint32_t groundCol, groundCol2;
+    bool hasSnow = (current.type == WEATHER_SNOW || current.temp < 2);
+    
+    if (hasSnow) {
+        // Snow-covered ground with subtle variations
+        groundCol = wt_color(220, 225, 235);
+        groundCol2 = wt_color(200, 205, 215);
+    } else if (isNight) {
+        // Moonlit ground - darker but with subtle blue tint
+        groundCol = wt_color(25, 35, 45);
+        groundCol2 = wt_color(15, 25, 35);
+    } else {
+        // Normal daytime ground
+        groundCol = wt_color(50, 120, 50);
+        groundCol2 = wt_color(40, 90, 40);
+    }
+    
+    // Draw ground with texture
     for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
-        wt_display_set_pixel_xy(x, 0, groundCol2);
+        // Add subtle texture variation
+        if (hasSnow && (x % 3 == 0)) {
+            wt_display_set_pixel_xy(x, 0, wt_color(190, 195, 205)); // Snow drifts
+        } else {
+            wt_display_set_pixel_xy(x, 0, groundCol2);
+        }
         wt_display_set_pixel_xy(x, 1, groundCol);
     }
     
-    // House
+    // Snow accumulation on ground edges
+    if (hasSnow) {
+        for (int x = 0; x < WT_MATRIX_WIDTH; x += 4) {
+            wt_display_set_pixel_xy(x, 2, wt_color(240, 245, 255)); // Snow patches
+        }
+    }
+    
+    // Enhanced house with weather-responsive details
     uint32_t wallCol = wt_color(180, 130, 80);
     uint32_t roofCol = wt_color(140, 60, 40);
-    uint32_t windowCol = isNight ? wt_color(255, 220, 100) : wt_color(150, 200, 255);
+    uint32_t windowCol, windowGlow;
+    
+    // Window lighting based on time and weather
+    if (isNight) {
+        // Warm yellow light at night with subtle pulsing
+        float pulse = 0.9f + 0.1f * sinf(now * 0.001f);
+        windowCol = wt_color((uint8_t)(255 * pulse), (uint8_t)(220 * pulse), (uint8_t)(100 * pulse));
+        windowGlow = wt_color((uint8_t)(100 * pulse), (uint8_t)(80 * pulse), (uint8_t)(30 * pulse));
+    } else if (isDusk || isDawn) {
+        // Dim transitional light
+        windowCol = wt_color(180, 160, 120);
+        windowGlow = wt_color(60, 50, 30);
+    } else {
+        // Daytime - reflective blue or dark
+        if (current.type == WEATHER_SUNNY) {
+            windowCol = wt_color(150, 200, 255); // Sky reflection
+        } else {
+            windowCol = wt_color(100, 120, 140); // Darker reflection
+        }
+        windowGlow = wt_color(0, 0, 0);
+    }
+    
+    // Snow on roof if applicable
+    if (hasSnow) {
+        wt_display_set_pixel_xy(2, 6, wt_color(245, 250, 255));
+        wt_display_set_pixel_xy(3, 6, wt_color(240, 245, 250));
+        wt_display_set_pixel_xy(4, 6, wt_color(245, 250, 255));
+    }
     
     // Walls (x=1-5)
     for (int wx = 1; wx <= 5; ++wx) {
@@ -4924,69 +5042,202 @@ static void weather_render_pixel_art() {
     }
     // Roof
     wt_display_set_pixel_xy(0, 4, roofCol);
-    for (int rx = 1; rx <= 5; ++rx) wt_display_set_pixel_xy(rx, 4, roofCol);
+    for (int rx = 1; rx <= 5; rx++) wt_display_set_pixel_xy(rx, 4, roofCol);
     wt_display_set_pixel_xy(6, 4, roofCol);
     wt_display_set_pixel_xy(2, 5, roofCol);
     wt_display_set_pixel_xy(3, 5, roofCol);
     wt_display_set_pixel_xy(4, 5, roofCol);
-    // Window
-    wt_display_set_pixel_xy(3, 3, windowCol);
     
-    // Sun or Moon (top area)
+    // Window with glow effect
+    wt_display_set_pixel_xy(3, 3, windowCol);
+    if (isNight || isDusk || isDawn) {
+        // Add subtle glow around window at night
+        wt_display_set_pixel_xy(2, 3, windowGlow);
+        wt_display_set_pixel_xy(4, 3, windowGlow);
+        wt_display_set_pixel_xy(3, 2, windowGlow);
+    }
+    
+    // Chimney with smoke if cold or fireplace weather
+    if (current.temp < 10 || isNight) {
+        wt_display_set_pixel_xy(6, 5, wt_color(100, 80, 60)); // Chimney
+        wt_display_set_pixel_xy(6, 6, wt_color(100, 80, 60));
+        
+        // Subtle smoke animation
+        if (isNight) {
+            float smokePhase = now * 0.0003f;
+            int smokeY = 7 + (int)(smokePhase * 3) % 3;
+            int smokeX = 6 + (int)(sinf(smokePhase * 2) * 1.5f);
+            if (smokeX >= 0 && smokeX < WT_MATRIX_WIDTH && smokeY < 7) {
+                uint8_t smokeAlpha = 100 - (smokeY - 7) * 20;
+                if (smokeAlpha > 20) {
+                    wt_display_set_pixel_xy(smokeX, smokeY, wt_color(smokeAlpha, smokeAlpha, smokeAlpha));
+                }
+            }
+        }
+    }
+    
+    // Enhanced sun or moon with better animations
     if (isNight) {
-        // Moon crescent
+        // Detailed moon with craters
         wt_display_set_pixel_xy(15, 5, wt_color(220, 220, 180));
         wt_display_set_pixel_xy(16, 6, wt_color(255, 255, 220));
         wt_display_set_pixel_xy(16, 5, wt_color(240, 240, 200));
-        // Twinkling stars
-        uint8_t tw = 60 + (uint8_t)(40 * sinf(now * 0.003f));
-        wt_display_set_pixel_xy(10, 6, wt_color(tw, tw, tw));
-        wt_display_set_pixel_xy(13, 5, wt_color(tw/2, tw/2, tw/2));
-        wt_display_set_pixel_xy(19, 6, wt_color(tw, tw, tw));
+        // Moon craters (subtle darker spots)
+        wt_display_set_pixel_xy(15, 6, wt_color(200, 200, 160));
+        
+        // Enhanced twinkling stars with varying brightness
+        uint8_t starPhase[5];
+        for (int i = 0; i < 5; ++i) {
+            starPhase[i] = 60 + (uint8_t)(40 * sinf(now * 0.003f + i * 1.2f));
+        }
+        wt_display_set_pixel_xy(10, 6, wt_color(starPhase[0], starPhase[0], starPhase[0]));
+        wt_display_set_pixel_xy(13, 5, wt_color(starPhase[1]/2, starPhase[1]/2, starPhase[1]/2));
+        wt_display_set_pixel_xy(19, 6, wt_color(starPhase[2], starPhase[2], starPhase[2]));
+        wt_display_set_pixel_xy(8, 4, wt_color(starPhase[3]/3, starPhase[3]/3, starPhase[3]/3));
+        wt_display_set_pixel_xy(17, 4, wt_color(starPhase[4]/2, starPhase[4]/2, starPhase[4]/2));
     } else if (current.type == WEATHER_SUNNY || current.type == WEATHER_PARTLY_CLOUDY) {
-        // Sun with rays
-        float pulse = 0.9f + 0.1f * sinf(now * 0.002f);
-        uint32_t sunCol = wt_color((uint8_t)(255 * pulse), (uint8_t)(220 * pulse), 50);
-        wt_display_set_pixel_xy(16, 5, sunCol);
-        wt_display_set_pixel_xy(17, 5, sunCol);
-        wt_display_set_pixel_xy(16, 6, sunCol);
-        wt_display_set_pixel_xy(17, 6, sunCol);
-        // Rays
-        uint32_t rayCol = wt_color((uint8_t)(200 * pulse), (uint8_t)(180 * pulse), 30);
-        wt_display_set_pixel_xy(15, 6, rayCol);
-        wt_display_set_pixel_xy(18, 6, rayCol);
+        // Proper sun with gradient design, positioned on left
+        int sunCenterX = 8;
+        int sunCenterY = 5;
+        
+        // Sun with proper gradient from center outward
+        // Bright orange-yellow center
+        wt_display_set_pixel_xy(sunCenterX, sunCenterY, wt_color(255, 200, 50));
+        wt_display_set_pixel_xy(sunCenterX + 1, sunCenterY, wt_color(255, 200, 50));
+        wt_display_set_pixel_xy(sunCenterX, sunCenterY + 1, wt_color(255, 200, 50));
+        wt_display_set_pixel_xy(sunCenterX + 1, sunCenterY + 1, wt_color(255, 200, 50));
+        
+        // Middle layer - yellow
+        wt_display_set_pixel_xy(sunCenterX - 1, sunCenterY, wt_color(255, 220, 80));
+        wt_display_set_pixel_xy(sunCenterX + 2, sunCenterY, wt_color(255, 220, 80));
+        wt_display_set_pixel_xy(sunCenterX, sunCenterY - 1, wt_color(255, 220, 80));
+        wt_display_set_pixel_xy(sunCenterX, sunCenterY + 2, wt_color(255, 220, 80));
+        wt_display_set_pixel_xy(sunCenterX + 1, sunCenterY - 1, wt_color(255, 220, 80));
+        wt_display_set_pixel_xy(sunCenterX + 1, sunCenterY + 2, wt_color(255, 220, 80));
+        wt_display_set_pixel_xy(sunCenterX - 1, sunCenterY + 1, wt_color(255, 220, 80));
+        wt_display_set_pixel_xy(sunCenterX + 2, sunCenterY + 1, wt_color(255, 220, 80));
+        
+        // Outer glow - lighter yellow
+        wt_display_set_pixel_xy(sunCenterX - 1, sunCenterY - 1, wt_color(255, 240, 120));
+        wt_display_set_pixel_xy(sunCenterX + 2, sunCenterY - 1, wt_color(255, 240, 120));
+        wt_display_set_pixel_xy(sunCenterX - 1, sunCenterY + 2, wt_color(255, 240, 120));
+        wt_display_set_pixel_xy(sunCenterX + 2, sunCenterY + 2, wt_color(255, 240, 120));
+        
+        // Very subtle animated rays (fixed positions, just brightness variation)
+        float pulse = 0.9f + 0.1f * sinf(now * 0.001f);
+        uint32_t rayCol = wt_color((uint8_t)(255 * pulse), (uint8_t)(230 * pulse), (uint8_t)(150 * pulse));
+        
+        // Fixed ray positions that don't interfere with house
+        wt_display_set_pixel_xy(sunCenterX - 2, sunCenterY, rayCol);
+        wt_display_set_pixel_xy(sunCenterX + 3, sunCenterY, rayCol);
+        wt_display_set_pixel_xy(sunCenterX, sunCenterY - 2, rayCol);
+        wt_display_set_pixel_xy(sunCenterX + 1, sunCenterY - 2, rayCol);
+        wt_display_set_pixel_xy(sunCenterX, sunCenterY + 3, rayCol);
+        wt_display_set_pixel_xy(sunCenterX + 1, sunCenterY + 3, rayCol);
     }
     
-    // Weather effects
+    // Enhanced weather effects with proper vertical movement
     if (current.type >= WEATHER_RAIN && current.type <= WEATHER_HEAVY_RAIN) {
-        // Rain drops with trails
-        for (int i = 0; i < 6; ++i) {
-            int rx = 8 + (now / 60 + i * 3) % 12;
-            int ry = 6 - (now / 50 + i * 7) % 5;
-            if (ry >= 2) {
-                wt_display_set_pixel_xy(rx, ry, wt_color(100, 150, 255));
-                if (ry + 1 <= 6) wt_display_set_pixel_xy(rx, ry + 1, wt_color(60, 90, 150));
+        // Rain with consistent vertical movement
+        int rainIntensity = (current.type == WEATHER_HEAVY_RAIN) ? 10 : 7;
+        uint32_t rainPhase = now / 120; // Consistent timing
+        
+        for (int i = 0; i < rainIntensity; ++i) {
+            // Each drop has fixed X position, only moves vertically
+            int rx = (i * 2 + 3) % WT_MATRIX_WIDTH; // Fixed X positions
+            int ry = 6 - ((rainPhase + i * 15) % 50) / 10; // Vertical movement only
+            
+            if (ry >= 2 && ry < 7) {
+                // Rain with distinct blue color
+                uint8_t intensity = 180 + ((rainPhase + i * 20) % 40);
+                wt_display_set_pixel_xy(rx, ry, wt_color(80, 120, intensity));
+                
+                // Trail effect
+                if (ry + 1 <= 6) {
+                    wt_display_set_pixel_xy(rx, ry + 1, wt_color(60, 90, 140));
+                }
+                
+                // Splash when hitting ground
+                if (ry == 2) {
+                    if (rx > 0 && rx < WT_MATRIX_WIDTH - 1) {
+                        wt_display_set_pixel_xy(rx - 1, 1, wt_color(90, 130, 160));
+                        wt_display_set_pixel_xy(rx + 1, 1, wt_color(90, 130, 160));
+                    }
+                }
             }
         }
     } else if (current.type == WEATHER_SNOW) {
-        // Snowflakes
-        for (int i = 0; i < 5; ++i) {
-            float drift = sinf(now * 0.002f + i) * 2;
-            int sx = 8 + (int)drift + (i * 3) % 10;
-            int sy = 6 - (now / 150 + i * 5) % 5;
-            if (sy >= 2 && sx < WT_MATRIX_WIDTH) {
-                wt_display_set_pixel_xy(sx, sy, wt_color(255, 255, 255));
+        // Snow with gentle vertical drift (not random)
+        int snowCount = 6;
+        uint32_t snowPhase = now / 250; // Slower, consistent timing
+        
+        for (int i = 0; i < snowCount; ++i) {
+            // Each snowflake has predictable drift pattern
+            int rx = (i * 3 + 2) % WT_MATRIX_WIDTH; // Fixed X positions
+            
+            // Add very slight, predictable drift based on time
+            float drift = sinf((snowPhase + i * 30) * 0.02f) * 0.8f; // Gentle, predictable drift
+            int finalX = rx + (int)drift;
+            if (finalX < 0) finalX += WT_MATRIX_WIDTH;
+            if (finalX >= WT_MATRIX_WIDTH) finalX -= WT_MATRIX_WIDTH;
+            
+            int ry = 6 - ((snowPhase + i * 40) % 100) / 20; // Vertical movement only
+            
+            if (ry >= 2 && ry < 7) {
+                // Snow with gentle shimmer
+                uint8_t shimmer = 230 + (uint8_t)(15 * sinf(now * 0.001f + i * 2));
+                wt_display_set_pixel_xy(finalX, ry, wt_color(shimmer, shimmer, 255));
+                
+                // Very subtle shadow
+                if (ry + 1 <= 6) {
+                    wt_display_set_pixel_xy(finalX, ry + 1, wt_color(210, 210, 230));
+                }
+            }
+        }
+    } else if (current.type == WEATHER_STORM) {
+        // Lightning effect
+        bool lightningFlash = ((now / 4000) % 8 == 0 && (now % 4000) < 150);
+        if (lightningFlash) {
+            for (int x = 0; x < WT_MATRIX_WIDTH; ++x) {
+                for (int y = 2; y < 7; ++y) {
+                    if (!(x >= 0 && x <= 6 && y >= 2 && y <= 6)) {
+                        wt_display_set_pixel_xy(x, y, wt_color(255, 255, 240));
+                    }
+                }
+            }
+        }
+        
+        // Heavy rain with vertical movement
+        int stormIntensity = 8;
+        uint32_t stormPhase = now / 80;
+        
+        for (int i = 0; i < stormIntensity; ++i) {
+            int rx = (i * 2 + 1) % WT_MATRIX_WIDTH;
+            int ry = 6 - ((stormPhase + i * 10) % 40) / 8;
+            
+            if (ry >= 2 && ry < 7) {
+                wt_display_set_pixel_xy(rx, ry, wt_color(100, 130, 180));
             }
         }
     }
     
-    // Temperature - bottom right, clean display
+    // Temperature with improved digit colors for better visibility
     int8_t temp = current.temp;
     bool neg = temp < 0;
     if (neg) temp = -temp;
     if (temp > 99) temp = 99;
 
-    uint32_t tCol = weatherDigitColor(current.type);
+    // Use appropriate digit colors - fix snow readability
+    uint32_t tCol;
+    if (current.type == WEATHER_SNOW || current.type == WEATHER_SLEET) {
+        tCol = wt_color(150, 150, 180); // Darker gray-blue for snow (readable against white snow)
+    } else if (current.type == WEATHER_STORM) {
+        tCol = wt_color(180, 180, 200); // Medium gray for storm (not full white)
+    } else if (current.type >= WEATHER_RAIN && current.type <= WEATHER_HEAVY_RAIN) {
+        tCol = wt_color(100, 140, 200); // Blue for rain (distinct from rain effect)
+    } else {
+        tCol = weatherDigitColor(current.type); // Use existing for other weather
+    }
     uint32_t shadow = wt_color(0, 0, 0);
     uint8_t x = 10;
     uint8_t sx = x + 1;
