@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "87f02bb929bc277e2a1fbdcee3720cb0ea16b4fa",
+      "sha_short": "87f02bb",
+      "commit_message": "slightly improved weather preset Pixel",
+      "commit_date": "2025-12-27 13:28:13 +0200",
+      "build_date": "2025-12-27T11:29:33Z",
+      "branch": "main",
+      "path": "87f02bb"
+    },
+    {
       "sha": "8c170847233802f9f5c28461ce5680c5df708b82",
       "sha_short": "8c17084",
       "commit_message": "fixed auto brightness bug due to mic i2s dma adc congestion. Added dark/bright tresholds and live br",
@@ -170,15 +179,6 @@
       "build_date": "2025-12-16T16:18:50Z",
       "branch": "main",
       "path": "1515a69"
-    },
-    {
-      "sha": "6ba1c3eb11313186091c2c3c90d6c09061377753",
-      "sha_short": "6ba1c3e",
-      "commit_message": "added timer cards",
-      "commit_date": "2025-12-16 16:27:46 +0200",
-      "build_date": "2025-12-16T14:29:03Z",
-      "branch": "main",
-      "path": "6ba1c3e"
     }
   ]
 }
