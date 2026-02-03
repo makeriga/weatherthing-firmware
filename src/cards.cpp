@@ -2511,10 +2511,17 @@ static void drawDigitGradient(uint8_t x, uint8_t y, uint8_t d, uint32_t cTop, ui
     }
 }
 
-// Get adjusted clock time
+static int clock_display_hour(int hour24)
+{
+    if (settings_get().clock24h) return hour24;
+    int h = hour24 % 12;
+    return (h == 0) ? 12 : h;
+}
+
+// Get adjusted clock time (display hour based on 12/24h setting)
 static void getClockTime(int& hour, uint8_t& minute, uint8_t& second) {
     tm local = getClockLocalTime();
-    hour = local.tm_hour;
+    hour = clock_display_hour(local.tm_hour);
     minute = local.tm_min;
     second = local.tm_sec;
 }
@@ -2629,14 +2636,17 @@ static void clock_render_binary()
 // Watchface 2: Vertical Stack (Hour Top, Min Bottom)
 static void clock_render_minimal()
 {
-    int hour; uint8_t minute, second;
-    getClockTime(hour, minute, second);
+    tm local = getClockLocalTime();
+    int hour24 = local.tm_hour;
+    uint8_t minute = local.tm_min;
+    uint8_t second = local.tm_sec;
+    int hour = clock_display_hour(hour24);
 
     // Color varies by time of day
     uint32_t col;
-    if (hour >= 6 && hour < 10) col = wt_color(255, 200, 100); // Morning
-    else if (hour >= 10 && hour < 17) col = wt_color(100, 200, 255); // Day
-    else if (hour >= 17 && hour < 21) col = wt_color(255, 150, 50); // Evening
+    if (hour24 >= 6 && hour24 < 10) col = wt_color(255, 200, 100); // Morning
+    else if (hour24 >= 10 && hour24 < 17) col = wt_color(100, 200, 255); // Day
+    else if (hour24 >= 17 && hour24 < 21) col = wt_color(255, 150, 50); // Evening
     else col = wt_color(150, 100, 255); // Night
     
     uint8_t hTens = hour / 10;
@@ -2669,8 +2679,10 @@ static void clock_render_minimal()
 // Watchface 3: Progress bars (hour/minute/second as horizontal bars)
 static void clock_render_bars()
 {
-    int hour; uint8_t minute, second;
-    getClockTime(hour, minute, second);
+    tm local = getClockLocalTime();
+    int hour = local.tm_hour;
+    uint8_t minute = local.tm_min;
+    uint8_t second = local.tm_sec;
 
     // Hour bar (row 5-6, spans 0-19 based on 0-23 hours)
     uint8_t hourLen = (hour * WT_MATRIX_WIDTH) / 24;
@@ -2769,7 +2781,12 @@ static void clock_render_glitch() {
     if (now - lastGlitch > 2000 && random(100) == 0) {
         lastGlitch = now;
         glitchCol = wt_color(random(255), random(255), random(255));
-        glitchHour = random(24);
+        if (settings_get().clock24h) {
+            glitchHour = random(24);
+        } else {
+            int randHour = random(12);
+            glitchHour = (randHour == 0) ? 12 : randHour;
+        }
     }
     
     // Show glitch for 150ms
@@ -3601,8 +3618,8 @@ static void clock_render_weekday() {
     }
     
     // Show day progress on timeline
-    int hour; uint8_t minute, second;
-    getClockTime(hour, minute, second);
+    int hour = local.tm_hour;
+    uint8_t minute = local.tm_min;
     uint16_t dayMins = hour * 60 + minute;
     uint8_t progress = (dayMins * WT_TIMELINE_PIXELS) / (24 * 60);
     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {

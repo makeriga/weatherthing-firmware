@@ -77,6 +77,7 @@ void settings_begin()
     g_settings.stockEnabled = false;
     g_settings.cryptoSymbol[0] = '\0'; // Empty = BTC default
     g_settings.tzOffset = 2;  // GMT+2 (Riga, Latvia) by default
+    g_settings.clock24h = true; // 24h format by default
     g_settings.btcUpdateMins = 5;    // 5 minute default
     g_settings.stockUpdateMins = 5;  // 5 minute default
     g_settings.brightMin = 1;         // Minimum brightness (absolute min)
@@ -178,6 +179,7 @@ void settings_begin()
         g_settings.mapStyle = g_prefs.getUChar("mapStyle", 0);
         g_settings.stockEnabled = g_prefs.getBool("stockOn", false);
         g_settings.tzOffset = g_prefs.getChar("tzOffset", 0);
+        g_settings.clock24h = g_prefs.getBool("clk24", true);
         g_settings.btcUpdateMins = g_prefs.getUChar("btcMins", 5);
         g_settings.stockUpdateMins = g_prefs.getUChar("stockMins", 5);
         
@@ -416,6 +418,7 @@ void settings_save()
         g_prefs.putString("stockSym", g_settings.stockSymbol);
         g_prefs.putString("cryptoSym", g_settings.cryptoSymbol);
         g_prefs.putChar("tzOffset", g_settings.tzOffset);
+        g_prefs.putBool("clk24", g_settings.clock24h);
         g_prefs.putUChar("btcMins", g_settings.btcUpdateMins);
         g_prefs.putUChar("stockMins", g_settings.stockUpdateMins);
         g_prefs.putUChar("brightMin", g_settings.brightMin);

@@ -60,6 +60,7 @@ struct Settings
     
     // Clock
     int8_t tzOffset;         // Timezone offset in hours (-12 to +14)
+    bool clock24h;           // 24-hour clock format (true=24h, false=12h)
     
     // Financial card update intervals (in minutes)
     uint8_t btcUpdateMins;   // BTC update interval (1-60 min, default 5)

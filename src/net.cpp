@@ -952,6 +952,13 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                     html += ">UTC" + String(tz >= 0 ? "+" : "") + String(tz) + "</option>";
                 }
                 html += "</select>";
+                html += "<input type=\"hidden\" name=\"clock24_present\" value=\"1\">";
+                html += "<label style=\"display:flex;align-items:center;gap:6px;font-weight:bold;cursor:pointer\">";
+                html += "<input type=\"checkbox\" name=\"clock24\" value=\"1\"";
+                if (cfg.clock24h) html += " checked";
+                html += " style=\"width:16px;height:16px\">";
+                html += TR("24H format", "24h formÄts");
+                html += "</label>";
                 html += "<button type='submit' class='btn btn-accent' onclick='saveOrder()' style='padding:6px 12px'>&#x1F4BE; ";
                 html += TR("Save", "Saglabāt");
                 html += "</button>";
@@ -3460,6 +3467,9 @@ static void handleCardsConfigPost()
     if (server.hasArg("tz")) {
         int8_t tz = (int8_t)server.arg("tz").toInt();
         if (tz >= -12 && tz <= 14) cfg.tzOffset = tz;
+    }
+    if (server.hasArg("clock24_present")) {
+        cfg.clock24h = server.hasArg("clock24");
     }
     
     // 7. BTC/Crypto settings
