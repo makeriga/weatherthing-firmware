@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "06c638e27d363f6c8977c692fc887037f8e546b6",
+      "sha_short": "06c638e",
+      "commit_message": "added 12h clock format for weird parts of the world",
+      "commit_date": "2026-02-04 00:13:54 +0200",
+      "build_date": "2026-02-03T22:15:35Z",
+      "branch": "main",
+      "path": "06c638e"
+    },
+    {
       "sha": "3018cc48673d5d6d1fca661b13b2733d8784b116",
       "sha_short": "3018cc4",
       "commit_message": "mqtt moved to a task, general improvements",
@@ -170,15 +179,6 @@
       "build_date": "2025-12-16T18:29:35Z",
       "branch": "main",
       "path": "a880138"
-    },
-    {
-      "sha": "9f03be4e051d0385730ad0443e4dac973c9234c6",
-      "sha_short": "9f03be4",
-      "commit_message": "minor pre-shipping polish",
-      "commit_date": "2025-12-16 18:48:15 +0200",
-      "build_date": "2025-12-16T16:49:30Z",
-      "branch": "main",
-      "path": "9f03be4"
     }
   ]
 }
