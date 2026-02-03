@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "d6baf4b5b59af83e9bd5d31c941780094a47f84a",
+      "sha_short": "d6baf4b",
+      "commit_message": "ssid/pw edits not saving fixed",
+      "commit_date": "2026-02-04 00:59:57 +0200",
+      "build_date": "2026-02-03T23:01:20Z",
+      "branch": "main",
+      "path": "d6baf4b"
+    },
+    {
       "sha": "06c638e27d363f6c8977c692fc887037f8e546b6",
       "sha_short": "06c638e",
       "commit_message": "added 12h clock format for weird parts of the world",
@@ -170,15 +179,6 @@
       "build_date": "2025-12-17T00:28:51Z",
       "branch": "main",
       "path": "364d225"
-    },
-    {
-      "sha": "a880138af41eacb9bcf0af2095437bcb49198ad3",
-      "sha_short": "a880138",
-      "commit_message": "heart flip at bootanim",
-      "commit_date": "2025-12-16 20:28:19 +0200",
-      "build_date": "2025-12-16T18:29:35Z",
-      "branch": "main",
-      "path": "a880138"
     }
   ]
 }
