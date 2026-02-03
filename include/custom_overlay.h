@@ -16,6 +16,10 @@ void custom_overlay_set_timeline_clear_under(bool enable);
 void custom_overlay_set_matrix_timeout_ms(uint32_t now, uint32_t timeout_ms);
 void custom_overlay_set_timeline_timeout_ms(uint32_t now, uint32_t timeout_ms);
 
+uint32_t custom_overlay_default_timeout_ms();
+size_t custom_overlay_text_max_len();
+uint16_t custom_overlay_text_width(const char* text);
+
 void custom_overlay_set_text(uint32_t now, const char* text, int16_t x, int16_t y, uint32_t color, uint32_t timeout_ms, bool scroll, uint16_t scroll_speed_ms, const uint32_t* per_char_colors, size_t per_char_colors_len);
 
 void custom_overlay_apply(uint32_t now);

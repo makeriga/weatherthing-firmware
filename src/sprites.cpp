@@ -251,6 +251,7 @@ String sprites_to_json(SpriteType type) {
     
     const SpriteData* s = &g_sprites[type];
     JsonDocument doc;
+    doc["ok"] = true;
     doc["type"] = (int)type;
     doc["width"] = s->width;
     doc["height"] = s->height;

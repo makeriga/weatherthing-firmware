@@ -100,7 +100,8 @@ static bool fetch_open_meteo(WeatherData* outCurrent, ForecastSlot outForecast[1
     Serial.println(url);
 
     http.begin(url);
-    http.setTimeout(10000);
+    http.setConnectTimeout(3000);
+    http.setTimeout(5000);
     int code = http.GET();
 
     if (code != 200)

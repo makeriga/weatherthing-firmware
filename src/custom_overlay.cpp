@@ -29,6 +29,16 @@ static uint16_t g_textScrollSpeedMs = 50;
 static uint32_t g_textStart = 0;
 static uint32_t g_textExpiry = 0;
 
+uint32_t custom_overlay_default_timeout_ms()
+{
+    return DEFAULT_TIMEOUT_MS;
+}
+
+size_t custom_overlay_text_max_len()
+{
+    return TEXT_MAX_LEN;
+}
+
 static bool remaining_positive(uint32_t expiry, uint32_t now)
 {
     if (expiry == 0) return false;
@@ -115,6 +125,18 @@ static uint8_t char_width(char c)
     if (c == '-') return 4;
     if (c == ' ') return 3;
     return 4;
+}
+
+uint16_t custom_overlay_text_width(const char* text)
+{
+    if (!text) return 0;
+    size_t len = strlen(text);
+    if (len > TEXT_MAX_LEN) len = TEXT_MAX_LEN;
+    uint16_t width = 0;
+    for (size_t i = 0; i < len; ++i) {
+        width = (uint16_t)(width + char_width(text[i]));
+    }
+    return width;
 }
 
 static void draw_digit_3x7(int16_t x, int16_t yTop, uint8_t digit, uint32_t color)

@@ -159,7 +159,7 @@ static void apiSendError(int code, const char* msg)
 {
     String json;
     json.reserve(96);
-    json += "{\"error\":\"";
+    json += "{\"ok\":false,\"error\":\"";
     json += msg ? msg : "error";
     json += "\"}";
     server.send(code, "application/json", json);
@@ -1809,7 +1809,8 @@ static void handleApiLight()
     String json;
     json.reserve(120);
     json += "{";
-    json += "\"raw\":";
+    json += "\"ok\":true";
+    json += ",\"raw\":";
     json += String(raw);
     json += ",\"stable\":";
     json += String(stable);
@@ -1866,7 +1867,9 @@ static void handleApiCityLookup()
         return;
     }
 
+    esp_task_wdt_reset();
     bool found = weather_set_city(city.c_str());
+    esp_task_wdt_reset();
     doc["ok"] = found;
     doc["msg"] = found ? TR("City found and saved", "Pilsēta atrasta un saglabāta")
                        : TR("City not found", "Pilsēta nav atrasta");
@@ -1910,8 +1913,11 @@ static void handleApiCitySuggest()
     url += "&count=5&language=en&format=json";
 
     http.begin(url);
-    http.setTimeout(10000);
+    http.setConnectTimeout(3000);
+    http.setTimeout(5000);
+    esp_task_wdt_reset();
     int code = http.GET();
+    esp_task_wdt_reset();
 
     doc["ok"] = false;
     if (code == 200) {
@@ -2145,6 +2151,31 @@ static void handleApiOverlayTimeline()
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+static uint32_t overlay_text_effective_timeout_ms(int16_t startX, const char* text, bool scroll, uint16_t scrollSpeedMs, uint32_t requestedTimeoutMs, uint32_t* minTimeoutMsOut, bool* clampedOut)
+{
+    uint32_t effective = requestedTimeoutMs;
+    if (effective == 0) effective = custom_overlay_default_timeout_ms();
+
+    uint32_t minTimeoutMs = 0;
+    bool clamped = false;
+
+    if (scroll) {
+        if (scrollSpeedMs == 0) scrollSpeedMs = 50;
+        uint16_t textWidth = custom_overlay_text_width(text);
+        int32_t start = startX;
+        if (start < 0) start = 0;
+        minTimeoutMs = (uint32_t)((uint32_t)start + (uint32_t)textWidth) * (uint32_t)scrollSpeedMs;
+        if (effective < minTimeoutMs) {
+            effective = minTimeoutMs;
+            clamped = true;
+        }
+    }
+
+    if (minTimeoutMsOut) *minTimeoutMsOut = minTimeoutMs;
+    if (clampedOut) *clampedOut = clamped;
+    return effective;
+}
+
 static void handleApiOverlayText()
 {
     uint32_t now = millis();
@@ -2196,6 +2227,7 @@ static void handleApiOverlayText()
             int16_t yTop = server.hasArg("y") ? (int16_t)server.arg("y").toInt() : 0;
             uint32_t timeoutMs = server.hasArg("timeout_ms") ? (uint32_t)server.arg("timeout_ms").toInt() : 0;
             uint16_t scrollSpeedMs = server.hasArg("scroll_speed_ms") ? (uint16_t)server.arg("scroll_speed_ms").toInt() : (uint16_t)50;
+            if (scrollSpeedMs == 0) scrollSpeedMs = 50;
 
             uint32_t col = wt_color(255, 255, 255);
             if (server.hasArg("color"))
@@ -2207,9 +2239,30 @@ static void handleApiOverlayText()
                 }
             }
 
+            size_t maxLen = custom_overlay_text_max_len();
+            bool truncated = textS.length() > maxLen;
+            uint32_t minTimeoutMs = 0;
+            bool clamped = false;
+            uint32_t effectiveTimeoutMs = overlay_text_effective_timeout_ms(x, textS.c_str(), scroll, scrollSpeedMs, timeoutMs, &minTimeoutMs, &clamped);
+
             if (clearUnder) custom_overlay_set_matrix_clear_under(true);
-            custom_overlay_set_text(now, textS.c_str(), x, yTop, col, timeoutMs, scroll, scrollSpeedMs, nullptr, 0);
-            server.send(200, "application/json", "{\"ok\":true}");
+            custom_overlay_set_text(now, textS.c_str(), x, yTop, col, effectiveTimeoutMs, scroll, scrollSpeedMs, nullptr, 0);
+
+            String json;
+            json.reserve(128);
+            json += "{\"ok\":true";
+            if (truncated) json += ",\"truncated\":true";
+            json += ",\"timeout_ms_requested\":";
+            json += String(timeoutMs);
+            json += ",\"timeout_ms_effective\":";
+            json += String(effectiveTimeoutMs);
+            if (scroll) {
+                json += ",\"min_timeout_ms\":";
+                json += String(minTimeoutMs);
+                if (clamped) json += ",\"timeout_ms_clamped\":true";
+            }
+            json += "}";
+            server.send(200, "application/json", json);
             return;
         }
 
@@ -2222,7 +2275,7 @@ static void handleApiOverlayText()
 
         String json;
         json.reserve(220);
-        json += "{\"error\":\"invalid json: ";
+        json += "{\"ok\":false,\"error\":\"invalid json: ";
         json += err.c_str();
         json += "\",\"len\":";
         json += String(body.length());
@@ -2250,6 +2303,7 @@ static void handleApiOverlayText()
     int16_t yTop = (int16_t)(doc["y"] | 0);
     uint32_t timeoutMs = (uint32_t)(doc["timeout_ms"] | (uint32_t)0);
     uint16_t scrollSpeedMs = (uint16_t)(doc["scroll_speed_ms"] | (uint16_t)50);
+    if (scrollSpeedMs == 0) scrollSpeedMs = 50;
 
     uint32_t col = wt_color(255, 255, 255);
     if (doc["color"].is<const char*>() || doc["color"].is<uint32_t>() || doc["color"].is<long>())
@@ -2285,8 +2339,29 @@ static void handleApiOverlayText()
 
     if (clearUnder) custom_overlay_set_matrix_clear_under(true);
 
-    custom_overlay_set_text(now, text, x, yTop, col, timeoutMs, scroll, scrollSpeedMs, perCharColorsLen ? perCharColors : nullptr, perCharColorsLen);
-    server.send(200, "application/json", "{\"ok\":true}");
+    size_t maxLen = custom_overlay_text_max_len();
+    bool truncated = strlen(text) > maxLen;
+    uint32_t minTimeoutMs = 0;
+    bool clamped = false;
+    uint32_t effectiveTimeoutMs = overlay_text_effective_timeout_ms(x, text, scroll, scrollSpeedMs, timeoutMs, &minTimeoutMs, &clamped);
+
+    custom_overlay_set_text(now, text, x, yTop, col, effectiveTimeoutMs, scroll, scrollSpeedMs, perCharColorsLen ? perCharColors : nullptr, perCharColorsLen);
+
+    String json;
+    json.reserve(128);
+    json += "{\"ok\":true";
+    if (truncated) json += ",\"truncated\":true";
+    json += ",\"timeout_ms_requested\":";
+    json += String(timeoutMs);
+    json += ",\"timeout_ms_effective\":";
+    json += String(effectiveTimeoutMs);
+    if (scroll) {
+        json += ",\"min_timeout_ms\":";
+        json += String(minTimeoutMs);
+        if (clamped) json += ",\"timeout_ms_clamped\":true";
+    }
+    json += "}";
+    server.send(200, "application/json", json);
 }
 
 static void handleApiLang()
@@ -2302,7 +2377,7 @@ static void handleApiLang()
         } else if (lang == "en" || lang == "0") {
             cfg.uiLang = 0;
         } else {
-            server.send(400, "application/json", "{\"error\":\"invalid lang, use 'en' or 'lv'\"}");
+            apiSendError(400, "invalid lang, use 'en' or 'lv'");
             return;
         }
         settings_save();
@@ -2321,7 +2396,8 @@ static void handleApiVersion()
     String json;
     json.reserve(256);
     json += "{";
-    json += "\"app\":\"WeatherThing\"";
+    json += "\"ok\":true";
+    json += ",\"app\":\"WeatherThing\"";
     json += ",\"sw_version\":\"0.1\"";
     json += ",\"git_sha\":\"";
     json += wt_fw_git_sha();
@@ -2365,7 +2441,8 @@ static void handleApiDiag()
     String json;
     json.reserve(256);
     json += "{";
-    json += "\"uptime_ms\":";
+    json += "\"ok\":true";
+    json += ",\"uptime_ms\":";
     json += String(up);
     json += ",\"free_heap\":";
     json += String(freeHeap);
@@ -2397,8 +2474,9 @@ static void handleApiDiag()
     server.send(200, "application/json", json);
 }
 
-static String g_latestSha = "";
-static String g_latestDate = "";
+static portMUX_TYPE g_updateMux = portMUX_INITIALIZER_UNLOCKED;
+static char g_latestSha[16] = "";
+static char g_latestDate[32] = "";
 static uint32_t g_lastUpdateCheck = 0;
 static bool g_updateAvailable = false;
 static bool g_updateCheckInFlight = false;
@@ -2418,17 +2496,24 @@ static void updateCheckJob(void* ctx)
     http.setConnectTimeout(10000);
     
     int code = http.GET();
-    
+
+    bool haveUpdateData = false;
+    bool updateAvailable = false;
+    char latestSha[sizeof(g_latestSha)] = "";
+    char latestDate[sizeof(g_latestDate)] = "";
+
     if (code == 200) {
+        haveUpdateData = true;
         String payload = http.getString();
         const char* currentSha = wt_fw_git_sha_short();
-        
+
         int shaIdx = payload.indexOf("\"sha_short\"");
         if (shaIdx >= 0) {
             int start = payload.indexOf("\"", shaIdx + 12) + 1;
             int end = payload.indexOf("\"", start);
             if (start > 0 && end > start) {
-                g_latestSha = payload.substring(start, end);
+                String sha = payload.substring(start, end);
+                sha.toCharArray(latestSha, sizeof(latestSha));
             }
         }
         int dateIdx = payload.indexOf("\"build_date\"");
@@ -2436,15 +2521,26 @@ static void updateCheckJob(void* ctx)
             int start = payload.indexOf("\"", dateIdx + 13) + 1;
             int end = payload.indexOf("\"", start);
             if (start > 0 && end > start) {
-                g_latestDate = payload.substring(start, end);
+                String date = payload.substring(start, end);
+                date.toCharArray(latestDate, sizeof(latestDate));
             }
         }
-        if (g_latestSha.length() > 0 && strcmp(g_latestSha.c_str(), currentSha) != 0 && strcmp(currentSha, "unknown") != 0) {
-            g_updateAvailable = true;
+        if (latestSha[0] != '\0' && strcmp(latestSha, currentSha) != 0 && strcmp(currentSha, "unknown") != 0) {
+            updateAvailable = true;
         }
     }
     http.end();
+
+    portENTER_CRITICAL(&g_updateMux);
+    if (haveUpdateData) {
+        strncpy(g_latestSha, latestSha, sizeof(g_latestSha) - 1);
+        g_latestSha[sizeof(g_latestSha) - 1] = '\0';
+        strncpy(g_latestDate, latestDate, sizeof(g_latestDate) - 1);
+        g_latestDate[sizeof(g_latestDate) - 1] = '\0';
+        g_updateAvailable = updateAvailable;
+    }
     g_updateCheckInFlight = false;
+    portEXIT_CRITICAL(&g_updateMux);
 }
 
 static void handleApiCheckUpdate()
@@ -2453,27 +2549,56 @@ static void handleApiCheckUpdate()
     const char* currentSha = wt_fw_git_sha_short();
     
     // Trigger background update check every 5 minutes
-    if (!g_updateCheckInFlight && (now - g_lastUpdateCheck > 300000 || g_lastUpdateCheck == 0)) {
-        if (WiFi.status() == WL_CONNECTED && !g_isApMode) {
-            g_lastUpdateCheck = now;
+    if (WiFi.status() == WL_CONNECTED && !g_isApMode) {
+        bool startCheck = false;
+        portENTER_CRITICAL(&g_updateMux);
+        if (!g_updateCheckInFlight && (now - g_lastUpdateCheck > 300000 || g_lastUpdateCheck == 0)) {
             g_updateCheckInFlight = true;
-            http_worker_enqueue(updateCheckJob, nullptr);
+            startCheck = true;
+        }
+        portEXIT_CRITICAL(&g_updateMux);
+
+        if (startCheck) {
+            if (!http_worker_enqueue(updateCheckJob, nullptr)) {
+                portENTER_CRITICAL(&g_updateMux);
+                g_updateCheckInFlight = false;
+                portEXIT_CRITICAL(&g_updateMux);
+                apiSendError(503, "http queue full");
+                return;
+            }
+            g_lastUpdateCheck = now;
         }
     }
+
+    bool updateAvailable;
+    bool inFlight;
+    char latestSha[sizeof(g_latestSha)];
+    char latestDate[sizeof(g_latestDate)];
+    portENTER_CRITICAL(&g_updateMux);
+    updateAvailable = g_updateAvailable;
+    inFlight = g_updateCheckInFlight;
+    strncpy(latestSha, g_latestSha, sizeof(latestSha) - 1);
+    latestSha[sizeof(latestSha) - 1] = '\0';
+    strncpy(latestDate, g_latestDate, sizeof(latestDate) - 1);
+    latestDate[sizeof(latestDate) - 1] = '\0';
+    portEXIT_CRITICAL(&g_updateMux);
     
     String json;
     json.reserve(256);
     json += "{";
-    json += "\"update_available\":";
-    json += g_updateAvailable ? "true" : "false";
+    json += "\"ok\":true";
+    json += ",\"pending\":";
+    json += inFlight ? "true" : "false";
+    json += ",\"update_available\":";
+    json += updateAvailable ? "true" : "false";
     json += ",\"current_sha\":\"";
     json += currentSha;
     json += "\"";
     json += ",\"latest_sha\":\"";
-    json += g_latestSha;
+    json += latestSha;
     json += "\"";
     json += ",\"latest_date\":\"";
-    json += g_latestDate;
+    json += latestDate;
     json += "\"";
     json += "}";
     server.send(200, "application/json", json);
@@ -3014,6 +3139,7 @@ static void handleSettingsGet()
 {
     Settings& cfg = settings_get();
     String json = "{";
+    json += "\"ok\":true,";
     json += "\"animSpeed\":" + String(cfg.animSpeed) + ",";
     json += "\"vuPalette\":" + String(cfg.vuPalette) + ",";
     json += "\"weatherPreset\":" + String(cfg.weatherPreset) + ",";
@@ -3028,16 +3154,38 @@ static void handleSettingsGet()
 
 static void handleCardSwitch()
 {
+    bool applied = false;
     if (server.hasArg("card")) {
-        uint8_t card = (uint8_t)server.arg("card").toInt();
-        cards_switch_to(card);
+        long card = server.arg("card").toInt();
+        if (card < 0 || card >= (long)cards_get_count()) {
+            if (server.hasArg("ajax") && server.arg("ajax") == "1") {
+                apiSendError(400, "invalid card");
+                return;
+            }
+        } else {
+            cards_switch_to((uint8_t)card);
+            applied = true;
+        }
     }
     if (server.hasArg("preset")) {
-        uint8_t preset = (uint8_t)server.arg("preset").toInt();
-        cards_set_preset(preset);
+        long preset = server.arg("preset").toInt();
+        if (preset < 0 || preset > 255) {
+            if (server.hasArg("ajax") && server.arg("ajax") == "1") {
+                apiSendError(400, "invalid preset");
+                return;
+            }
+        } else {
+            cards_set_preset((uint8_t)preset);
+            applied = true;
+        }
     }
     if (server.hasArg("ajax") && server.arg("ajax") == "1") {
-        server.send(200, "application/json", "{\"ok\":true}");
+        String json;
+        json.reserve(48);
+        json += "{\"ok\":true";
+        if (!applied) json += ",\"noop\":true";
+        json += "}";
+        server.send(200, "application/json", json);
         return;
     }
 
@@ -3048,43 +3196,92 @@ static void handleCardSwitch()
 // AJAX-friendly card switching
 static void handleApiCardSwitch()
 {
+    bool applied = false;
     if (server.hasArg("card")) {
-        uint8_t card = (uint8_t)server.arg("card").toInt();
-        cards_switch_to(card);
+        long card = server.arg("card").toInt();
+        if (card < 0 || card >= (long)cards_get_count()) {
+            apiSendError(400, "invalid card");
+            return;
+        }
+        cards_switch_to((uint8_t)card);
+        applied = true;
     }
     if (server.hasArg("preset")) {
-        uint8_t preset = (uint8_t)server.arg("preset").toInt();
-        cards_set_preset(preset);
+        long preset = server.arg("preset").toInt();
+        if (preset < 0 || preset > 255) {
+            apiSendError(400, "invalid preset");
+            return;
+        }
+        cards_set_preset((uint8_t)preset);
+        applied = true;
     }
-    server.send(200, "application/json", "{\"ok\":true}");
+    String json;
+    json.reserve(48);
+    json += "{\"ok\":true";
+    if (!applied) json += ",\"noop\":true";
+    json += "}";
+    server.send(200, "application/json", json);
 }
 
 // AJAX-friendly weather simulation
 static void handleApiSimulate()
 {
-    if (server.hasArg("type") && server.hasArg("temp")) {
-        uint8_t wtype = (uint8_t)server.arg("type").toInt();
-        int8_t temp = (int8_t)server.arg("temp").toInt();
-        weather_simulate(wtype, temp);
+    if (!server.hasArg("type") || !server.hasArg("temp")) {
+        apiSendError(400, "missing type or temp");
+        return;
     }
+
+    long wtype = server.arg("type").toInt();
+    long temp = server.arg("temp").toInt();
+
+    if (wtype < 0 || wtype >= (long)WEATHER_TYPE_COUNT) {
+        apiSendError(400, "invalid type");
+        return;
+    }
+    if (temp < -128 || temp > 127) {
+        apiSendError(400, "invalid temp");
+        return;
+    }
+
+    weather_simulate((uint8_t)wtype, (int8_t)temp);
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
 // Save touch shortcut setting
 static void handleApiTouchShortcut()
 {
+    bool updated = false;
     if (server.hasArg("val")) {
         String val = server.arg("val");
         int underscore = val.indexOf('_');
         if (underscore > 0) {
+            long card = val.substring(0, underscore).toInt();
+            long preset = val.substring(underscore + 1).toInt();
+            if (card < 0 || card >= (long)cards_get_count()) {
+                apiSendError(400, "invalid card");
+                return;
+            }
+            if (preset < 0 || preset > 63) {
+                apiSendError(400, "invalid preset");
+                return;
+            }
             Settings& cfg = settings_get();
-            cfg.touchShortcutCard = (uint8_t)val.substring(0, underscore).toInt();
-            cfg.touchShortcutPreset = (uint8_t)val.substring(underscore + 1).toInt();
+            cfg.touchShortcutCard = (uint8_t)card;
+            cfg.touchShortcutPreset = (uint8_t)preset;
             cfg.touchShortcutLocksCycle = server.hasArg("lock") && server.arg("lock") == "1";
             settings_save();
+            updated = true;
+        } else {
+            apiSendError(400, "invalid val");
+            return;
         }
     }
-    server.send(200, "application/json", "{\"ok\":true}");
+    String json;
+    json.reserve(48);
+    json += "{\"ok\":true";
+    if (!updated) json += ",\"noop\":true";
+    json += "}";
+    server.send(200, "application/json", json);
 }
 
 static void handleCardsConfigPost()
@@ -3645,14 +3842,24 @@ loadSprite();
 
 static void handleApiSprites()
 {
-    server.send(200, "application/json", sprites_all_to_json());
+    if (server.hasArg("raw") && server.arg("raw") == "1") {
+        server.send(200, "application/json", sprites_all_to_json());
+        return;
+    }
+    String json;
+    String items = sprites_all_to_json();
+    json.reserve(items.length() + 32);
+    json += "{\"ok\":true,\"items\":";
+    json += items;
+    json += "}";
+    server.send(200, "application/json", json);
 }
 
 static void handleApiSpriteGet()
 {
     int id = server.arg("id").toInt();
     if (id < 0 || id >= SPRITE_COUNT) {
-        server.send(400, "application/json", "{\"error\":\"invalid id\"}");
+        apiSendError(400, "invalid id");
         return;
     }
     server.send(200, "application/json", sprites_to_json((SpriteType)id));
@@ -3662,15 +3869,15 @@ static void handleApiSpriteSave()
 {
     int id = server.arg("id").toInt();
     if (id < 0 || id >= SPRITE_COUNT) {
-        server.send(400, "application/json", "{\"error\":\"invalid id\"}");
+        apiSendError(400, "invalid id");
         return;
     }
     
     String body = server.arg("plain");
     if (sprites_from_json((SpriteType)id, body)) {
-        server.send(200, "application/json", "{\"success\":true}");
+        server.send(200, "application/json", "{\"ok\":true,\"success\":true}");
     } else {
-        server.send(500, "application/json", "{\"error\":\"save failed\"}");
+        apiSendError(500, "save failed");
     }
 }
 
@@ -3678,14 +3885,14 @@ static void handleApiSpriteReset()
 {
     int id = server.arg("id").toInt();
     if (id < 0 || id >= SPRITE_COUNT) {
-        server.send(400, "application/json", "{\"error\":\"invalid id\"}");
+        apiSendError(400, "invalid id");
         return;
     }
     
     if (sprites_reset((SpriteType)id)) {
-        server.send(200, "application/json", "{\"success\":true}");
+        server.send(200, "application/json", "{\"ok\":true,\"success\":true}");
     } else {
-        server.send(500, "application/json", "{\"error\":\"reset failed\"}");
+        apiSendError(500, "reset failed");
     }
 }
 
