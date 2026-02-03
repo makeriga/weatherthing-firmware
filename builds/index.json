@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "sha": "3018cc48673d5d6d1fca661b13b2733d8784b116",
+      "sha_short": "3018cc4",
+      "commit_message": "mqtt moved to a task, general improvements",
+      "commit_date": "2026-02-03 23:32:14 +0200",
+      "build_date": "2026-02-03T21:33:51Z",
+      "branch": "main",
+      "path": "3018cc4"
+    },
+    {
       "sha": "87f02bb929bc277e2a1fbdcee3720cb0ea16b4fa",
       "sha_short": "87f02bb",
       "commit_message": "slightly improved weather preset Pixel",
@@ -170,15 +179,6 @@
       "build_date": "2025-12-16T16:49:30Z",
       "branch": "main",
       "path": "9f03be4"
-    },
-    {
-      "sha": "1515a69aacb35abaaf91dd07d4de7e8cacc4b488",
-      "sha_short": "1515a69",
-      "commit_message": "updater restyle, nvr persistance, bootanim fixes",
-      "commit_date": "2025-12-16 18:17:28 +0200",
-      "build_date": "2025-12-16T16:18:50Z",
-      "branch": "main",
-      "path": "1515a69"
     }
   ]
 }

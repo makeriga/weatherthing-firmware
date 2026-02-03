@@ -1,6 +1,6 @@
 {
   "name": "WeatherThing Firmware",
-  "version": "1515a69",
+  "version": "3018cc4",
   "new_install_prompt_erase": true,
   "builds": [
     {

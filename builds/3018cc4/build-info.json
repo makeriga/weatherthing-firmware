@@ -1,0 +1,8 @@
+{
+  "sha": "3018cc48673d5d6d1fca661b13b2733d8784b116",
+  "sha_short": "3018cc4",
+  "commit_message": "mqtt moved to a task, general improvements",
+  "commit_date": "2026-02-03 23:32:14 +0200",
+  "build_date": "2026-02-03T21:33:51Z",
+  "branch": "main"
+}
