@@ -70,6 +70,7 @@ static void handleApiOverlayMatrix();
 static void handleApiOverlayTimeline();
 static void handleApiOverlayText();
 static void handleApiLang();
+static void sendWifiSavedAndReboot(const String &ssid);
 
 // Minimal URL encoder for API queries (keep here to avoid cross-file coupling)
 static String url_encode_city(const String& in)
@@ -2749,7 +2750,11 @@ static void handleWifiPost()
     }
 
     saveCreds(ssid, pass);
+    sendWifiSavedAndReboot(ssid);
+}
 
+static void sendWifiSavedAndReboot(const String &ssid)
+{
     String html;
     html.reserve(1024);
     html += "<!DOCTYPE html><html><head><meta charset='utf-8'><title>WeatherThing WiFi</title>";
@@ -2776,7 +2781,7 @@ static void handleWifiPost()
     html += "</p>";
     html += "</div></body></html>";
     server.send(200, "text/html", html);
-    
+
     // Give time for the response to be sent, then reboot
     delay(500);
     server.handleClient();
@@ -3294,6 +3299,28 @@ static void handleApiTouchShortcut()
 static void handleCardsConfigPost()
 {
     Settings& cfg = settings_get();
+
+    bool wifiChanged = false;
+    if (server.hasArg("ssid")) {
+        String ssid = server.arg("ssid");
+        String pass = server.hasArg("pass") ? server.arg("pass") : "";
+        ssid.trim();
+        pass.trim();
+
+        if (ssid.length() > 0) {
+            String prevSsid = g_ssid;
+            String prevPass = g_pass;
+            String newPass = pass;
+            // Keep existing pass if SSID unchanged and pass left blank.
+            if (pass.length() == 0 && ssid == prevSsid) {
+                newPass = prevPass;
+            }
+            if (ssid != prevSsid || newPass != prevPass) {
+                saveCreds(ssid, newPass);
+                wifiChanged = true;
+            }
+        }
+    }
     
     // 1. Parse Order
     if (server.hasArg("order")) {
@@ -3576,6 +3603,11 @@ static void handleCardsConfigPost()
 
     if (server.hasArg("ajax") && server.arg("ajax") == "1") {
         server.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+
+    if (wifiChanged) {
+        sendWifiSavedAndReboot(g_ssid);
         return;
     }
 
