@@ -85,7 +85,6 @@ void loop()
     }
 
     net_loop();
-    mqtt_loop();
     weather_update();
     cards_loop();
 }
