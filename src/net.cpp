@@ -420,9 +420,22 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
     html += "</div>";
     html += "<p style=\"font-size:0.85em;color:#666;margin-bottom:8px\">";
     html += TR("Current", "Pa\u0161reiz\u0113j\u0101");
-    html += ": <b>GMT" + String(cfg.tzOffset >= 0 ? "+" : "") + String(cfg.tzOffset) + "</b> (";
-    html += TR("Default: GMT+2 Riga", "Noklus\u0113jums: GMT+2 R\u012bga");
+    if (cfg.tzAuto) {
+        html += ": <b>";
+        html += TR("Auto (from location, DST-aware)", "Automātiski (no lokācijas, ar vasaras laiku)");
+        html += "</b> (";
+    } else {
+        html += ": <b>GMT" + String(cfg.tzOffset >= 0 ? "+" : "") + String(cfg.tzOffset) + "</b> (";
+    }
+    html += TR("Default: Riga, Latvia", "Noklusējums: Rīga, Latvija");
     html += ")</p>";
+    html += "<input type=\"hidden\" name=\"tzAuto_present\" value=\"1\">";
+    html += "<label style=\"display:flex;align-items:center;gap:8px;font-weight:bold;margin-bottom:8px;cursor:pointer\">";
+    html += "<input type=\"checkbox\" name=\"tzAuto\" value=\"1\"";
+    if (cfg.tzAuto) html += " checked";
+    html += " style=\"width:16px;height:16px\">";
+    html += TR("Auto timezone from location (recommended)", "Automātiska laika josla pēc lokācijas (ieteicams)");
+    html += "</label>";
     html += "<div style=\"display:flex;gap:10px;align-items:center\">";
     html += "<select name=\"tz\" style=\"padding:10px;min-width:200px\">";
     for (int8_t tz = -12; tz <= 14; ++tz) {
@@ -440,7 +453,22 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
         else if (tz == 9) html += " (Tokyo)";
         html += "</option>";
     }
-    html += "</select></div></div>";
+    html += "</select></div>";
+    html += "<div style=\"display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px\">";
+    html += "<label style=\"font-weight:bold;min-width:120px\">";
+    html += TR("Clock format", "Pulksteņa formāts");
+    html += ":</label>";
+    html += "<input type=\"hidden\" name=\"clock24_present\" value=\"1\">";
+    html += "<label style=\"display:flex;align-items:center;gap:6px;font-weight:bold;cursor:pointer\">";
+    html += "<input type=\"checkbox\" name=\"clock24\" value=\"1\"";
+    if (cfg.clock24h) html += " checked";
+    html += " style=\"width:16px;height:16px\">";
+    html += TR("24h", "24h");
+    html += "</label>";
+    html += "<span style=\"font-size:0.85em;color:#666\">";
+    html += TR("Turn off for 12h (AM/PM)", "Izslēdziet 12h (AM/PM) režīmam");
+    html += "</span>";
+    html += "</div></div>";
     
     html += "<button type=\"submit\" class=\"btn btn-primary btn-full\" onclick=\"saveOrder()\" style=\"font-size:1.1em;padding:15px\">&#x1F4BE; ";
     html += TR("Save Quick Setup", "Saglab\u0101t \u0100tros iestat\u012bjumus");
@@ -945,6 +973,13 @@ document.querySelectorAll('.logo-svg path,.logo-svg rect').forEach(function(el){
                 html += "<div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap\">";
                 html += "<label style=\"font-weight:bold\">";
                 html += TR("Timezone:", "Laika josla:");
+                html += "</label>";
+                html += "<input type=\"hidden\" name=\"tzAuto_present\" value=\"1\">";
+                html += "<label style=\"display:flex;align-items:center;gap:6px;font-weight:bold;cursor:pointer\">";
+                html += "<input type=\"checkbox\" name=\"tzAuto\" value=\"1\"";
+                if (cfg.tzAuto) html += " checked";
+                html += " style=\"width:16px;height:16px\">";
+                html += TR("Auto DST", "Auto vasaras laiks");
                 html += "</label>";
                 html += "<select name=\"tz\" style=\"padding:6px\">";
                 for (int8_t tz = -12; tz <= 14; ++tz) {
@@ -2798,6 +2833,10 @@ static void handleLocationPost()
     float lon = lonStr.toFloat();
 
     weather_set_location(lat, lon);
+    if (settings_get().tzAuto) {
+        weather_sync_timezone_from_location();
+        settings_save();
+    }
 
     String html;
     html.reserve(512);
@@ -2913,6 +2952,7 @@ static void handleSimulatePost()
 static void handleSettingsPost()
 {
     Settings& cfg = settings_get();
+    bool timezoneNeedsSync = false;
     
     if (server.hasArg("palette")) {
         cfg.vuPalette = (uint8_t)server.arg("palette").toInt();
@@ -2982,11 +3022,26 @@ static void handleSettingsPost()
         cfg.stockEnabled = sym.length() > 0;
     }
     
+    if (server.hasArg("tzAuto_present")) {
+        bool newAuto = server.hasArg("tzAuto");
+        if (cfg.tzAuto != newAuto) {
+            cfg.tzAuto = newAuto;
+            if (newAuto) timezoneNeedsSync = true;
+        }
+    }
     if (server.hasArg("tz")) {
         int8_t tz = (int8_t)server.arg("tz").toInt();
         if (tz >= -12 && tz <= 14) {
             cfg.tzOffset = tz;
+            cfg.tzOffsetMin = (int16_t)tz * 60;
+            if (!cfg.tzAuto) {
+                settings_set_timezone_fixed_minutes(cfg.tzOffsetMin);
+            }
         }
+    }
+    if (server.hasArg("clock24_present")) {
+        cfg.clock24h = server.hasArg("clock24");
+        cfg.clockFmtExplicit = true;
     }
     
     if (server.hasArg("btcMins")) {
@@ -3129,6 +3184,10 @@ static void handleSettingsPost()
     if (server.hasArg("socMins")) {
         uint8_t mins = (uint8_t)server.arg("socMins").toInt();
         if (mins >= 1 && mins <= 60) cfg.socialUpdateMins = mins;
+    }
+
+    if (timezoneNeedsSync && cfg.tzAuto) {
+        weather_sync_timezone_from_location();
     }
     
     settings_save();
@@ -3301,6 +3360,7 @@ static void handleCardsConfigPost()
     Settings& cfg = settings_get();
 
     bool wifiChanged = false;
+    bool timezoneNeedsSync = false;
     if (server.hasArg("ssid")) {
         String ssid = server.arg("ssid");
         String pass = server.hasArg("pass") ? server.arg("pass") : "";
@@ -3440,6 +3500,7 @@ static void handleCardsConfigPost()
             weather_get_location(&curLat, &curLon);
             if (fabsf(newLat - curLat) > 0.0005f || fabsf(newLon - curLon) > 0.0005f) {
                 weather_set_location(newLat, newLon);
+                timezoneNeedsSync = true;
             }
         }
     }
@@ -3491,12 +3552,26 @@ static void handleCardsConfigPost()
     }
     
     // 6. Clock settings
+    if (server.hasArg("tzAuto_present")) {
+        bool newAuto = server.hasArg("tzAuto");
+        if (cfg.tzAuto != newAuto) {
+            cfg.tzAuto = newAuto;
+            if (newAuto) timezoneNeedsSync = true;
+        }
+    }
     if (server.hasArg("tz")) {
         int8_t tz = (int8_t)server.arg("tz").toInt();
-        if (tz >= -12 && tz <= 14) cfg.tzOffset = tz;
+        if (tz >= -12 && tz <= 14) {
+            cfg.tzOffset = tz;
+            cfg.tzOffsetMin = (int16_t)tz * 60;
+            if (!cfg.tzAuto) {
+                settings_set_timezone_fixed_minutes(cfg.tzOffsetMin);
+            }
+        }
     }
     if (server.hasArg("clock24_present")) {
         cfg.clock24h = server.hasArg("clock24");
+        cfg.clockFmtExplicit = true;
     }
     
     // 7. BTC/Crypto settings
@@ -3592,6 +3667,10 @@ static void handleCardsConfigPost()
     if (server.hasArg("socMins")) {
         uint8_t mins = (uint8_t)server.arg("socMins").toInt();
         if (mins >= 1 && mins <= 60) cfg.socialUpdateMins = mins;
+    }
+
+    if (timezoneNeedsSync && cfg.tzAuto) {
+        weather_sync_timezone_from_location();
     }
     
     settings_save();
@@ -3955,6 +4034,7 @@ void net_loop()
                 MDNS.addService("http", "tcp", 80);
             }
 
+            settings_apply_timezone();
             configTime(0, 0, "pool.ntp.org", "time.nist.gov");
 
             startServer();

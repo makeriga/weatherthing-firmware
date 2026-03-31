@@ -223,15 +223,11 @@ static uint32_t g_clockLastUpdate = 0;
 static bool g_clockTimeValid = false;
 static tm g_clockTime;
 
-// Return clock time adjusted by configured timezone offset (hours)
+// Return clock time already localized by libc TZ rules.
 static tm getClockLocalTime()
 {
     tm local = g_clockTime;
     if (!g_clockTimeValid) return local;
-
-    time_t utc = mktime(&local); // g_clockTime is kept in UTC
-    utc += (time_t)settings_get().tzOffset * 3600;
-    localtime_r(&utc, &local);
     return local;
 }
 

@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
+#include <limits.h>
 #include "weather.h"
 #include "settings.h"
 #include "http_worker.h"
@@ -82,6 +83,128 @@ static String url_encode(const String& in)
     return out;
 }
 
+struct TzMapEntry
+{
+    const char* iana;
+    const char* posix;
+    int16_t baseOffsetMin;
+};
+
+static const TzMapEntry TZ_MAP[] = {
+    // Europe
+    {"Europe/Riga", "EET-2EEST,M3.5.0/3,M10.5.0/4", 120},
+    {"Europe/Vilnius", "EET-2EEST,M3.5.0/3,M10.5.0/4", 120},
+    {"Europe/Tallinn", "EET-2EEST,M3.5.0/3,M10.5.0/4", 120},
+    {"Europe/Helsinki", "EET-2EEST,M3.5.0/3,M10.5.0/4", 120},
+    {"Europe/Athens", "EET-2EEST,M3.5.0/3,M10.5.0/4", 120},
+    {"Europe/Bucharest", "EET-2EEST,M3.5.0/3,M10.5.0/4", 120},
+    {"Europe/Sofia", "EET-2EEST,M3.5.0/3,M10.5.0/4", 120},
+    {"Europe/Kyiv", "EET-2EEST,M3.5.0/3,M10.5.0/4", 120},
+    {"Europe/Berlin", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Paris", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Rome", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Madrid", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Warsaw", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Amsterdam", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Brussels", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Prague", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Vienna", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Zurich", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Stockholm", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Oslo", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/Copenhagen", "CET-1CEST,M3.5.0/2,M10.5.0/3", 60},
+    {"Europe/London", "GMT0BST,M3.5.0/1,M10.5.0/2", 0},
+    {"Europe/Dublin", "GMT0IST,M3.5.0/1,M10.5.0/2", 0},
+    {"Europe/Lisbon", "WET0WEST,M3.5.0/1,M10.5.0/2", 0},
+    {"Europe/Moscow", "MSK-3", 180},
+    // Americas
+    {"America/New_York", "EST5EDT,M3.2.0/2,M11.1.0/2", -300},
+    {"America/Detroit", "EST5EDT,M3.2.0/2,M11.1.0/2", -300},
+    {"America/Chicago", "CST6CDT,M3.2.0/2,M11.1.0/2", -360},
+    {"America/Denver", "MST7MDT,M3.2.0/2,M11.1.0/2", -420},
+    {"America/Los_Angeles", "PST8PDT,M3.2.0/2,M11.1.0/2", -480},
+    {"America/Phoenix", "MST7", -420},
+    {"America/Anchorage", "AKST9AKDT,M3.2.0/2,M11.1.0/2", -540},
+    {"America/Honolulu", "HST10", -600},
+    {"America/St_Johns", "NST3:30NDT,M3.2.0/2,M11.1.0/2", -210}
+};
+
+static bool extractJsonString(const String& payload, const char* key, String* out)
+{
+    if (!out) return false;
+    int idx = payload.indexOf(key);
+    if (idx < 0) return false;
+    int start = idx + (int)strlen(key);
+    int end = payload.indexOf("\"", start);
+    if (end <= start) return false;
+    *out = payload.substring(start, end);
+    return true;
+}
+
+static bool extractJsonLong(const String& payload, const char* key, long* out)
+{
+    if (!out) return false;
+    int idx = payload.indexOf(key);
+    if (idx < 0) return false;
+    int start = idx + (int)strlen(key);
+    int end = payload.indexOf(",", start);
+    if (end < 0) end = payload.indexOf("}", start);
+    if (end <= start) return false;
+    *out = payload.substring(start, end).toInt();
+    return true;
+}
+
+static bool lookup_timezone_rule(const String& iana, const char** posixOut, int16_t* baseOffsetOut)
+{
+    if (!posixOut || !baseOffsetOut) return false;
+    for (size_t i = 0; i < (sizeof(TZ_MAP) / sizeof(TZ_MAP[0])); ++i)
+    {
+        if (iana.equalsIgnoreCase(TZ_MAP[i].iana))
+        {
+            *posixOut = TZ_MAP[i].posix;
+            *baseOffsetOut = TZ_MAP[i].baseOffsetMin;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool apply_auto_timezone_from_payload(const String& timezoneName, long utcOffsetSeconds)
+{
+    Settings& cfg = settings_get();
+    if (!cfg.tzAuto) return false;
+
+    bool changed = false;
+    const char* posixRule = nullptr;
+    int16_t baseOffsetMin = 0;
+
+    if (timezoneName.length() > 0 && lookup_timezone_rule(timezoneName, &posixRule, &baseOffsetMin))
+    {
+        changed = settings_set_timezone_rule(posixRule, baseOffsetMin);
+    }
+    else if (utcOffsetSeconds >= -64800 && utcOffsetSeconds <= 64800)
+    {
+        changed = settings_set_timezone_fixed_minutes((int16_t)(utcOffsetSeconds / 60));
+    }
+
+    // Guardrail: for European deployments, keep 24h unless user explicitly chose otherwise.
+    if (!cfg.clockFmtExplicit && timezoneName.startsWith("Europe/") && !cfg.clock24h)
+    {
+        cfg.clock24h = true;
+        changed = true;
+    }
+
+    if (changed)
+    {
+        settings_save();
+        Serial.print("Timezone auto-set: ");
+        if (timezoneName.length() > 0) Serial.println(timezoneName);
+        else Serial.println("fixed UTC offset");
+    }
+
+    return changed;
+}
+
 static bool fetch_open_meteo(WeatherData* outCurrent, ForecastSlot outForecast[12])
 {
     if (!outCurrent || !outForecast) return false;
@@ -114,6 +237,12 @@ static bool fetch_open_meteo(WeatherData* outCurrent, ForecastSlot outForecast[1
 
     String payload = http.getString();
     http.end();
+
+    String timezoneName;
+    long utcOffsetSeconds = LONG_MIN;
+    extractJsonString(payload, "\"timezone\":\"", &timezoneName);
+    extractJsonLong(payload, "\"utc_offset_seconds\":", &utcOffsetSeconds);
+    apply_auto_timezone_from_payload(timezoneName, utcOffsetSeconds);
 
     WeatherData current = {0, WEATHER_CLOUDY, false};
     ForecastSlot forecast[12];
@@ -624,6 +753,37 @@ void weather_get_location(float* lat, float* lon)
     if (lon) *lon = g_lon;
 }
 
+bool weather_sync_timezone_from_location()
+{
+    if (WiFi.status() != WL_CONNECTED) return false;
+
+    HTTPClient http;
+    String url = "http://api.open-meteo.com/v1/forecast?";
+    url += "latitude=" + String(g_lat, 4);
+    url += "&longitude=" + String(g_lon, 4);
+    url += "&current=temperature_2m";
+    url += "&timezone=auto";
+
+    http.begin(url);
+    http.setConnectTimeout(3000);
+    http.setTimeout(5000);
+    int code = http.GET();
+    if (code != 200)
+    {
+        http.end();
+        return false;
+    }
+
+    String payload = http.getString();
+    http.end();
+
+    String timezoneName;
+    long utcOffsetSeconds = LONG_MIN;
+    extractJsonString(payload, "\"timezone\":\"", &timezoneName);
+    extractJsonLong(payload, "\"utc_offset_seconds\":", &utcOffsetSeconds);
+    return apply_auto_timezone_from_payload(timezoneName, utcOffsetSeconds);
+}
+
 void weather_simulate(uint8_t type, int8_t temp)
 {
     g_simulating = true;  // Lock out weather fetching
@@ -701,6 +861,8 @@ bool weather_set_city(const char* city)
     if (code == 200)
     {
         String payload = http.getString();
+        String timezoneName;
+        extractJsonString(payload, "\"timezone\":\"", &timezoneName);
         
         // Parse: {"results":[{"latitude":51.5074,"longitude":-0.1278,...}]}
         int resultsIdx = payload.indexOf("\"results\"");
@@ -722,6 +884,10 @@ bool weather_set_city(const char* city)
             if (lat != 0 || lon != 0)
             {
                 weather_set_location(lat, lon);
+                bool tzApplied = apply_auto_timezone_from_payload(timezoneName, LONG_MIN);
+                if (!tzApplied && settings_get().tzAuto) {
+                    weather_sync_timezone_from_location();
+                }
                 Serial.print("City found: ");
                 Serial.print(lat, 4);
                 Serial.print(", ");

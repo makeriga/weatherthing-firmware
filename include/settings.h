@@ -60,7 +60,11 @@ struct Settings
     
     // Clock
     int8_t tzOffset;         // Timezone offset in hours (-12 to +14)
+    int16_t tzOffsetMin;     // Timezone offset in minutes (-720 to +840)
+    char tzRule[64];         // POSIX TZ rule (DST-aware when available)
+    bool tzAuto;             // Auto timezone from location
     bool clock24h;           // 24-hour clock format (true=24h, false=12h)
+    bool clockFmtExplicit;   // User explicitly selected clock format
     
     // Financial card update intervals (in minutes)
     uint8_t btcUpdateMins;   // BTC update interval (1-60 min, default 5)
@@ -148,6 +152,17 @@ Settings& settings_get();
 
 // Save settings to flash
 void settings_save();
+
+// Apply current timezone rule to libc time conversion
+void settings_apply_timezone();
+
+// Set a fixed-offset timezone (no DST), e.g. +120 minutes for UTC+2
+// Returns true when settings changed.
+bool settings_set_timezone_fixed_minutes(int16_t offsetMinutes);
+
+// Set a POSIX timezone rule and base offset minutes.
+// Returns true when settings changed.
+bool settings_set_timezone_rule(const char* posixRule, int16_t baseOffsetMinutes);
 
 // Get palette name
 const char* settings_palette_name(uint8_t palette);

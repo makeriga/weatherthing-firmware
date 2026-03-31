@@ -55,6 +55,9 @@ void weather_get_location(float* lat, float* lon);
 // Set location by city name (uses geocoding API)
 bool weather_set_city(const char* city);
 
+// Resolve/apply timezone for current location (DST-aware when possible)
+bool weather_sync_timezone_from_location();
+
 // Simulate weather for testing (stays until location change or stop)
 void weather_simulate(uint8_t type, int8_t temp);
 

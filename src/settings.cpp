@@ -1,6 +1,10 @@
 #include "settings.h"
 #include "weatherthing_hw.h"
 #include <Preferences.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
 
 static Settings g_settings;
 static Preferences g_prefs;
@@ -47,6 +51,76 @@ static const char* PALETTE_NAMES[] = {
     "Classic", "Ocean", "Lava", "Forest", "Rainbow", "Party", "Sunset", "Ice"
 };
 
+static int8_t roundOffsetHours(int16_t offsetMinutes)
+{
+    if (offsetMinutes >= 0) return (int8_t)((offsetMinutes + 30) / 60);
+    return (int8_t)((offsetMinutes - 30) / 60);
+}
+
+static void copyTzRule(const char* src)
+{
+    if (!src) src = "UTC0";
+    strncpy(g_settings.tzRule, src, sizeof(g_settings.tzRule) - 1);
+    g_settings.tzRule[sizeof(g_settings.tzRule) - 1] = '\0';
+}
+
+static void buildFixedTzRule(int16_t offsetMinutes, char* out, size_t outSize)
+{
+    if (!out || outSize < 6) return;
+    int westMinutes = -offsetMinutes; // POSIX TZ uses "hours west of UTC"
+    char sign = (westMinutes >= 0) ? '+' : '-';
+    int absMinutes = abs(westMinutes);
+    int hh = absMinutes / 60;
+    int mm = absMinutes % 60;
+    if (mm == 0) {
+        snprintf(out, outSize, "UTC%c%d", sign, hh);
+    } else {
+        snprintf(out, outSize, "UTC%c%d:%02d", sign, hh, mm);
+    }
+}
+
+void settings_apply_timezone()
+{
+    const char* tz = (g_settings.tzRule[0] != '\0') ? g_settings.tzRule : "UTC0";
+    setenv("TZ", tz, 1);
+    tzset();
+}
+
+bool settings_set_timezone_rule(const char* posixRule, int16_t baseOffsetMinutes)
+{
+    if (!posixRule || posixRule[0] == '\0') return false;
+    if (baseOffsetMinutes < -720) baseOffsetMinutes = -720;
+    if (baseOffsetMinutes > 840) baseOffsetMinutes = 840;
+
+    bool changed = false;
+    if (strcmp(g_settings.tzRule, posixRule) != 0) {
+        copyTzRule(posixRule);
+        changed = true;
+    }
+    if (g_settings.tzOffsetMin != baseOffsetMinutes) {
+        g_settings.tzOffsetMin = baseOffsetMinutes;
+        changed = true;
+    }
+
+    int8_t roundedHours = roundOffsetHours(baseOffsetMinutes);
+    if (roundedHours < -12) roundedHours = -12;
+    if (roundedHours > 14) roundedHours = 14;
+    if (g_settings.tzOffset != roundedHours) {
+        g_settings.tzOffset = roundedHours;
+        changed = true;
+    }
+
+    settings_apply_timezone();
+    return changed;
+}
+
+bool settings_set_timezone_fixed_minutes(int16_t offsetMinutes)
+{
+    char rule[24];
+    buildFixedTzRule(offsetMinutes, rule, sizeof(rule));
+    return settings_set_timezone_rule(rule, offsetMinutes);
+}
+
 void settings_begin()
 {
     // Set defaults
@@ -77,7 +151,11 @@ void settings_begin()
     g_settings.stockEnabled = false;
     g_settings.cryptoSymbol[0] = '\0'; // Empty = BTC default
     g_settings.tzOffset = 2;  // GMT+2 (Riga, Latvia) by default
+    g_settings.tzOffsetMin = 120;
+    copyTzRule("EET-2EEST,M3.5.0/3,M10.5.0/4");
+    g_settings.tzAuto = true;
     g_settings.clock24h = true; // 24h format by default
+    g_settings.clockFmtExplicit = false;
     g_settings.btcUpdateMins = 5;    // 5 minute default
     g_settings.stockUpdateMins = 5;  // 5 minute default
     g_settings.brightMin = 1;         // Minimum brightness (absolute min)
@@ -178,8 +256,15 @@ void settings_begin()
         g_settings.mapZoom = g_prefs.getUChar("mapZoom", 4);
         g_settings.mapStyle = g_prefs.getUChar("mapStyle", 0);
         g_settings.stockEnabled = g_prefs.getBool("stockOn", false);
-        g_settings.tzOffset = g_prefs.getChar("tzOffset", 0);
+        g_settings.tzOffset = g_prefs.getChar("tzOffset", 2);
+        g_settings.tzOffsetMin = g_prefs.getShort("tzOffMin", (int16_t)g_settings.tzOffset * 60);
+        g_settings.tzAuto = g_prefs.getBool("tzAuto", true);
+        {
+            String tzRule = g_prefs.getString("tzRule", "");
+            copyTzRule(tzRule.c_str());
+        }
         g_settings.clock24h = g_prefs.getBool("clk24", true);
+        g_settings.clockFmtExplicit = g_prefs.getBool("clkFmtSet", false);
         g_settings.btcUpdateMins = g_prefs.getUChar("btcMins", 5);
         g_settings.stockUpdateMins = g_prefs.getUChar("stockMins", 5);
         
@@ -357,8 +442,26 @@ void settings_begin()
     if (g_settings.beatThreshold > 250) g_settings.beatThreshold = 250;
     if (g_settings.beatHold < 1) g_settings.beatHold = 1;
     if (g_settings.beatHold > 60) g_settings.beatHold = 60;
+    if (g_settings.tzOffsetMin < -720) g_settings.tzOffsetMin = -720;
+    if (g_settings.tzOffsetMin > 840) g_settings.tzOffsetMin = 840;
+    g_settings.tzOffset = roundOffsetHours(g_settings.tzOffsetMin);
     if (g_settings.tzOffset < -12) g_settings.tzOffset = -12;
     if (g_settings.tzOffset > 14) g_settings.tzOffset = 14;
+    if (!g_settings.clockFmtExplicit && !g_settings.clock24h)
+    {
+        bool likelyEuropeanTz =
+            strncmp(g_settings.tzRule, "EET", 3) == 0 ||
+            strncmp(g_settings.tzRule, "CET", 3) == 0 ||
+            strncmp(g_settings.tzRule, "WET", 3) == 0;
+        if (likelyEuropeanTz) {
+            g_settings.clock24h = true;
+        }
+    }
+    if (g_settings.tzRule[0] == '\0') {
+        settings_set_timezone_fixed_minutes(g_settings.tzOffsetMin);
+    } else {
+        settings_apply_timezone();
+    }
     if (g_settings.btcUpdateMins < 1) g_settings.btcUpdateMins = 1;
     if (g_settings.btcUpdateMins > 60) g_settings.btcUpdateMins = 60;
     if (g_settings.stockUpdateMins < 1) g_settings.stockUpdateMins = 1;
@@ -418,7 +521,11 @@ void settings_save()
         g_prefs.putString("stockSym", g_settings.stockSymbol);
         g_prefs.putString("cryptoSym", g_settings.cryptoSymbol);
         g_prefs.putChar("tzOffset", g_settings.tzOffset);
+        g_prefs.putShort("tzOffMin", g_settings.tzOffsetMin);
+        g_prefs.putString("tzRule", g_settings.tzRule);
+        g_prefs.putBool("tzAuto", g_settings.tzAuto);
         g_prefs.putBool("clk24", g_settings.clock24h);
+        g_prefs.putBool("clkFmtSet", g_settings.clockFmtExplicit);
         g_prefs.putUChar("btcMins", g_settings.btcUpdateMins);
         g_prefs.putUChar("stockMins", g_settings.stockUpdateMins);
         g_prefs.putUChar("brightMin", g_settings.brightMin);
