@@ -30,11 +30,14 @@ bool mqtt_has_new_message();
 // Clear current message
 void mqtt_clear_message();
 
-// Publish device state to Home Assistant
-void mqtt_publish_state(const char* card_name, uint8_t brightness);
+// Device state (card, brightness, RSSI) is published by the MQTT task itself
+// on change and every 60s.
 
-// Publish button event
+// Queue a button event (sent by the MQTT task, safe to call from any task)
 void mqtt_publish_button(uint8_t button_id, bool pressed);
+
+// Display switched off via the Home Assistant light entity (not persisted)
+bool mqtt_display_is_off();
 
 // Icon types for display
 enum MqttIcon : uint8_t {

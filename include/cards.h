@@ -12,3 +12,4 @@ void cards_set_preset(uint8_t preset);  // For weather/VU presets
 uint8_t cards_get_current();
 uint8_t cards_get_preset();
 uint8_t cards_get_count();
+const char* cards_get_name(uint8_t cardIndex);  // nullptr if out of range

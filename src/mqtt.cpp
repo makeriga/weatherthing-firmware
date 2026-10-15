@@ -9,8 +9,20 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 
+// PubSubClient busy-waits on available() (CONNACK, packet reads). On the single-core
+// C3 that spin starves lwIP, so the reply never gets processed and connect times out
+// (rc=-4). Yield a tick whenever nothing has arrived yet.
+class YieldingWiFiClient : public WiFiClient {
+public:
+    int available() override {
+        int n = WiFiClient::available();
+        if (n == 0) vTaskDelay(1);
+        return n;
+    }
+};
+
 // MQTT client
-static WiFiClient g_wifiClient;
+static YieldingWiFiClient g_wifiClient;
 static PubSubClient g_mqtt(g_wifiClient);
 
 // Connection state
@@ -56,12 +68,22 @@ struct MqttConfig {
 static MqttConfig g_cfg;
 static portMUX_TYPE g_cfgMux = portMUX_INITIALIZER_UNLOCKED;
 
+// PubSubClient::setServer() keeps the hostname pointer, so it must outlive mqtt_begin()
+static char g_serverHost[48] = "";
+
+// HA-facing state
+static volatile bool g_displayOff = false;      // light entity OFF (not persisted)
+static volatile bool g_stateDirty = false;      // force a state publish
+static volatile uint8_t g_pendingButtons = 0;   // bit n = button n pressed, sent by MQTT task
+
 // Forward declarations
 static void mqtt_callback(char* topic, byte* payload, unsigned int length);
 static void mqtt_task(void* arg);
 static void mqtt_task_loop();
 static void mqtt_send_ha_discovery();
 static void mqtt_publish_availability(bool online);
+static void mqtt_publish_state_if_needed(uint32_t now);
+static void mqtt_flush_buttons_locked();
 
 static inline void mqtt_lock()
 {
@@ -142,9 +164,11 @@ void mqtt_begin()
     
     // Configure MQTT client
     mqtt_lock();
-    g_mqtt.setServer(next.server, next.port);
+    strncpy(g_serverHost, next.server, sizeof(g_serverHost) - 1);
+    g_serverHost[sizeof(g_serverHost) - 1] = '\0';
+    g_mqtt.setServer(g_serverHost, next.port);
     g_mqtt.setCallback(mqtt_callback);
-    g_mqtt.setBufferSize(512);
+    g_mqtt.setBufferSize(1024);  // discovery payloads (select options) exceed 512
     g_mqtt.setSocketTimeout(2);    // Avoid long blocking waits in connect/loop
     g_mqtt.setKeepAlive(60);       // Reduce disconnects if loop stalls briefly
     g_wifiClient.setTimeout(2000); // Stream read timeout in ms
@@ -249,6 +273,12 @@ static void mqtt_task_loop()
     if (!g_haDiscoverySent && now - g_lastConnectAttempt > 2000) {
         mqtt_send_ha_discovery();
         g_haDiscoverySent = true;
+        g_stateDirty = true;
+    }
+
+    if (g_haDiscoverySent) {
+        mqtt_flush_buttons_locked();
+        mqtt_publish_state_if_needed(now);
     }
     mqtt_unlock();
 }
@@ -421,25 +451,46 @@ static void mqtt_callback(char* topic, byte* payload, unsigned int length)
         DeserializationError err = deserializeJson(doc, msg);
         
         if (!err) {
-            // Handle card switch: {"card": 0}
+            // Handle card switch: {"card": 0} or {"card": "Clock"} (HA select sends the name)
             if (doc["card"].is<uint8_t>()) {
                 uint8_t card = doc["card"];
                 cards_switch_to(card);
+            } else if (doc["card"].is<const char*>()) {
+                const char* wanted = doc["card"];
+                for (uint8_t i = 0; i < cards_get_count(); i++) {
+                    const char* name = cards_get_name(i);
+                    if (name && strcasecmp(name, wanted) == 0) {
+                        cards_switch_to(i);
+                        break;
+                    }
+                }
             }
-            
+
             // Handle preset: {"preset": 0}
             if (doc["preset"].is<uint8_t>()) {
                 uint8_t preset = doc["preset"];
                 cards_set_preset(preset);
             }
-            
+
+            // Handle light on/off: {"state": "ON"} / {"state": "OFF"} (HA JSON light schema)
+            if (doc["state"].is<const char*>()) {
+                g_displayOff = (strcasecmp(doc["state"].as<const char*>(), "OFF") == 0);
+            }
+
             // Handle brightness: {"brightness": 50}
             if (doc["brightness"].is<uint8_t>()) {
                 Settings& cfg = settings_get();
-                cfg.brightManual = doc["brightness"];
+                uint8_t maxAllowed = cfg.highPowerMode ? 255 : 127;
+                uint8_t b = doc["brightness"];
+                if (b < 5) b = 5;
+                if (b > maxAllowed) b = maxAllowed;
+                cfg.brightManual = b;
                 cfg.brightMode = 1;  // Switch to manual
                 settings_save();
+                g_displayOff = false;
             }
+
+            g_stateDirty = true;
         }
     }
     
@@ -484,34 +535,85 @@ static void mqtt_callback(char* topic, byte* payload, unsigned int length)
     }
 }
 
-void mqtt_publish_state(const char* card_name, uint8_t brightness)
+bool mqtt_display_is_off()
 {
-    if (!mqtt_is_connected()) return;
-    
+    return g_displayOff;
+}
+
+// Brightness shown in HA: the manual level, or the current auto level
+static uint8_t mqtt_reported_brightness()
+{
+    Settings& cfg = settings_get();
+    if (cfg.brightMode == 1) return cfg.brightManual;
+    uint8_t b = wt_current_brightness();
+    return b ? b : cfg.brightManual;
+}
+
+// Caller must hold the MQTT lock
+static void mqtt_publish_state_locked()
+{
+    const char* card = cards_get_name(cards_get_current());
+
     JsonDocument doc;
-    doc["card"] = card_name;
-    doc["brightness"] = brightness;
+    doc["state"] = g_displayOff ? "OFF" : "ON";
+    doc["card"] = card ? card : "";
+    doc["brightness"] = mqtt_reported_brightness();
     doc["uptime"] = millis() / 1000;
     doc["rssi"] = WiFi.RSSI();
-    
-    char buffer[128];
-    serializeJson(doc, buffer, sizeof(buffer));
 
-    if (!mqtt_try_lock()) return;
+    char buffer[160];
+    serializeJson(doc, buffer, sizeof(buffer));
     g_mqtt.publish(g_topicState, buffer, true);
-    mqtt_unlock();
+}
+
+// Publish state on change (at most every 2s) and every 60s for RSSI/uptime.
+// Caller must hold the MQTT lock.
+static void mqtt_publish_state_if_needed(uint32_t now)
+{
+    static uint8_t lastCard = 0xFF;
+    static uint8_t lastBrightness = 0;
+    static bool lastOff = false;
+    static uint32_t lastPublish = 0;
+
+    uint8_t card = cards_get_current();
+    uint8_t brightness = mqtt_reported_brightness();
+    bool off = g_displayOff;
+
+    bool changed = g_stateDirty || card != lastCard || brightness != lastBrightness || off != lastOff;
+    bool due = (now - lastPublish) > 60000;
+    if (!due && !(changed && (now - lastPublish) > 2000)) return;
+
+    g_stateDirty = false;
+    lastCard = card;
+    lastBrightness = brightness;
+    lastOff = off;
+    lastPublish = now;
+    mqtt_publish_state_locked();
 }
 
 void mqtt_publish_button(uint8_t button_id, bool pressed)
 {
-    if (!mqtt_is_connected()) return;
-    
-    char topic[64];
-    snprintf(topic, sizeof(topic), "weatherthing/%s/button/%d", g_deviceId, button_id);
+    // Only presses are used by HA (device trigger payload "pressed")
+    if (!pressed || button_id < 1 || button_id > 2 || !mqtt_is_connected()) return;
+    portENTER_CRITICAL(&g_msgMux);
+    g_pendingButtons |= (uint8_t)(1u << button_id);
+    portEXIT_CRITICAL(&g_msgMux);
+}
 
-    if (!mqtt_try_lock()) return;
-    g_mqtt.publish(topic, pressed ? "pressed" : "released");
-    mqtt_unlock();
+// Caller must hold the MQTT lock
+static void mqtt_flush_buttons_locked()
+{
+    portENTER_CRITICAL(&g_msgMux);
+    uint8_t pending = g_pendingButtons;
+    g_pendingButtons = 0;
+    portEXIT_CRITICAL(&g_msgMux);
+
+    for (uint8_t btn = 1; btn <= 2; btn++) {
+        if (!(pending & (1u << btn))) continue;
+        char topic[64];
+        snprintf(topic, sizeof(topic), "weatherthing/%s/button/%d", g_deviceId, btn);
+        g_mqtt.publish(topic, "pressed");
+    }
 }
 
 static void mqtt_publish_availability(bool online)
@@ -527,7 +629,7 @@ static void mqtt_send_ha_discovery()
     Serial.println("MQTT: Sending Home Assistant discovery...");
     
     char topic[128];
-    char payload[512];
+    static char payload[1024];  // select options list is ~600 bytes; keep off the 4K task stack
     JsonDocument doc;
     
     // Device info (shared by all entities)
@@ -557,7 +659,7 @@ static void mqtt_send_ha_discovery()
     doc["state_topic"] = g_topicState;
     doc["command_topic"] = g_topicCmd;
     doc["brightness"] = true;
-    doc["brightness_scale"] = 80;
+    doc["brightness_scale"] = settings_get().highPowerMode ? 255 : 127;
     doc["schema"] = "json";
     doc["icon"] = "mdi:led-strip-variant";
     
@@ -580,15 +682,12 @@ static void mqtt_send_ha_discovery()
     doc["command_template"] = "{\"card\": \"{{ value }}\"}";
     doc["icon"] = "mdi:card-multiple-outline";
     
+    // Must match the names published in the state's "card" field
     JsonArray options = doc["options"].to<JsonArray>();
-    options.add("Weather");
-    options.add("Clock");
-    options.add("Bitcoin");
-    options.add("Stocks");
-    options.add("Network");
-    options.add("Audio");
-    options.add("Games");
-    options.add("MQTT");
+    for (uint8_t i = 0; i < cards_get_count(); i++) {
+        const char* name = cards_get_name(i);
+        if (name) options.add(name);
+    }
     
     snprintf(topic, sizeof(topic), "homeassistant/select/%s_card/config", g_deviceId);
     serializeJson(doc, payload, sizeof(payload));

@@ -2098,6 +2098,11 @@ uint8_t cards_get_preset() {
     return 0;
 }
 uint8_t cards_get_count() { return g_cardCount; }
+const char* cards_get_name(uint8_t cardIndex)
+{
+    if (cardIndex >= g_cardCount || cardIndex >= sizeof(g_cardNames) / sizeof(g_cardNames[0])) return nullptr;
+    return g_cardNames[cardIndex];
+}
 
 // Friendly AP mode welcome screen with wifi icon and heart
 static void renderAPWelcomeScreen(uint32_t now)
@@ -2183,12 +2188,29 @@ void cards_loop()
     // Read button edges ONCE per frame - must be first!
     g_btn1Edge = wt_button1_pressed();
     g_btn2Edge = wt_button2_pressed();
+    if (g_btn1Edge) mqtt_publish_button(1, true);
+    if (g_btn2Edge) mqtt_publish_button(2, true);
 
     sampleAudio(now);
-    
-    // Update brightness with settings
+
+    // Update brightness with settings (display can be switched off from Home Assistant)
     Settings& cfg = settings_get();
-    wt_update_brightness_auto(cfg.brightMin, cfg.brightMax, cfg.brightMode, cfg.brightManual, cfg.brightBlanking, cfg.brightBlankSecs);
+    static bool displayWasOff = false;
+    static uint8_t brightnessBeforeOff = 0;
+    if (mqtt_display_is_off()) {
+        if (!displayWasOff) {
+            brightnessBeforeOff = wt_current_brightness();
+            displayWasOff = true;
+        }
+        if (wt_current_brightness() != 0) wt_set_brightness(0);
+    } else {
+        if (displayWasOff) {
+            // Auto/manual logic only re-applies on change, so restore what was showing
+            wt_set_brightness(brightnessBeforeOff);
+            displayWasOff = false;
+        }
+        wt_update_brightness_auto(cfg.brightMin, cfg.brightMax, cfg.brightMode, cfg.brightManual, cfg.brightBlanking, cfg.brightBlankSecs);
+    }
 
     // Boot animation takes priority
     if (!g_bootDone)
