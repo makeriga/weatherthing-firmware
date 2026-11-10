@@ -11510,33 +11510,52 @@ static void renderSocialCard(void (*drawIcon)(uint8_t, uint8_t), uint32_t count,
     char countStr[12];
     formatCount(count, countStr, sizeof(countStr));
     
-    // Calculate text width
+    // Calculate text width (4px per char + 1px spacing)
     int len = strlen(countStr);
-    int textWidth = len * 4 + (len - 1); // 4px per char + 1px spacing
-    
-    // Start after icon (icon is 7px wide)
-    int startX = 8 + (WT_MATRIX_WIDTH - 8 - textWidth) / 2;
-    if (startX < 8) startX = 8;
-    
-    // Draw count
-    for(int i = 0; i < len; i++) {
-        int16_t x = startX + i * 5;
-        if (x >= 0 && x < WT_MATRIX_WIDTH - 3) {
-            if (countStr[i] >= '0' && countStr[i] <= '9') {
-                drawDigit(x, 0, countStr[i] - '0', brandColor);
-            } else {
-                const uint8_t* bitmap = getCharBitmap((uint8_t)countStr[i]);
-                for(int r=0; r<7; ++r) {
-                    for(int cx=0; cx<4; ++cx) {
-                        if (bitmap[r] & (1<<(3-cx))) {
-                            wt_display_set_pixel_xy(x + cx, 6 - r, brandColor);
-                        }
+    int textWidth = len * 5 - 1;
+
+    // Text area is the pixels right of the 7px icon + 1px gap
+    const int areaX = 8;
+    const int areaW = (int)WT_MATRIX_WIDTH - areaX;
+
+    // Draw one glyph at gx (may be partly outside the text area)
+    auto drawGlyph = [&](int gx, char ch) {
+        if (gx + 3 < areaX || gx >= (int)WT_MATRIX_WIDTH) return;
+        if (ch >= '0' && ch <= '9') {
+            drawDigit((uint8_t)gx, 0, ch - '0', brandColor);
+        } else {
+            const uint8_t* bitmap = getCharBitmap((uint8_t)ch);
+            for (int r = 0; r < 7; ++r) {
+                for (int cx = 0; cx < 4; ++cx) {
+                    if (bitmap[r] & (1 << (3 - cx))) {
+                        int px = gx + cx;
+                        if (px >= areaX && px < (int)WT_MATRIX_WIDTH)
+                            wt_display_set_pixel_xy((uint8_t)px, 6 - r, brandColor);
                     }
                 }
             }
         }
+    };
+
+    if (textWidth <= areaW) {
+        // Fits: centre it in the text area
+        int startX = areaX + (areaW - textWidth) / 2;
+        for (int i = 0; i < len; i++) drawGlyph(startX + i * 5, countStr[i]);
+    } else {
+        // Too wide for the area: scroll right-to-left in a loop
+        const int gap = 6;
+        int loopW = textWidth + gap;
+        int offset = (int)((millis() / 110) % (uint32_t)loopW);
+        for (int copy = 0; copy < 2; ++copy)
+            for (int i = 0; i < len; i++)
+                drawGlyph(areaX + i * 5 - offset + copy * loopW, countStr[i]);
+        // drawDigit does not clip on the left: repaint the icon and gap column
+        for (uint8_t y = 0; y < 7; ++y)
+            for (uint8_t x = 0; x < areaX; ++x)
+                wt_display_set_pixel_xy(x, y, 0);
+        drawIcon(0, 0);
     }
-    
+
     // Timeline in brand color
     for (uint8_t i = 0; i < WT_TIMELINE_PIXELS; ++i) {
         uint8_t r = (brandColor >> 16) & 0xFF;
